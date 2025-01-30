@@ -1,0 +1,40 @@
+name: Build and publish Python package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  release-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Setup virtual environment
+        run: |
+          python -m venv .venv
+      - name: Install basic Python dependencies
+        run: |
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r dev-requirements.txt
+      - name: Build project
+        run: |
+          source .venv/bin/activate
+          python -m build
+      - name: Install project and other Python dependencies
+        run: |
+          source .venv/bin/activate
+          pip install --editable .
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
