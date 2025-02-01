@@ -1,4 +1,4 @@
-# Changelog
+# Pipecat Cloud Changelog
 
 All notable changes to **Pipecat Cloud** will be documented in this file.
 
