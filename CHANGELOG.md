@@ -25,3 +25,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Secrets from .env method
 - Fix: .pcc-deploy.toml should read correctly 
 - New conveience method to add account associated Daily API Key to a secret set
+- Add: concurrency support for agent deployments
