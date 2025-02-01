@@ -5,7 +5,7 @@
 
 
 [![Docs](https://img.shields.io/badge/documentation-blue)](https://docs.pipecat.cloud)
-[![PyPI](https://img.shields.io/pypi/v/pipecat-cloud)](https://pypi.org/project/pipecat-cloud)
+[![PyPI](https://img.shields.io/pypi/v/pipecatcloud)](https://pypi.org/project/pipecatcloud)
 
 # Pipecat Cloud
 
