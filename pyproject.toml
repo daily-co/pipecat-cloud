@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pipecatcloud"
-version = "0.0.1"
+version = "0.0.6"
 requires-python = ">=3.10"
 dependencies = [
     "aiohttp~=3.10.10",
@@ -19,11 +19,15 @@ dependencies = [
 ]
 
 [project.scripts]
-pipecatcloud = "pipecatcloud.__main__:main"
+pcc = "pipecatcloud.__main__:main"
+pipecat = "pipecatcloud.__main__:main"
 
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["pipecatcloud*"]
 
 [tool.ruff]
 exclude = ["*_pb2.py"]

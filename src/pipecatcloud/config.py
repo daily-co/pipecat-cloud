@@ -1,5 +1,6 @@
 import os
 import typing
+from typing import Optional
 
 from pipecatcloud import PIPECAT_CREDENTIALS_PATH, PIPECAT_DEPLOY_CONFIG_PATH
 from pipecatcloud.exception import ConfigError
@@ -12,7 +13,7 @@ deploy_config_path: str = os.environ.get("PIPECAT_DEPLOY_CONFIG_PATH") or os.pat
     PIPECAT_DEPLOY_CONFIG_PATH
 )
 
-api_host: str = os.environ.get("PIPECAT_API_HOST") or "http://localhost:3000/api"
+api_host: str = os.environ.get("PIPECAT_API_HOST") or "https://api.pipecat.cloud"
 
 
 def _read_user_config():
@@ -61,7 +62,7 @@ def _remove_user_config():
     os.remove(user_config_path)
 
 
-def _store_user_config(token: str, org: str):
+def _store_user_config(token: str, org: str, additional_data: Optional[dict] = None):
     # @TODO: Make method more robust
     if not org:
         raise ValueError("Account organization is required")
@@ -69,9 +70,12 @@ def _store_user_config(token: str, org: str):
         raise ValueError("Token is required")
     config_data = {
         org: {
-            "token": token
+            "token": token,
         }
     }
+    if additional_data is not None:
+        config_data[org].update(additional_data)
+
     _write_user_config(config_data)
 
 
@@ -91,10 +95,18 @@ _SETTINGS = {
     "login_status_path": _Setting("/auth/status"),
     "whoami_path": _Setting("/v1/users"),
     "organization_path": _Setting("/v1/organizations"),
-    "apps_path": _Setting("/v1/apps"),
+    "services_path": _Setting("/v1/organizations/{org}/services"),
+    "services_logs_path": _Setting("/v1/organizations/{org}/services/{service}/logs"),
+    "services_deployments_path": _Setting("/v1/organizations/{org}/services/{service}/deployments"),
+    "start_path": _Setting("/v1/public/{service}/proxy"),
+    "api_keys_path": _Setting("/v1/organizations/{org}/apiKeys"),
+    "secrets_path": _Setting("/v1/organizations/{org}/secrets"),
     "user_config_path": _Setting(user_config_path),
     "token": _Setting(),
     "org": _Setting(),
+    "default_public_key": _Setting(),
+    "default_public_key_name": _Setting(),
+    "cli_log_level": _Setting("INFO"),
 }
 
 

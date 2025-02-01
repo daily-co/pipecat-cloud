@@ -1,3 +1,8 @@
+from typing import Optional
+
+from pipecatcloud.errors import ERROR_CODES
+
+
 class Error(Exception):
     """Base class for exceptions in this module."""
 
@@ -22,16 +27,29 @@ class ConfigError(Error):
     """Raised when user does something invalid."""
 
 
-class _CliUserExecutionError(Exception):
-    """mdmd:hidden
-    Private wrapper for exceptions during when importing or running stubs from the CLI.
+class AgentNotHealthyError(Error):
+    """Raised when agent is not healthy and cannot be started."""
 
-    This intentionally does not inherit from `modal.exception.Error` because it
-    is a private type that should never bubble up to users. Exceptions raised in
-    the CLI at this stage will have tracebacks printed.
-    """
+    def __init__(
+            self,
+            message: str = "Agent deployment is not in a ready state and cannot be started.",
+            error_code: Optional[str] = None):
+        self.message = f"{message} (Error code: {error_code})"
+        self.error_code = error_code
+        super().__init__(self.message)
 
-    def __init__(self, user_source: str):
-        # `user_source` should be the filepath for the user code that is the source of the exception.
-        # This is used by our exception handler to show the traceback starting from that point.
-        self.user_source = user_source
+
+class AgentStartError(Error):
+    """Raised when agent start request fails."""
+
+    def __init__(
+            self,
+            message: str = "Agent start request failed.",
+            error_code: Optional[str] = None):
+
+        error_message = message if not error_code else ERROR_CODES.get(
+            error_code, message)
+
+        self.message = f"{error_message} (Error code: {error_code})"
+        self.error_code = error_code
+        super().__init__(self.message)

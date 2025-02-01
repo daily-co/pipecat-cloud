@@ -6,11 +6,13 @@ from typing import AsyncGenerator, Optional, Tuple
 
 import aiohttp
 import typer
+from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
 
 from pipecatcloud._utils.async_utils import synchronize_api, synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
+from pipecatcloud._utils.http_utils import construct_api_url
 from pipecatcloud.cli import PANEL_TITLE_ERROR, PANEL_TITLE_SUCCESS
 from pipecatcloud.config import _remove_user_config, _store_user_config, config, user_config_path
 
@@ -25,9 +27,7 @@ class _AuthFlow:
     async def start(self) -> AsyncGenerator[Tuple[Optional[str], Optional[str]], None]:
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.post(
-                    f"{config.get('server_url')}{config.get('login_path')}"
-                ) as resp:
+                async with session.post(f"{construct_api_url('login_path')}") as resp:
                     if resp.status != 200:
                         raise Exception(f"Failed to start auth flow: {resp.status}")
                     data = await resp.json()
@@ -89,28 +89,38 @@ async def _set_credentials(
         _store_user_config(token, account_org)
 
 
-async def _get_account_org(token: str) -> Optional[str]:
+async def _get_account_org(
+        token: str, active_org: Optional[str] = None) -> Optional[Tuple[str, str]]:
     console = Console()
-    account_org = None
     # Retrieve account organization
-    with console.status("[dim]Verifying account details[/dim]", spinner="dots"):
+    with console.status("[dim]Obtaining account organization data[/dim]", spinner="dots"):
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{config.get('server_url')}{config.get('organization_path')}",
+                f"{construct_api_url('organization_path')}",
                 headers={"Authorization": f"Bearer {token}"},
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     organizations = data["organizations"]
-                    account_org = organizations[0]["name"]
-                    return account_org
+
+                    # If active_org is specified, try to find it in the list
+                    if active_org:
+                        for org in organizations:
+                            if org["name"] == active_org:
+                                return org["name"], org["verboseName"]
+
+                    # Default to first organization if active_org not found or not specified
+                    if organizations:
+                        return organizations[0]["name"], organizations[0]["verboseName"]
+
+                    return None
                 else:
                     raise Exception(f"Failed to retrieve account organization: {resp.status}")
 
 
 # ----- Login
 
-async def _login():
+async def _login(active_org: Optional[str] = None):
     console = Console()
     auth_flow = _AuthFlow()
 
@@ -158,18 +168,23 @@ async def _login():
                     return
 
             # Retrieve user namespace
-            try:
-                account_org = await _get_account_org(result)
-                if account_org is None:
-                    raise
-            except Exception:
-                console.print(Panel(
-                    "[red]Account has no user namespace. Please contact support.[/red]",
-                    title=f"[red]{PANEL_TITLE_ERROR}[/red]",
-                    title_align="left",
-                    border_style="red",
-                ))
-                return
+            if not active_org:
+                try:
+                    account_name, account_name_verbose = await _get_account_org(result)
+                    logger.debug(f"Setting namespace to {account_name_verbose}")
+                    if account_name is None:
+                        raise
+                except Exception:
+                    console.print(
+                        Panel(
+                            "[red]Account has no associated namespace. Have you completed the onboarding process? Please first sign in via the web dashboard (https://dashboard.pipecat.cloud).[/red]",
+                            title=f"[red]{PANEL_TITLE_ERROR}[/red]",
+                            title_align="left",
+                            border_style="red",
+                        ))
+                    return
+            else:
+                account_name = active_org
 
             console.print(Panel(
                 "[green]Web authentication finished successfully![/green]\n"
@@ -178,15 +193,16 @@ async def _login():
                 title_align="left",
                 border_style="green",
             ))
-            await _set_credentials(result, account_org)
+            await _set_credentials(result, account_name)
     except Exception:
         pass
 
 
 @auth_cli.command(name="login", help="Login to Pipecat Cloud and get a new token")
 @synchronizer.create_blocking
-async def login():
-    await _login()
+async def login(ctx: typer.Context):
+    active_org = ctx.obj["org"]
+    await _login(active_org)
 
 
 # ----- Logut
@@ -221,63 +237,38 @@ async def logout():
 async def whomai():
     console = Console()
     token = config.get("token")
+    active_org = config.get("org")
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"{config.get('server_url')}{config.get('whoami_path')}",
-            headers={"Authorization": f"Bearer {token}"},
-        ) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                console.print(Panel(
-                    f"User ID: {data['user']['userId']}\n"
-                    f"Active Organization: {config.get('org')}",
-                    title="whoami",
-                    title_align="left",
-                    border_style="dim",
-                ))
-            else:
-                console.print(Panel(
-                    "Failed to get user data.",
-                    title=f"[red]{PANEL_TITLE_ERROR}[/red]",
-                    title_align="left",
-                    border_style="red",
-                ))
-
-
-# ----- DEV: Onboarding
-# ----- @TODO: Remove
-@auth_cli.command(name="onboard", help="DEV: Onboarding")
-@synchronizer.create_blocking
-@requires_login
-async def onboard(organization_name: str):
-    token = config.get("token")
-    console = Console()
-    user_id = None
-
-    with console.status("Onboarding", spinner="dots"):
-        async with aiohttp.ClientSession() as session:
-            # Get the user_id from whoami
-            async with session.get(
-                f"{config.get('server_url')}{config.get('whoami_path')}",
-                headers={"Authorization": f"Bearer {token}"},
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    user_id = data["user"]["userId"]
-
-            if user_id is None:
-                console.print("[red]Failed to get user ID[/red]")
-                return
-
-            try:
-                async with session.post(
-                    f"{config.get('server_url')}{config.get('onboarding_path')}",
-                    json={"clerkId": user_id, "organizationName": organization_name},
-                    headers={"Authorization": "Bearer pcd-local-internal-key"},
-                    timeout=aiohttp.ClientTimeout(total=10.0),
+        try:
+            # Retrieve user data from whoami endpoint
+            with console.status("[dim]Obtaining user data[/dim]", spinner="dots"):
+                async with session.get(
+                    f"{construct_api_url('whoami_path')}",
+                    headers={"Authorization": f"Bearer {token}"},
                 ) as resp:
-                    print(resp.status)
-                    print(await resp.json())
-            except Exception:
-                console.print("[red]Error[/red]")
+                    if resp.status == 200:
+                        data = await resp.json()
+                    else:
+                        raise
+
+            # Retrieve default user organization
+            account_name, account_name_verbose = await _get_account_org(token, active_org)
+            if account_name is None:
+                raise
+
+            console.print(Panel(
+                f"[bold]User ID:[/bold] {data['user']['userId']}\n"
+                f"[bold]Active Organization:[/bold] {account_name_verbose} [dim]({account_name})[/dim]",
+                title="whoami",
+                title_align="left",
+                border_style="dim",
+            ))
+        except Exception:
+            console.print(Panel(
+                "[red]Failed to get user data. Please contact support.[/red]",
+                title=f"[red]{PANEL_TITLE_ERROR}[/red]",
+                title_align="left",
+                border_style="red",
+            ))
+            return

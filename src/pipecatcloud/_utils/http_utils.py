@@ -29,3 +29,15 @@ async def run_temporary_http_server(app: Application):
         raise
     finally:
         sock.close()
+
+
+def construct_api_url(path: str) -> str:
+    from pipecatcloud.config import config
+
+    if not config.get("server_url", ""):
+        raise ValueError("Server URL is not set")
+
+    if not config.get(path, ""):
+        raise ValueError(f"Endpoint {path} is not set")
+
+    return f"{config.get('server_url', '')}{config.get(path, '')}"

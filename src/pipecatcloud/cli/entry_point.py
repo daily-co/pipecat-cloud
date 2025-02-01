@@ -1,10 +1,18 @@
-import typer
+import sys
 
+import typer
+from loguru import logger
+
+from pipecatcloud.cli.agent import agent_cli
 from pipecatcloud.cli.auth import auth_cli
 from pipecatcloud.cli.deploy import create_deploy_command
 from pipecatcloud.cli.organizations import organization_cli
-from pipecatcloud.cli.agent import agent_cli
+from pipecatcloud.cli.run import create_run_command
+from pipecatcloud.cli.secrets import secrets_cli
 from pipecatcloud.config import config
+
+logger.remove()
+logger.add(sys.stderr, level=str(config.get("cli_log_level", "INFO")))
 
 
 def version_callback(value: bool):
@@ -18,9 +26,22 @@ def version_callback(value: bool):
 
 def config_callback(value: bool):
     if value:
+        from rich import print_json
+        from rich.pretty import pprint
+
+        from pipecatcloud._utils.deploy_utils import load_deploy_config_file
         from pipecatcloud.config import config
 
-        typer.echo(config.to_dict())
+        # Check for deploy config
+        deploy_config = load_deploy_config_file()
+        if deploy_config:
+            print("Deploy config:")
+            print_json(data=deploy_config)
+
+            print("Config:")
+            print_json(data=config.to_dict())
+
+        pprint(config.to_dict())
         raise typer.Exit()
 
 
@@ -43,15 +64,20 @@ def pipecat(
 ):
     if not ctx.obj:
         ctx.obj = {}
+
     # All commands require an active namespace (organization)
-    # The CLI sets the users currently active org in context
+    # The CLI reads config data and sets the users currently active org in context
     # which is used as a default when an `--org` flag is not provided
     ctx.obj["org"] = config.get("org")
     ctx.obj["token"] = config.get("token")
+    ctx.obj["default_public_key"] = config.get("default_public_key", None)
+    ctx.obj["default_public_key_name"] = config.get("default_public_key_name", None)
 
 
 create_deploy_command(entrypoint_cli_typer)
+create_run_command(entrypoint_cli_typer)
 entrypoint_cli_typer.add_typer(auth_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(organization_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(agent_cli, rich_help_panel="Commands")
+entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")
 entrypoint_cli = typer.main.get_command(entrypoint_cli_typer)
