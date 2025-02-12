@@ -1,8 +1,7 @@
 import typer
 from rich.console import Console
-from rich.panel import Panel
 
-from pipecatcloud.cli import PANEL_TITLE_NOT_IMPLEMENTED
+from pipecatcloud._utils.async_utils import synchronizer
 
 console = Console()
 
@@ -11,18 +10,24 @@ console = Console()
 
 
 def create_run_command(app: typer.Typer):
-    # Note we wrap the deploy command to avoid circular imports
     @app.command(name="run", help="Run an agent locally")
-    def run(
+    @synchronizer.create_blocking
+    async def run(
         ctx: typer.Context,
-
+        entrypoint: str,
+        host: str = typer.Option(
+            "0.0.0.0",
+            "--host",
+            help="Host to run the agent on",
+            rich_help_panel="Run Configuration",
+        ),
+        port: int = typer.Option(
+            8000,
+            "--port",
+            help="Port to run the agent on",
+            rich_help_panel="Run Configuration",
+        ),
     ):
-        console.print(
-            Panel(
-                "Local bot runner is not yet implemented.",
-                title=PANEL_TITLE_NOT_IMPLEMENTED,
-                title_align="left",
-                style="yellow",
-                border_style="yellow"))
-
+        from pipecatcloud._utils.local_runner import start_server
+        await start_server(entrypoint, host, port)
     return run

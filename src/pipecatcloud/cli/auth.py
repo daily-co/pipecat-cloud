@@ -145,12 +145,10 @@ async def _login(active_org: Optional[str] = None):
                             "If it didn't, please copy this URL into your web browser manually:\n\n"
                             f"[blue][link={web_url}]{web_url}[/link][/blue]\n", ))
                 else:
-                    console.print(Panel(
-                        "[red]Was not able to launch web browser[/red]",
-                        title=f"[red]{PANEL_TITLE_ERROR}[/red]",
-                        title_align="left",
-                        border_style="red",
-                    ))
+                    console.print("[dim]Unable to launch web browser[/dim]")
+                    console.print(
+                        "[bold]Please visit the following URL to confirm login[/bold]\n\n")
+                    console.print(web_url)
 
             with console.status("Waiting for token flow to complete...", spinner="dots") as status:
                 for attempt in itertools.count():
@@ -257,13 +255,14 @@ async def whomai():
             if account_name is None:
                 raise
 
-            console.print(Panel(
-                f"[bold]User ID:[/bold] {data['user']['userId']}\n"
-                f"[bold]Active Organization:[/bold] {account_name_verbose} [dim]({account_name})[/dim]",
-                title="whoami",
-                title_align="left",
-                border_style="dim",
-            ))
+            console.print(
+                Panel(
+                    f"[bold]User ID:[/bold] {data['user']['userId']}\n"
+                    f"[bold]Active Organization:[/bold] {account_name_verbose} [dim]({account_name})[/dim]",
+                    title="whoami",
+                    title_align="left",
+                    border_style="dim",
+                ))
         except Exception:
             console.print(Panel(
                 "[red]Failed to get user data. Please contact support.[/red]",

@@ -1,14 +1,18 @@
 import base64
+import os
 import re
+from xmlrpc.client import boolean
 
 import aiohttp
 import questionary
 import typer
 from loguru import logger
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from pipecatcloud import PIPECAT_CLI_NAME
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.http_utils import construct_api_url
@@ -19,6 +23,8 @@ secrets_cli = typer.Typer(
 )
 
 console = Console()
+
+# ---- Methods ----
 
 
 def validate_secrets(secrets: dict):
@@ -93,58 +99,138 @@ async def _create_image_pull_secret(name: str, host: str, credentials: str, org:
         response.raise_for_status()
 
 
+# ---- Commands ----
+
 @secrets_cli.command(name="set", help="Create a new secret set for active organization")
 @synchronizer.create_blocking
 @requires_login
 async def set(
     ctx: typer.Context,
     name: str = typer.Argument(
-        None,
         help="Name of the secret set to create e.g. 'my-secret-set'"
     ),
     secrets: list[str] = typer.Argument(
         None,
         help="List of secret key-value pairs e.g. 'KEY1=value1 KEY2=\"value with spaces\"'",
+    ),
+    from_file: str = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="Load secrets from a relative file path",
+    ),
+    skip_confirm: boolean = typer.Option(
+        False,
+        "--s",
+        "-s",
+        help="Skip confirmations / force creation or update",
     )
 ):
-    # Parse secrets
-    if not secrets:
+    if not secrets and not from_file:
         console.print(
-            "[red]Error: Secrets must be provided as key-value pairs. Please reference --help for more information.[/red]")
+            "[red]Command requires either passed key-values or relative file path. See --help for more information.[/red]")
+        return typer.Exit(1)
+
+    if secrets and from_file:
+        console.print("[red]Cannot pass key-value pairs with --file option")
         return typer.Exit(1)
 
     secrets_dict = {}
-    for secret in secrets:
-        if '=' not in secret:
+
+    # Load file if provided
+    if from_file:
+        if not os.path.exists(from_file):
             console.print(
-                "[red]Error: Secrets must be provided as key-value pairs using '=' separator. Example: KEY=value[/red]")
+                f"[red]Error: File '{from_file}' does not exist.[/red]")
             return typer.Exit(1)
 
-        key, value = secret.split('=', 1)  # Split on first = only
-        key = key.strip()
+        try:
+            with open(from_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
 
-        # Handle quoted values while preserving quotes within the value
-        value = value.strip()
-        if value.startswith('"') and value.endswith('"'):
-            # Remove only the enclosing quotes
-            value = value[1:-1]
+                    if '=' not in line:
+                        console.print(
+                            f"[red]Error: Invalid line format in {from_file}. Each line must be a key-value pair using '=' separator.[/red]")
+                        return typer.Exit(1)
 
-        if not key or not value:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+
+                    if value.startswith('"') and value.endswith('"'):
+                        value = value[1:-1]
+
+                    if not key or not value:
+                        console.print(
+                            f"[red]Error: Empty key or value found in {from_file}.[/red]")
+                        return typer.Exit(1)
+
+                    secrets_dict[key] = value
+
+            if not secrets_dict:
+                console.print(
+                    f"[red]Error: No valid secrets found in {from_file}.[/red]")
+                return typer.Exit(1)
+        except Exception as e:
             console.print(
-                "[red]Error: Both key and value must be provided for each secret.[/red]")
+                f"[red]Error reading file '{from_file}': {str(e)}[/red]")
             return typer.Exit(1)
 
-        secrets_dict[key] = value
+    else:
+        for secret in secrets:
+            if '=' not in secret:
+                console.print(
+                    "[red]Error: Secrets must be provided as key-value pairs using '=' separator. Example: KEY=value[/red]")
+                return typer.Exit(1)
+
+            key, value = secret.split('=', 1)  # Split on first = only
+            key = key.strip()
+
+            # Handle quoted values while preserving quotes within the value
+            value = value.strip()
+            if value.startswith('"') and value.endswith('"'):
+                # Remove only the enclosing quotes
+                value = value[1:-1]
+
+            if not key or not value:
+                console.print(
+                    "[red]Error: Both key and value must be provided for each secret.[/red]")
+                return typer.Exit(1)
+
+            secrets_dict[key] = value
+
+    logger.debug(secrets_dict)
 
     validate_secrets(secrets_dict)
 
-    # Prompt for set name if not provided
-    if not name:
-        name = typer.prompt("Enter the name for your secret set")
+    if not skip_confirm:
+        table = Table(
+            border_style="dim",
+            box=box.SIMPLE,
+            show_header=True,
+            show_edge=True,
+            show_lines=False)
+        table.add_column("Key", style="white")
+        table.add_column("Value Preview", style="white")
+        for key, value in secrets_dict.items():
+            preview = value[:5] + "..." if len(value) > 5 else value
+            table.add_row(key, preview)
+        console.print(Panel(
+            table,
+            title="[bold]Secrets to create / modify in set[/bold]",
+            title_align="left",
+        ))
+        # Confirm our secrets
+        looks_good = await questionary.confirm("Would you like to proceed with these secrets?").ask_async()
+        if not looks_good:
+            return typer.Exit(1)
 
     # Confirm if we are sure we want to create a new secret set (if one doesn't already exist)
     existing_set = None
-    with console.status(f"Retrieving secret set [bold]'{name}'[/bold]", spinner="dots"):
+    with console.status(f"[dim]Retrieving secret set [bold]'{name}'[/bold][/dim]", spinner="dots"):
         try:
             existing_set = await _get_secret_set(name, ctx.obj["org"], ctx.obj["token"])
         except Exception as e:
@@ -161,18 +247,19 @@ async def set(
         existing_secret_names = {secret['fieldName'] for secret in existing_set['secrets']}
         overlapping_secrets = existing_secret_names.intersection(secrets_dict.keys())
 
-        if overlapping_secrets:
+        if overlapping_secrets and not skip_confirm:
             create = await questionary.confirm(
-                f"The following secrets already exist and will be overwritten: {', '.join(overlapping_secrets)}. Would you like to continue?").ask_async()
+                f"The following secret(s) already exist in {name} will be overwritten: {', '.join(overlapping_secrets)}. Would you like to continue?").ask_async()
             if not create:
                 console.print("[bold red]Secret set creation cancelled[/bold red]")
                 return typer.Exit(1)
     else:
-        create = await questionary.confirm(
-            f"Secret set with name '{name}' does not exist. Would you like to create it?").ask_async()
-        if not create:
-            console.print("[bold red]Secret set creation cancelled[/bold red]")
-            return typer.Exit(1)
+        if not skip_confirm:
+            create = await questionary.confirm(
+                f"Secret set with name '{name}' does not exist. Would you like to create it?").ask_async()
+            if not create:
+                console.print("[bold red]Secret set creation cancelled[/bold red]")
+                return typer.Exit(1)
 
     try:
         with console.status(f"{'Modifying' if existing_set else 'Creating'} secret set [bold]'{name}'[/bold]", spinner="dots"):
@@ -188,9 +275,14 @@ async def set(
         return typer.Exit(1)
 
     action = "created" if not existing_set else "modified"
+    message = f"Secret set [bold green]'{name}'[/bold green] {action} successfully"
+    if action == "modified":
+        message += "\n[dim]You must re-deploy any agents using this secret set for changes to take effect[/dim]"
+    else:
+        message += f"\n[dim]Deploy your agent with {PIPECAT_CLI_NAME} deploy agent-name --secrets {name}[/dim]"
     console.print(
         Panel(
-            f"[bold green]Secret set '{name}' {action} successfully[/bold green]",
+            message,
             title=f"[green]{PANEL_TITLE_SUCCESS}[/green]",
             title_align="left",
             border_style="green",
@@ -241,54 +333,83 @@ async def unset(
 @secrets_cli.command(name="list", help="List secrets for active organization")
 @synchronizer.create_blocking
 @requires_login
-async def list(ctx: typer.Context, name: str = typer.Argument(
-    None,
-    help="Name of the secret set to list secrets from e.g. 'my-secret-set'"
-)):
+async def list(
+    ctx: typer.Context,
+    name: str = typer.Argument(
+        None,
+        help="Name of the secret set to list secrets from e.g. 'my-secret-set'"
+    ),
+    show_all: boolean = typer.Option(
+        True,
+        "--sets",
+        "-s",
+        help="Filter results to show secret sets only (no image pull secrets)",
+    )
+):
     token = ctx.obj["token"]
     org = ctx.obj["org"]
+
+    status_title = "Retrieving secret sets for organization"
+
+    logger.debug(f"Secret set name to lookup: {name}")
 
     if not name:
         request_url = f"{construct_api_url('secrets_path').format(org=org)}"
     else:
         request_url = f"{construct_api_url('secrets_path').format(org=org)}/{name}"
+        status_title = f"Retrieve keys for secret set [bold]{name}[/bold]"
 
     logger.debug(f"Requesting secrets from {request_url}")
 
     try:
-        with console.status("Retrieving secret sets for organization", spinner="dots"):
+        with console.status(status_title, spinner="dots"):
             async with aiohttp.ClientSession() as session:
                 response = await session.get(request_url, headers={"Authorization": f"Bearer {token}"})
                 response.raise_for_status()
                 data = await response.json()
 
                 if name:
-                    for s in data["secrets"]:
-                        table = Table(
-                            border_style="dim",
-                            show_edge=True,
-                            show_lines=False)
-                        table.add_column(name, style="white")
-                        table.add_row(s["fieldName"])
-
-                    console.print(table)
-                else:
-                    console.print(f"[bold green]Secret sets for organization {org}:[/bold green]")
                     table = Table(
+                        border_style="dim",
+                        show_header=False,
+                        show_edge=True,
+                        show_lines=True)
+                    table.add_column(name, style="white")
+                    for s in data["secrets"]:
+                        table.add_row(s["fieldName"])
+                    console.print(Panel(
+                        table,
+                        title=f"[bold]Secret keys for set [green]{name}[/green][/bold]",
+                        title_align="left",
+                    ))
+                else:
+                    # Filter out image pull secrets if show all is False
+                    filtered_sets = [s for s in data["sets"]
+                                     if show_all or s["type"] != "imagePullSecret"]
+
+                    table = Table(
+                        show_header=True,
+                        box=box.SIMPLE,
                         border_style="dim",
                         show_edge=True,
                         show_lines=False)
                     table.add_column("Secret Set Name", style="white")
-                    table.add_column("Type", style="white")
-                    for s in data["sets"]:
-                        if s["type"] == "imagePullSecret":
-                            table.add_row(s["name"], "Image Pull Secret")
-                        else:
-                            table.add_row(s["name"], "Secret")
+                    if show_all:
+                        table.add_column("Type", style="white")
+                        for secret_set in filtered_sets:
+                            set_type = "Image Pull Secret" if secret_set["type"] == "imagePullSecret" else "Secret Set"
+                            table.add_row(secret_set["name"], set_type)
+                    else:
+                        for secret_set in filtered_sets:
+                            table.add_row(secret_set["name"])
+                    console.print(Panel(
+                        table,
+                        title=f"[bold]Secret sets for organization [green]{org}[/green][/bold]",
+                        title_align="left",
+                    ))
 
-                    console.print(table)
-
-    except Exception:
+    except Exception as e:
+        logger.debug(str(e))
         console.print(Panel(
             "[red]Unable to retrieve secret sets. Please contact support.[/red]",
             title=f"[red]{PANEL_TITLE_ERROR}[/red]",

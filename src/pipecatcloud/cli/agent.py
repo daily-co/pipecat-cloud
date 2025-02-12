@@ -9,6 +9,7 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
+from pipecatcloud._utils.agent_utils import handle_agent_start_error
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import print_api_error
@@ -301,7 +302,8 @@ async def start(
         False,
         "--force",
         "--f",
-        help="Force the start request",
+        help="Bypass prompt for confirmation",
+        rich_help_panel="Start Configuration",
     ),
     organization: str = typer.Option(
         None,
@@ -314,18 +316,21 @@ async def start(
         "--api-key",
         "--key",
         help="Public API key to use for starting agent",
+        rich_help_panel="Start Configuration",
     ),
     data: str = typer.Option(
         None,
         "--data",
         "--d",
         help="Data to pass to the agent (stringified JSON)",
+        rich_help_panel="Start Configuration",
     ),
     use_daily: bool = typer.Option(
         False,
         "--use-daily",
         "--daily",
         help="Create a Daily WebRTC session for the agent",
+        rich_help_panel="Start Configuration",
     ),
 ):
     console = Console()
@@ -356,17 +361,7 @@ async def start(
             return typer.Exit(1)
 
     # Check if agent exists and is healthy
-    with Live(console.status(f"Checking deployment health for agent: [bold]'{agent_name}'[/bold]", spinner="dots"), refresh_per_second=4) as live:
-        agent_data = await lookup_agent(token, org, agent_name)
-        if agent_data is None or not agent_data["ready"]:
-            print_api_error("PCC-1001", f"Unable to start agent '{agent_name}'")
-            return typer.Exit(1)
-
-        live.update(
-            console.status(
-                f"Sending start request with key: {default_public_key_name}",
-                spinner="dots"))
-
+    with Live(console.status(f"Sending start request with key: {default_public_key_name}", spinner="dots"), refresh_per_second=4) as live:
         error_code = None
         try:
             async with aiohttp.ClientSession() as session:
@@ -379,10 +374,7 @@ async def start(
                     }
                 )
                 if response.status != 200:
-                    if response.status == 400:
-                        error_code = "PCC-1004"
-                    else:
-                        error_code = "PCC-1003"
+                    error_code = handle_agent_start_error(response.status)
                     response.raise_for_status()
 
         except Exception as e:

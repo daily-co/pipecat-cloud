@@ -5,6 +5,38 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.8] - 2025-02-03
+
+### Added
+- `secrets set-from-file [set-name]` allowing you to create a secret set from .env file
+- `agent scale` to modify agent configuration without pushing a new image
+- `run` command for running bot.py files locally via FastAPI. This initial implementation is very basic and will be expanded in the future.
+
+### Fixed
+- `secrets list` now correctly lists all secrets vs. just a single entry
+- `deploy` command displays live status to prevent skewed terminal output
+- `deploy` command no longer allows pushing images without a tag
+- `agent logs` paginate / filter / sort and tidy up display for logs
+- `start` command correctly clears the live terminal text
+- `pcc-deploy.toml` files now work as intended with `deploy` command
+- `deploy` method now passes configuration parameters correctly
+
+### Changed
+- `secrets list` now takes an optional `--sets / -s` parameter that filters by secret sets or image pull secrets
+- `organizations keys create` now prompts you to set the newly created key as the default after creation (if active org matches)
+
+
+## [0.0.7] - 2025-02-01
+
+### Added
+
+- `run` command for running an agent locally. This initial implementation is very basic and will be expanded in the future.
+
+### Changed
+
+- `start_agent` method no longer requires an organization. If not provided, it will assume the namespace of the API token owner.
+- `start` command no longer looks up the agent before starting (health check is handled by the proxy route.)
+
 ## [0.0.6] - 2025-02-01
 
 ### Added

@@ -27,10 +27,11 @@ Documentation for Pipecat Cloud is available [here](https://docs.pipecat.cloud).
 ```shell
 pip install pipecatcloud
 
-# Note: you can use `pipecat` or `pcc` interchangeably
-
-pipecat --help
 pipecat --version
+pipecat --help
+
+# Note: you can use `pipecat` or `pcc` interchangeably
+pcc auth login
 ```
 
 ! All CLI commands have a `--help` flag that will display the command usage and options.
@@ -49,3 +50,18 @@ pipecat --version
 
 6. Deploy your agent `pipecat deploy starter-agent your-repository/your-agent-name:0.1`
 
+### Usage in Python scripts
+
+If want to programmatically start an agent within a Python script, you can use the `pipecatcloud.agent` module.
+
+```python
+from pipecatcloud.agent import Agent
+
+agent = Agent(
+    agent_name="your-agent-name",
+    organization="your-organization",
+    api_key="your-api-key",
+)
+
+await agent.start()
+```
