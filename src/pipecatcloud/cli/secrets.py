@@ -8,21 +8,21 @@ import questionary
 import typer
 from loguru import logger
 from rich import box
-from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
 from pipecatcloud import PIPECAT_CLI_NAME
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
+from pipecatcloud._utils.console_utils import console, print_api_error
 from pipecatcloud._utils.http_utils import construct_api_url
 from pipecatcloud.cli import PANEL_TITLE_ERROR, PANEL_TITLE_SUCCESS
 
 secrets_cli = typer.Typer(
-    name="secrets", help="Secret management.", no_args_is_help=True
+    name="secrets", help="Secret and image pull secret management", no_args_is_help=True
 )
 
-console = Console()
 
 # ---- Methods ----
 
@@ -45,6 +45,11 @@ def validate_secrets(secrets: dict):
             console.print(
                 "[red]Error: Secret names must contain only alphanumeric characters, underscores, and hyphens.[/red]")
             return typer.Exit(1)
+
+
+def validate_secret_name(name: str):
+    valid_name_pattern = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$')
+    return bool(valid_name_pattern.match(name))
 
 
 async def _get_secret_set(name: str, org: str, token: str):
@@ -96,7 +101,7 @@ async def _create_image_pull_secret(name: str, host: str, credentials: str, org:
             "secretValue": credentials,
             "host": host
         })
-        response.raise_for_status()
+        return response
 
 
 # ---- Commands ----
@@ -121,11 +126,22 @@ async def set(
     ),
     skip_confirm: boolean = typer.Option(
         False,
-        "--s",
+        "--skip",
         "-s",
         help="Skip confirmations / force creation or update",
+    ),
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization to create secret set in",
     )
 ):
+    if not validate_secret_name(name):
+        console.print(
+            "[red]Secret set name must only contain characters, numbers and hyphens.[/red]")
+        return typer.Exit(1)
+
     if not secrets and not from_file:
         console.print(
             "[red]Command requires either passed key-values or relative file path. See --help for more information.[/red]")
@@ -136,6 +152,7 @@ async def set(
         return typer.Exit(1)
 
     secrets_dict = {}
+    org = organization or ctx.obj["org"]
 
     # Load file if provided
     if from_file:
@@ -232,7 +249,7 @@ async def set(
     existing_set = None
     with console.status(f"[dim]Retrieving secret set [bold]'{name}'[/bold][/dim]", spinner="dots"):
         try:
-            existing_set = await _get_secret_set(name, ctx.obj["org"], ctx.obj["token"])
+            existing_set = await _get_secret_set(name, org, ctx.obj["token"])
         except Exception as e:
             console.print(Panel(
                 f"[red]Unable to retrieve secret set. Operation failed with error: {e}[/red]",
@@ -264,11 +281,11 @@ async def set(
     try:
         with console.status(f"{'Modifying' if existing_set else 'Creating'} secret set [bold]'{name}'[/bold]", spinner="dots"):
             for key, value in secrets_dict.items():
-                await _create_secret(name, key, value, ctx.obj["org"], ctx.obj["token"])
+                await _create_secret(name, key, value, org, ctx.obj["token"])
     except Exception as e:
         console.print(Panel(
             f"[red]Unable to create secret set. Operation failed with error: {e}[/red]",
-            title=f"[red]{PANEL_TITLE_ERROR}[/red]",
+            title=f"[bold red]{PANEL_TITLE_ERROR}[/bold red]",
             title_align="left",
             border_style="red",
         ))
@@ -283,7 +300,7 @@ async def set(
     console.print(
         Panel(
             message,
-            title=f"[green]{PANEL_TITLE_SUCCESS}[/green]",
+            title=f"[bold green]{PANEL_TITLE_SUCCESS}[/bold green]",
             title_align="left",
             border_style="green",
         ))
@@ -301,12 +318,26 @@ async def unset(
     secret_key: str = typer.Argument(
         None,
         help="Name of the secret to delete e.g. 'my-secret'",
+    ),
+    skip_confirm: boolean = typer.Option(
+        False,
+        "--skip",
+        "-s",
+        help="Skip confirmations / force creation or update",
     )
 ):
     if not name or not secret_key:
         console.print(
             "[red]Error: Secret set name and secret name must be provided. Please reference --help for more information.[/red]")
         return typer.Exit(1)
+
+    # Confirm to proceed
+    if not skip_confirm:
+        confirm = await questionary.confirm(
+            f"Are you sure you want to unset secret with key '{secret_key}' from set '{name}'?").ask_async()
+        if not confirm:
+            console.print("[bold red]Secret key unset cancelled[/bold red]")
+            return typer.Exit(1)
 
     try:
         with console.status(f"Deleting secret [bold]'{secret_key}'[/bold] from secret set [bold]'{name}'[/bold]", spinner="dots"):
@@ -315,7 +346,7 @@ async def unset(
         console.print(
             Panel(
                 f"[red]Unable to delete secret '{secret_key}' from secret set '{name}'. Are you sure it exists?[/red]",
-                title=f"[red]{PANEL_TITLE_ERROR}[/red]",
+                title=f"[bold red]{PANEL_TITLE_ERROR}[/bold red]",
                 title_align="left",
                 border_style="red",
             ))
@@ -323,14 +354,14 @@ async def unset(
 
     console.print(
         Panel(
-            f"[bold green]Secret '{secret_key}' deleted successfully from secret set '{name}'[/bold green]",
-            title=f"[green]{PANEL_TITLE_SUCCESS}[/green]",
+            f"Secret [bold green]'{secret_key}'[/bold green] deleted successfully from secret set [bold green]'{name}'[/bold green]",
+            title=f"[bold green]{PANEL_TITLE_SUCCESS}[/bold green]",
             title_align="left",
             border_style="green",
         ))
 
 
-@secrets_cli.command(name="list", help="List secrets for active organization")
+@secrets_cli.command(name="list", help="List secret sets and set keys")
 @synchronizer.create_blocking
 @requires_login
 async def list(
@@ -344,12 +375,17 @@ async def list(
         "--sets",
         "-s",
         help="Filter results to show secret sets only (no image pull secrets)",
+    ),
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o"
     )
 ):
     token = ctx.obj["token"]
-    org = ctx.obj["org"]
+    org = organization or ctx.obj["org"]
 
-    status_title = "Retrieving secret sets for organization"
+    status_title = "Retrieving secret sets"
 
     logger.debug(f"Secret set name to lookup: {name}")
 
@@ -362,7 +398,7 @@ async def list(
     logger.debug(f"Requesting secrets from {request_url}")
 
     try:
-        with console.status(status_title, spinner="dots"):
+        with console.status(f"[dim]{status_title}[/dim]", spinner="dots"):
             async with aiohttp.ClientSession() as session:
                 response = await session.get(request_url, headers={"Authorization": f"Bearer {token}"})
                 response.raise_for_status()
@@ -402,20 +438,15 @@ async def list(
                     else:
                         for secret_set in filtered_sets:
                             table.add_row(secret_set["name"])
-                    console.print(Panel(
-                        table,
-                        title=f"[bold]Secret sets for organization [green]{org}[/green][/bold]",
-                        title_align="left",
-                    ))
+
+                    console.success(table)
 
     except Exception as e:
         logger.debug(str(e))
-        console.print(Panel(
-            "[red]Unable to retrieve secret sets. Please contact support.[/red]",
-            title=f"[red]{PANEL_TITLE_ERROR}[/red]",
-            title_align="left",
-            border_style="red",
-        ))
+        message = "[red]Unable to retrieve secrets. Please contact support.[/red]" if not org else f"[red]Unable to retrieve secrets from [bold]{org}[/bold]. Please contact support.[/red]"
+        if name:
+            message = f"[red]Unable to retrieve secret set with name [bold]{name}[/bold]. Does it exist?"
+        console.error(message)
 
 
 @secrets_cli.command(name="delete", help="Delete a secret set from active organization")
@@ -424,29 +455,37 @@ async def list(
 async def delete(
     ctx: typer.Context,
     name: str = typer.Argument(
-        None,
         help="Name of the secret set to delete e.g. 'my-secret-set'"
     ),
+    skip_confirm: boolean = typer.Option(
+        False,
+        "--skip",
+        "-s",
+        help="Skip confirmations / force creation or update",
+    ),
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+    )
 ):
-    if not name:
-        console.print(
-            "[red]Error: Secret set name must be provided. Please reference --help for more information.[/red]")
-        return typer.Exit(1)
+    org = organization or ctx.obj["org"]
 
     # Confirm to proceed
-    confirm = await questionary.confirm(
-        f"Are you sure you want to delete secret set '{name}'?").ask_async()
-    if not confirm:
-        console.print("[bold red]Secret deletion cancelled[/bold red]")
-        return typer.Exit(1)
+    if not skip_confirm:
+        confirm = await questionary.confirm(
+            f"Are you sure you want to delete secret set '{name}'?").ask_async()
+        if not confirm:
+            console.print("[bold red]Secret deletion cancelled[/bold red]")
+            return typer.Exit(1)
 
     try:
         with console.status(f"Deleting secret set [bold]'{name}'[/bold]", spinner="dots"):
-            await _delete_secret_set(name, ctx.obj["org"], ctx.obj["token"])
+            await _delete_secret_set(name, org, ctx.obj["token"])
     except Exception:
         console.print(Panel(
             f"[red]Unable to delete secret set '{name}'. Are you sure it exists?[/red]",
-            title=f"[red]{PANEL_TITLE_ERROR}[/red]",
+            title=f"[bold red]{PANEL_TITLE_ERROR}[/bold red]",
             title_align="left",
             border_style="red",
         ))
@@ -454,8 +493,8 @@ async def delete(
 
     console.print(
         Panel(
-            f"[bold green]Secret set '{name}' deleted successfully[/bold green]",
-            title=f"[green]{PANEL_TITLE_SUCCESS}[/green]",
+            f"Secret set [bold green]'{name}'[/bold green] deleted successfully",
+            title=f"[bold green]{PANEL_TITLE_SUCCESS}[/bold green]",
             title_align="left",
             border_style="green",
         ))
@@ -468,11 +507,9 @@ async def delete(
 async def image_pull_secret(
     ctx: typer.Context,
     name: str = typer.Argument(
-        None,
         help="Name of the image pull secret to reference in deployment e.g. 'my-image-pull-secret'"
     ),
     host: str = typer.Argument(
-        None,
         help="Host address of the image repository e.g. https://index.docker.io/v1/"
     ),
     credentials: str = typer.Argument(
@@ -481,8 +518,9 @@ async def image_pull_secret(
     ),
     base64encode: bool = typer.Option(
         True,
-        "--base64encode",
-        help="Encode credentials in base64 format"
+        "--encode",
+        "-e",
+        help="base64 encode credentials for added security"
     )
 ):
     org = ctx.obj["org"]
@@ -495,9 +533,9 @@ async def image_pull_secret(
 
     if not credentials:
         username = await questionary.text(
-            f"Enter username for image repository '{host}'").ask_async()
+            f"Username for image repository '{host}'").ask_async()
         password = await questionary.password(
-            f"Enter password for image repository '{host}'").ask_async()
+            f"Password for image repository '{host}'").ask_async()
         if not username or not password:
             console.print("[bold red]Image pull secret creation cancelled[/bold red]")
             return typer.Exit(1)
@@ -507,41 +545,47 @@ async def image_pull_secret(
         credentials = base64.b64encode(credentials.encode()).decode()
 
     # Check if secret already exists
-    with console.status(f"Checking if image pull secret '{name}' already exists", spinner="dots"):
-        request_url = f"{construct_api_url('secrets_path').format(org=org)}"
-        async with aiohttp.ClientSession() as session:
-            response = await session.get(request_url, headers={"Authorization": f"Bearer {token}"})
-            response.raise_for_status()
-            data = await response.json()
-            existing_secret = next(
-                (s for s in data["sets"] if s["name"] == name and s["type"] == "imagePullSecret"), None)
-            if existing_secret:
-                console.print(
-                    Panel(
-                        f"[red]Image pull secret '{name}' already exists. Please choose a different name.[/red]",
-                        title=f"[red]{PANEL_TITLE_ERROR}[/red]",
-                        title_align="left",
-                        border_style="red",
-                    ))
-                return typer.Exit(1)
-
+    error_code = None
     try:
-        with console.status(f"Creating image pull secret [bold]'{name}'[/bold]", spinner="dots"):
-            await _create_image_pull_secret(name, host, credentials, org, token)
+        with Live(console.status(f"[dim]Checking if image pull secret '{name}' already exists[/dim]", spinner="dots"), refresh_per_second=4) as live:
+            request_url = f"{construct_api_url('secrets_path').format(org=org)}"
+            async with aiohttp.ClientSession() as session:
+                response = await session.get(request_url, headers={"Authorization": f"Bearer {token}"})
+                if response.status != 200:
+                    error_code = str(response.status)
+                    response.raise_for_status()
+                data = await response.json()
+                existing_secret = next(
+                    (s for s in data["sets"] if s["name"] == name and s["type"] == "imagePullSecret"), None)
+                if existing_secret:
+                    live.stop()
+                    console.print(
+                        Panel(
+                            f"[red]Image pull secret '[bold]{name}'[/bold] already exists. Please choose a different name or delete the existing one first.[/red]",
+                            title=f"[bold red]{PANEL_TITLE_ERROR}[/bold red]",
+                            title_align="left",
+                            border_style="red",
+                        ))
+                    return typer.Exit(1)
+
+            live.update(
+                console.status(
+                    f"[dim]Creating image pull secret [bold]'{name}'[/bold][/dim]",
+                    spinner="dots"))
+
+            resp = await _create_image_pull_secret(name, host, credentials, org, token)
+            if resp.status != 200:
+                error_code = str(resp.status)
+                resp.raise_for_status()
     except Exception as e:
-        console.print(
-            Panel(
-                f"[red]Unable to create image pull secret '{name}'. Operation failed with error: {e}[/red]",
-                title=f"[red]{PANEL_TITLE_ERROR}[/red]",
-                title_align="left",
-                border_style="red",
-            ))
+        logger.debug(e)
+        print_api_error(error_code, title="Error creating image pull secret")
         return typer.Exit(1)
 
     console.print(
         Panel(
-            f"[bold green]Image pull secret '{name}' for {host} created successfully[/bold green]",
-            title=f"[green]{PANEL_TITLE_SUCCESS}[/green]",
+            f"Image pull secret [bold green]'{name}'[/bold green] for [bold green]{host}[/bold green] created successfully.",
+            title=f"[bold green]{PANEL_TITLE_SUCCESS}[/bold green]",
             title_align="left",
             border_style="green",
         ))

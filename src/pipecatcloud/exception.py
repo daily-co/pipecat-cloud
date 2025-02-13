@@ -24,7 +24,7 @@ class InvalidError(Error):
 
 
 class ConfigError(Error):
-    """Raised when user does something invalid."""
+    """Raised when config is unable to be stored or updated"""
 
 
 class AgentNotHealthyError(Error):

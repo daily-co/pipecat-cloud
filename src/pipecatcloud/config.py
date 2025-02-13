@@ -13,7 +13,9 @@ deploy_config_path: str = os.environ.get("PIPECAT_DEPLOY_CONFIG_PATH") or os.pat
     PIPECAT_DEPLOY_CONFIG_PATH
 )
 
-api_host: str = os.environ.get("PIPECAT_API_HOST") or "https://api.pipecat.cloud"
+api_host: str = os.environ.get("PIPECAT_API_HOST") or "https://api.pipecat.daily.co"
+
+dashboard_host: str = os.environ.get("PIPECAT_DASHBOARD_HOST") or "https://pipecat.daily.co"
 
 
 def _read_user_config():
@@ -76,7 +78,10 @@ def _store_user_config(token: str, org: str, additional_data: Optional[dict] = N
     if additional_data is not None:
         config_data[org].update(additional_data)
 
-    _write_user_config(config_data)
+    try:
+        _write_user_config(config_data)
+    except Exception:
+        raise ConfigError
 
 
 # Set _profile after _config_active_profile is defined

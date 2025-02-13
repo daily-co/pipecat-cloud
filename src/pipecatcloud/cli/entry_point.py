@@ -62,12 +62,11 @@ def pipecat(
     _version: bool = typer.Option(None, "--version", callback=version_callback, help="CLI version"),
     _config: bool = typer.Option(None, "--config", callback=config_callback, help="CLI config"),
 ):
+
     if not ctx.obj:
         ctx.obj = {}
 
-    # All commands require an active namespace (organization)
-    # The CLI reads config data and sets the users currently active org in context
-    # which is used as a default when an `--org` flag is not provided
+    # Configure dynamic CLI context properties
     ctx.obj["org"] = config.get("org")
     ctx.obj["token"] = config.get("token")
     ctx.obj["default_public_key"] = config.get("default_public_key", None)

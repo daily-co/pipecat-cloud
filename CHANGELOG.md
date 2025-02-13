@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.8] - 2025-02-03
 
 ### Added
-- `secrets set-from-file [set-name]` allowing you to create a secret set from .env file
+- `secrets set [set-name] --file` allowing you to create a secret set from .env file
 - `agent scale` to modify agent configuration without pushing a new image
 - `run` command for running bot.py files locally via FastAPI. This initial implementation is very basic and will be expanded in the future.
 
@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `start` command correctly clears the live terminal text
 - `pcc-deploy.toml` files now work as intended with `deploy` command
 - `deploy` method now passes configuration parameters correctly
+- Switching organizations will fully remove any default API tokens from the previously selected organization
 
 ### Changed
 - `secrets list` now takes an optional `--sets / -s` parameter that filters by secret sets or image pull secrets
