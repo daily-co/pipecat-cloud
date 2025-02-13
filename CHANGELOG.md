@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `secrets set [set-name] --file` allowing you to create a secret set from .env file
 - `agent scale` to modify agent configuration without pushing a new image
 - `run` command for running bot.py files locally via FastAPI. This initial implementation is very basic and will be expanded in the future.
+- `organizations select` allows passing an `--org / -o` option to bypass prompt
 
 ### Fixed
 - `secrets list` now correctly lists all secrets vs. just a single entry

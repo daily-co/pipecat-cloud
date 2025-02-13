@@ -44,7 +44,11 @@ class PipecatConsole(Console):
     def unauthorized(self):
         self.api_error("401", "Unauthorized", hide_subtitle=True)
 
-    def api_error(self, error_code: Optional[str], title: str, hide_subtitle: bool = False):
+    def api_error(
+            self,
+            error_code: Optional[str],
+            title: Optional[str] = "API Error",
+            hide_subtitle: bool = False):
         DEFAULT_ERROR_MESSAGE = "Unknown error. Please contact support."
         ERROR_MESSAGE = ERROR_CODES.get(error_code, None) if error_code else None
 
@@ -52,7 +56,6 @@ class PipecatConsole(Console):
             hide_subtitle = True
 
         error_message = ERROR_MESSAGE if ERROR_MESSAGE else DEFAULT_ERROR_MESSAGE
-
         self.print(
             Panel(
                 f"[red]{title}[/red]\n\n"

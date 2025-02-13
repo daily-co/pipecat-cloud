@@ -223,61 +223,30 @@ async def logout():
 @synchronizer.create_blocking
 @requires_login
 async def whomai():
-    with Live(console.status("[dim]Requesting current user data...[/dim]", spinner="dots"), transient=True) as live:
-        try:
-            user_data = await API.whoami()
+    try:
+        with Live(console.status("[dim]Requesting current user data...[/dim]", spinner="dots"), transient=True) as live:
+            user_data, error = await API.whoami(live=live)
+
+            if error:
+                API.print_error()
+                return typer.Exit()
 
             live.update(
                 console.status("[dim]Requesting user namespace / organization data...[/dim]"))
 
             # Retrieve default user organization
-            account_name, account_name_verbose = await API.organizations_current()
+            account, error = await API.organizations_current(live=live)
+            if error:
+                API.print_error()
+                return typer.Exit()
 
-            if not account_name or not account_name_verbose:
+            if not account["name"] or not account["verbose_name"]:
                 raise
 
             live.stop()
 
             console.success(
                 f"[bold]User ID:[/bold] {user_data['user']['userId']}\n"
-                f"[bold]Active Organization:[/bold] {account_name_verbose} [dim]({account_name})[/dim]", )
-        except Exception:
-            live.stop()
-            console.error("Unable to retrieve user data. Please contact support.")
-
-    """
-    async with aiohttp.ClientSession() as session:
-        try:
-            # Retrieve user data from whoami endpoint
-            with console.status("[dim]Obtaining user data[/dim]", spinner="dots"):
-                async with session.get(
-                    f"{construct_api_url('whoami_path')}",
-                    headers={"Authorization": f"Bearer {token}"},
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                    else:
-                        raise
-
-            # Retrieve default user organization
-            account_name, account_name_verbose = await _get_account_org(token, active_org)
-            if account_name is None:
-                raise
-
-            console.print(
-                Panel(
-                    f"[bold]User ID:[/bold] {data['user']['userId']}\n"
-                    f"[bold]Active Organization:[/bold] {account_name_verbose} [dim]({account_name})[/dim]",
-                    title="whoami",
-                    title_align="left",
-                    border_style="dim",
-                ))
-        except Exception:
-            console.print(Panel(
-                "[red]Failed to get user data. Please contact support.[/red]",
-                title=f"[red]{PANEL_TITLE_ERROR}[/red]",
-                title_align="left",
-                border_style="red",
-            ))
-            return
-    """
+                f"[bold]Active Organization:[/bold] {account['verbose_name']} [dim]({account['name']})[/dim]", )
+    except Exception:
+        console.error("Unable to obtain user data. Please contact support")

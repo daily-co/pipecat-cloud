@@ -84,6 +84,16 @@ def _store_user_config(token: str, org: str, additional_data: Optional[dict] = N
         raise ConfigError
 
 
+def update_user_config(data: dict, org: Optional[str] = None):
+    token = config.get("token")
+    organization = org or config.get("org")
+
+    if not token or not organization:
+        raise ValueError("Attempt to update config without a valid token or organization")
+
+    _store_user_config(token, str(organization), data)
+
+
 # Set _profile after _config_active_profile is defined
 _profile = os.environ.get("PIPECAT_PROFILE") or _config_active_profile()
 
