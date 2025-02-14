@@ -24,6 +24,7 @@ class _API():
     def __init__(self, token: Optional[str] = None):
         self.token = token
         self.error = None
+        self.bubble_next = False
 
     @staticmethod
     def construct_api_url(path: str) -> str:
@@ -46,6 +47,7 @@ class _API():
         url: str,
         params: Optional[dict] = None,
         json: Optional[dict] = None,
+        not_found_is_empty: bool = False
     ) -> Optional[dict]:
         async with aiohttp.ClientSession() as session:
             response = await session.request(
@@ -56,9 +58,10 @@ class _API():
                 json=json
             )
             if not response.ok:
+                if not_found_is_empty and response.status == 404:
+                    return None
                 self.error = response.status
                 response.raise_for_status()
-            response.raise_for_status()
 
             return await response.json()
 
@@ -69,14 +72,18 @@ class _API():
             self.error = None
             try:
                 result = await method_func(*args, **kwargs)
+                self.bubble_next = False
                 return result, self.error
             except Exception as e:
                 if live:
                     live.stop()
+
                 logger.debug(e)
 
-                if self.error:
+                if self.error and not self.bubble_next:
                     self.print_error()
+
+                self.bubble_next = False
                 return None, self.error
         return wrapper
 
@@ -91,6 +98,10 @@ class _API():
             console.unauthorized()
         else:
             console.api_error(str(self.error))
+
+    def bubble_error(self):
+        self.bubble_next = True
+        return self
 
     # Auth
 
@@ -177,12 +188,75 @@ class _API():
             org: Organization ID
         """
         return self.create_api_method(self._api_key_delete)
-    """
 
-    # Secrets
+    # Secret
 
-    async def secrets_list(self, organization: Optional[str] = None) -> dict:
-        org = organization or config.get("org")
-        url = self.construct_api_url("secrets_path").format(org=org)
-        return await self._request("GET", url) or {}
-    """
+    async def _secrets_list(self, org: str, secret_set: Optional[str] = None) -> dict | None:
+        if secret_set:
+            url = f"{self.construct_api_url('secrets_path').format(org=org)}/{secret_set}"
+        else:
+            url = f"{self.construct_api_url('secrets_path').format(org=org)}"
+
+        result = await self._base_request("GET", url, not_found_is_empty=True) or {}
+
+        if self.error == 400:
+            print("OH NO")
+
+        if "sets" in result:
+            return result["sets"]
+
+        if "secrets" in result:
+            return result["secrets"]
+
+        return None
+
+    @property
+    def secrets_list(self):
+        """List secrets
+        Args:
+            org: Organization ID,
+            secret_set: (optional) name of secret set to lookup
+
+        """
+        return self.create_api_method(self._secrets_list)
+
+    async def _secrets_upsert(self, data: dict, set_name: str, org: str) -> dict:
+        url = f"{self.construct_api_url('secrets_path').format(org=org)}/{set_name}"
+        return await self._base_request("PUT", url, json=data) or {}
+
+    @property
+    def secrets_upsert(self):
+        """Create / modify secret set.
+        Args:
+            data: key and value of secret to add (or credentials for image pull secrets)
+            set_name: name of set to create or update
+            org: Organization ID
+        """
+        return self.create_api_method(self._secrets_upsert)
+
+    async def _secrets_delete(self, set_name: str, secret_name: str, org: str) -> dict | None:
+        url = f"{self.construct_api_url('secrets_path').format(org=org)}/{set_name}/{secret_name}"
+        return await self._base_request("DELETE", url, not_found_is_empty=True)
+
+    @property
+    def secrets_delete(self):
+        """Delete secret from set
+        Args:
+            set_name: name of set to target
+            secret_name: name of secret to delete
+            org: Organization ID
+        """
+        return self.create_api_method(self._secrets_delete)
+
+    async def _secrets_delete_set(self, set_name: str, org: str) -> dict | None:
+        url = f"{self.construct_api_url('secrets_path').format(org=org)}/{set_name}"
+        return await self._base_request("DELETE", url, not_found_is_empty=True)
+
+    @property
+    def secrets_delete_set(self):
+        """Delete secret from set
+        Args:
+            set_name: name of set to target
+            org: Organization ID
+        """
+        return self.create_api_method(self._secrets_delete_set)

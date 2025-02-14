@@ -5,13 +5,14 @@ from loguru import logger
 from rich import print_json
 
 from pipecatcloud.cli.commands.auth import auth_cli
+from pipecatcloud.cli.commands.init import create_init_command
 from pipecatcloud.cli.commands.organizations import organization_cli
+from pipecatcloud.cli.commands.secrets import secrets_cli
 from pipecatcloud.cli.config import config
 
 # from pipecatcloud.cli.agent import agent_cli
 # from pipecatcloud.cli.deploy import create_deploy_command
 # from pipecatcloud.cli.run import create_run_command
-# from pipecatcloud.cli.secrets import secrets_cli
 
 logger.remove()
 logger.add(sys.stderr, level=str(config.get("cli_log_level", "INFO")).upper())
@@ -67,8 +68,10 @@ def pipecat(
 
 # create_deploy_command(entrypoint_cli_typer)
 # create_run_command(entrypoint_cli_typer)
+create_init_command(entrypoint_cli_typer)
 entrypoint_cli_typer.add_typer(auth_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(organization_cli, rich_help_panel="Commands")
+entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")
+
 # entrypoint_cli_typer.add_typer(agent_cli, rich_help_panel="Commands")
-# entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")
 entrypoint_cli = typer.main.get_command(entrypoint_cli_typer)
