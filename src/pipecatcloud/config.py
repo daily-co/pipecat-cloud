@@ -5,18 +5,20 @@ from typing import Optional
 from pipecatcloud import PIPECAT_CREDENTIALS_PATH, PIPECAT_DEPLOY_CONFIG_PATH
 from pipecatcloud.exception import ConfigError
 
+# ---- Constants
+
+
 user_config_path: str = os.environ.get("PIPECAT_CONFIG_PATH") or os.path.expanduser(
     PIPECAT_CREDENTIALS_PATH
 )
-
 deploy_config_path: str = os.environ.get("PIPECAT_DEPLOY_CONFIG_PATH") or os.path.expanduser(
     PIPECAT_DEPLOY_CONFIG_PATH
 )
-
 api_host: str = os.environ.get("PIPECAT_API_HOST") or "https://api.pipecat.daily.co"
-
 dashboard_host: str = os.environ.get("PIPECAT_DASHBOARD_HOST") or "https://pipecat.daily.co"
 
+
+# ---- Config TOML methods
 
 def _read_user_config():
     config_data = {}
@@ -28,40 +30,58 @@ def _read_user_config():
         except Exception as exc:
             config_problem = str(exc)
         else:
-            if not all(isinstance(e, dict) for e in config_data.values()):
+            top_level_keys = {'token', 'org'}
+            org_sections = {k: v for k, v in config_data.items() if k not in top_level_keys}
+
+            if not all(isinstance(e, dict) for e in org_sections.values()):
                 raise ConfigError(
-                    "Pipecat Cloud config file is not valid TOML. Please log out and log back in.")
+                    "Pipecat Cloud config file is not valid TOML. Organization sections must be dictionaries. Please log out and log back in.")
             else:
                 config_problem = ""
         if config_problem:
             raise ConfigError(config_problem)
+
     return config_data
 
 
-# Initialize _user_config first
-_user_config = _read_user_config()
+user_config = _read_user_config()
 
 
-def config_profiles():
-    """List the available profiles in the toml file."""
-    return _user_config.keys()
-
-
-def _config_active_profile() -> typing.Optional[str]:
-    if not _user_config:
-        return None
-    return next(iter(_user_config.keys()))
-
-
-def _write_user_config(user_config):
+def _write_user_config(new_config):
     import toml
 
     with open(user_config_path, "w") as f:
-        toml.dump(user_config, f)
+        toml.dump(new_config, f)
 
 
-def _remove_user_config():
+def remove_user_config():
     os.remove(user_config_path)
+
+
+def update_user_config(
+        token: Optional[str] = None,
+        active_org: Optional[str] = None,
+        additional_data: Optional[dict] = None):
+    # Load the existing toml (if it exists)
+    existing_config = _read_user_config()
+
+    # Only update top level token if provided
+    if token:
+        existing_config["token"] = token
+
+    if active_org:
+        existing_config["org"] = active_org
+        if active_org not in existing_config:
+            existing_config[active_org] = {}
+        if additional_data:
+            existing_config[active_org].update(additional_data)
+    elif additional_data:
+        raise ValueError("Attempt to store additional data without specifying namespace")
+
+    try:
+        _write_user_config(existing_config)
+    except Exception:
+        raise ConfigError
 
 
 def _store_user_config(token: str, org: str, additional_data: Optional[dict] = None):
@@ -84,18 +104,7 @@ def _store_user_config(token: str, org: str, additional_data: Optional[dict] = N
         raise ConfigError
 
 
-def update_user_config(data: dict, org: Optional[str] = None):
-    token = config.get("token")
-    organization = org or config.get("org")
-
-    if not token or not organization:
-        raise ValueError("Attempt to update config without a valid token or organization")
-
-    _store_user_config(token, str(organization), data)
-
-
-# Set _profile after _config_active_profile is defined
-_profile = os.environ.get("PIPECAT_PROFILE") or _config_active_profile()
+# ---- Setting configuration methods
 
 
 class _Setting(typing.NamedTuple):
@@ -131,7 +140,7 @@ class Config:
     def __init__(self):
         pass
 
-    def get(self, key, profile=None, use_env=True):
+    def get(self, key, default=None, use_env=True):
         """Looks up a configuration value.
 
         Will check (in decreasing order of priority):
@@ -139,19 +148,22 @@ class Config:
         2. Settings in the user's .toml configuration file
         3. The default value of the setting
         """
-        if profile is None:
-            profile = _profile
+        org_profile = user_config.get(user_config.get("org", ""), {}) if user_config else {}
 
         s = _SETTINGS[key]
         env_var_key = "PIPECAT_" + key.upper()
         if use_env and env_var_key in os.environ:
             return s.transform(os.environ[env_var_key])
-        elif profile is not None and profile in _user_config and key in _user_config[profile]:
-            return s.transform(_user_config[profile][key])
-        elif key == "org":
-            return profile
-        else:
+        # Obtain any top level config items from the user config
+        elif user_config is not None and key in user_config:
+            return s.transform(user_config[key])
+        # Obtain any current org specific values
+        elif org_profile is not None and key in org_profile:
+            return s.transform(org_profile[key])
+        elif s.default:
             return s.default
+        else:
+            return default
 
     def override_locally(self, key: str, value: str):
         try:

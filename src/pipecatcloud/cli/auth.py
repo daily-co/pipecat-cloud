@@ -16,13 +16,12 @@ from pipecatcloud._utils.console_utils import console
 from pipecatcloud._utils.http_utils import construct_api_url
 from pipecatcloud.api import API
 from pipecatcloud.config import (
-    _remove_user_config,
-    _store_user_config,
     config,
     dashboard_host,
+    remove_user_config,
+    update_user_config,
     user_config_path,
 )
-from pipecatcloud.exception import ConfigError
 
 auth_cli = typer.Typer(name="auth", help="Manage Pipecat Cloud credentials.", no_args_is_help=True)
 
@@ -33,19 +32,19 @@ class _AuthFlow:
 
     @asynccontextmanager
     async def start(self) -> AsyncGenerator[Tuple[Optional[str], Optional[str]], None]:
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.post(f"{construct_api_url('login_path')}") as resp:
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"{API.construct_api_url('login_path')}"
+                logger.debug(url)
+                async with session.post(url) as resp:
                     if resp.status != 200:
                         raise Exception(f"Failed to start auth flow: {resp.status}")
                     data = await resp.json()
                     self.token_flow_id = data["token_flow_id"]
                     self.wait_secret = data["wait_secret"]
                     web_url = data["web_url"]
-
                     yield (self.token_flow_id, web_url)
-            except Exception:
-                pass
+        except Exception:
             yield (None, None)
 
     async def finish(self, timeout: float = 40.0, network_timeout: float = 5.0) -> Optional[str]:
@@ -88,22 +87,6 @@ def _open_url(url: str) -> bool:
         return False
 
 
-def _set_credentials(
-    token: str,
-    account_org: str,
-) -> bool:
-    try:
-        _store_user_config(token, account_org)
-        return True
-    except ConfigError:
-        console.error(
-            f"Unable to store user config in path {user_config_path}. Is this folder write enabled?"
-        )
-    except Exception as e:
-        raise e
-    return False
-
-
 async def _get_account_org(
         token: str, active_org: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
 
@@ -135,9 +118,11 @@ async def _get_account_org(
 
 @auth_cli.command(name="login", help="Login to Pipecat Cloud and get a new token")
 @synchronizer.create_blocking
-async def login(ctx: typer.Context):
-    active_org = ctx.obj["org"]
+async def login():
+    active_org = config.get("org")
     auth_flow = _AuthFlow()
+
+    logger.debug(f"Current active org: {active_org}")
 
     try:
         async with auth_flow.start() as (token_flow_id, web_url):
@@ -180,39 +165,42 @@ async def login(ctx: typer.Context):
                         spinner="dots"))
 
                 # Retrieve user namespace
-                if not active_org:
-                    try:
-                        account_name, account_name_verbose = await _get_account_org(result)
-                        live.stop()
-                        logger.debug(
-                            f"Setting namespace to {account_name_verbose} ({account_name})")
-                        if account_name is None:
-                            raise
-                    except Exception:
-                        live.stop()
-                        console.error(
-                            "Account has no associated namespace. Have you completed the onboarding process? Please first sign in via the web dashboard.")
-                        return
-                else:
-                    account_name = active_org
+                try:
+                    account_name, account_name_verbose = await _get_account_org(result, active_org)
+                    live.stop()
+                    logger.debug(
+                        f"Setting namespace to {account_name_verbose} ({account_name})")
+                    if account_name is None:
+                        raise
+                except Exception:
+                    live.stop()
+                    console.error(
+                        "Account has no associated namespace. Have you completed the onboarding process? Please first sign in via the web dashboard.")
+                    return typer.Exit()
 
-            if _set_credentials(result, account_name):
-                console.success(
-                    "Web authentication finished successfully!\n"
-                    f"[dim]Account details stored to [magenta]{user_config_path}[/magenta][/dim]"
-                )
-    except Exception:
-        pass
+            console.success(
+                "Web authentication finished successfully!\n"
+                f"[dim]Account details stored to [magenta]{user_config_path}[/magenta][/dim]"
+            )
+
+    except Exception as e:
+        logger.debug(e)
+        console.error("Unexpected login error occured. Please contact support.")
+
+    console.status("[dim]Storing credentials...[/dim]")
+
+    update_user_config(result, account_name)
 
 
 # ----- Logut
+
 
 @auth_cli.command(name="logout", help="Logout from Pipecat Cloud")
 @synchronizer.create_blocking
 @requires_login
 async def logout():
     with console.status("Removing user ID", spinner="dots"):
-        _remove_user_config()
+        remove_user_config()
 
     console.success(
         "User credentials for Pipecat Cloud removed. Please sign out via dashboard to fully revoke session.",

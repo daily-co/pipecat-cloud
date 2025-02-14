@@ -12,7 +12,7 @@ from pipecatcloud.cli.secrets import secrets_cli
 from pipecatcloud.config import config
 
 logger.remove()
-logger.add(sys.stderr, level=str(config.get("cli_log_level", "INFO")))
+logger.add(sys.stderr, level=str(config.get("cli_log_level", "INFO")).upper())
 
 
 def version_callback(value: bool):
@@ -62,15 +62,15 @@ def pipecat(
     _version: bool = typer.Option(None, "--version", callback=version_callback, help="CLI version"),
     _config: bool = typer.Option(None, "--config", callback=config_callback, help="CLI config"),
 ):
-
+    pass
+    """
     if not ctx.obj:
         ctx.obj = {}
 
     # Configure dynamic CLI context properties
-    ctx.obj["org"] = config.get("org")
     ctx.obj["token"] = config.get("token")
-    ctx.obj["default_public_key"] = config.get("default_public_key", None)
-    ctx.obj["default_public_key_name"] = config.get("default_public_key_name", None)
+    ctx.obj["org"] = config.get("org")
+    """
 
 
 create_deploy_command(entrypoint_cli_typer)

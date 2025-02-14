@@ -24,7 +24,8 @@ class _API():
     def __init__(self):
         self.error = None
 
-    def construct_api_url(self, path: str) -> str:
+    @staticmethod
+    def construct_api_url(path: str) -> str:
         if not config.get("server_url", ""):
             raise ValueError("Server URL is not set")
 
@@ -64,10 +65,10 @@ class _API():
     def create_api_method(self, method_func: Callable) -> Callable:
         """Factory method that wraps API methods with error handling and live context"""
         @wraps(method_func)
-        async def wrapper(live=None, **kwargs):
+        async def wrapper(*args, live=None, **kwargs):
             self.error = None
             try:
-                result = await method_func(**kwargs)
+                result = await method_func(*args, **kwargs)
                 return result, self.error
             except Exception as e:
                 if live:
@@ -138,18 +139,46 @@ class _API():
     def organizations(self):
         return self.create_api_method(self._organizations)
 
-    """
-
-
     # API Keys
 
-    async def api_keys(self, org) -> dict:
+    async def _api_keys(self, org) -> dict:
         url = self.construct_api_url("api_keys_path").format(org=org)
-        return await self._request("GET", url) or {}
+        return await self._base_request("GET", url) or {}
 
-    async def api_key_create(self, api_key_name: str, org: str) -> dict:
+    @property
+    def api_keys(self):
+        """Get API keys for an organization.
+        Args:
+            org: Organization ID
+        """
+        return self.create_api_method(self._api_keys)
+
+    async def _api_key_create(self, api_key_name: str, org: str) -> dict:
         url = self.construct_api_url("api_keys_path").format(org=org)
-        return await self._request("POST", url, json={"name": api_key_name, "type": "public"}) or {}
+        return await self._base_request("POST", url, json={"name": api_key_name, "type": "public"}) or {}
+
+    @property
+    def api_key_create(self):
+        """Create API keys for an organization.
+        Args:
+            api_key_name: Human readable name for API key
+            org: Organization ID
+        """
+        return self.create_api_method(self._api_key_create)
+
+    async def _api_key_delete(self, api_key_id: str, org: str) -> dict:
+        url = f"{self.construct_api_url('api_keys_path').format(org=org)}/{api_key_id}"
+        return await self._base_request("DELETE", url) or {}
+
+    @property
+    def api_key_delete(self):
+        """Delete API keys for an organization.
+        Args:
+            api_key_id: Human readable name for API key
+            org: Organization ID
+        """
+        return self.create_api_method(self._api_key_delete)
+    """
 
     # Secrets
 
