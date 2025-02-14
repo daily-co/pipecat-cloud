@@ -51,7 +51,7 @@ class _AuthFlow:
             while (asyncio.get_event_loop().time() - start_time) < timeout:
                 try:
                     async with session.get(
-                        f"{config.get('server_url')}{config.get('login_status_path')}",
+                        f"{config.get('api_host')}{config.get('login_status_path')}",
                         params={
                             "token_flow_id": self.token_flow_id,
                             "wait_secret": self.wait_secret
@@ -87,7 +87,6 @@ def _open_url(url: str) -> bool:
 
 async def _get_account_org(
         token: str, active_org: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
-
     async with aiohttp.ClientSession() as session:
         async with session.get(
             f"{API.construct_api_url('organization_path')}",
@@ -120,7 +119,8 @@ async def login():
     active_org = config.get("org")
     auth_flow = _AuthFlow()
 
-    logger.debug(f"Current active org: {active_org}")
+    if active_org:
+        logger.debug(f"Current active org: {active_org}")
 
     try:
         async with auth_flow.start() as (token_flow_id, web_url):
@@ -145,7 +145,9 @@ async def login():
                     console.print(
                         "[bold]Please visit the following URL to confirm login[/bold]\n")
                     console.print(web_url)
+
                 live.start()
+
                 for attempt in itertools.count():
                     result = await auth_flow.finish()
                     if result is not None:
@@ -155,14 +157,12 @@ async def login():
                 if result is None:
                     live.stop()
                     console.error("Authentication failed")
-                    return
+                    return typer.Exit()
 
                 live.update(
                     console.status(
                         "[dim]Obtaining account data[/dim]",
                         spinner="dots"))
-
-                # Retrieve user namespace
                 try:
                     account_name, account_name_verbose = await _get_account_org(result, active_org)
                     live.stop()
@@ -209,6 +209,8 @@ async def logout():
 @synchronizer.create_blocking
 @requires_login
 async def whomai():
+    org = config.get("org")
+
     try:
         with Live(console.status("[dim]Requesting current user data...[/dim]", spinner="dots"), transient=True) as live:
             user_data, error = await API.whoami(live=live)
@@ -221,7 +223,7 @@ async def whomai():
                 console.status("[dim]Requesting user namespace / organization data...[/dim]"))
 
             # Retrieve default user organization
-            account, error = await API.organizations_current(live=live)
+            account, error = await API.organizations_current(org=org, live=live)
             if error:
                 API.print_error()
                 return typer.Exit()

@@ -5,7 +5,7 @@ import aiohttp
 from loguru import logger
 
 from pipecatcloud._utils.agent_utils import handle_agent_start_error
-from pipecatcloud.cli.api import API
+from pipecatcloud.api import API
 from pipecatcloud.exception import AgentStartError
 
 
