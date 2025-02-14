@@ -67,8 +67,4 @@ class PipecatConsole(Console):
                 border_style="red"))
 
 
-def print_api_error(error_code: Optional[str], title: str, hide_subtitle: bool = False):
-    print("NOT IMPLEMENT REMOVE ME")
-
-
 console = PipecatConsole()

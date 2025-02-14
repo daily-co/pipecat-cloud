@@ -16,9 +16,9 @@ from pipecatcloud.cli.config import (
 )
 
 organization_cli = typer.Typer(
-    name="organizations", help="User organizations.", no_args_is_help=True
+    name="organizations", help="User organizations", no_args_is_help=True
 )
-keys_cli = typer.Typer(name="keys", help="API key management commands.", no_args_is_help=True)
+keys_cli = typer.Typer(name="keys", help="API key management commands", no_args_is_help=True)
 organization_cli.add_typer(keys_cli)
 
 
@@ -240,7 +240,7 @@ async def create_key(
         org,
     )
 
-    console.success(table)
+    console.success(table, subtitle="Using as default in local config")
 
 
 @keys_cli.command(name="delete", help="Delete an API key for an organization.")

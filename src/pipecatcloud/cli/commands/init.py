@@ -7,7 +7,7 @@ from pipecatcloud._utils.console_utils import console
 
 
 def create_init_command(app: typer.Typer):
-    @app.command(name="init", help="Run an agent locally")
+    @app.command(name="init", help="Initialize project directory with template files")
     @synchronizer.create_blocking
     async def init(
 

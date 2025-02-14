@@ -12,17 +12,16 @@ from rich.table import Table
 from pipecatcloud._utils.agent_utils import handle_agent_start_error
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
-from pipecatcloud._utils.console_utils import print_api_error
-from pipecatcloud._utils.http_utils import construct_api_url
-from pipecatcloud.cli import PANEL_TITLE_ERROR, PANEL_TITLE_SUCCESS
+from pipecatcloud._utils.console_utils import console
 
 agent_cli = typer.Typer(
-    name="agent", help="Agent management.", no_args_is_help=True
+    name="agent", help="Agent management", no_args_is_help=True
 )
 
 
 # ----- Agent Methods -----
 
+"""
 async def lookup_agent(token: str, org: str, agent_name: str) -> dict | None:
     try:
         error_code = None
@@ -40,9 +39,10 @@ async def lookup_agent(token: str, org: str, agent_name: str) -> dict | None:
         logger.debug(e)
         print_api_error(error_code, f"Unable to get deployments for {agent_name}")
         return None
-
+"""
 
 # ----- Agent Commands -----
+
 
 @agent_cli.command(name="status", help="Get status of agent deployment")
 @synchronizer.create_blocking
@@ -95,8 +95,12 @@ async def status(
                         condition['lastTransitionTime'],
                         f"[{'red' if condition['status'] == 'False' else 'green'}]{condition['status']}[/]",
                         condition['type'],
-                        condition.get('message', 'No message'),
-                        condition.get('reason', 'No reason'),
+                        condition.get(
+                            'message',
+                            'No message'),
+                        condition.get(
+                            'reason',
+                            'No reason'),
                     )
 
                 color = "bold green" if data['body']['ready'] else "bold yellow"
@@ -117,6 +121,13 @@ async def status(
     except Exception:
         print_api_error(error_code, f"Unable to get status for {agent_name}")
         return typer.Exit(1)
+
+
+@agent_cli.command(name="scale", help="Modify agent runtime configuration")
+@synchronizer.create_blocking
+@requires_login
+async def scale():
+    console.error("Not implemented")
 
 
 @agent_cli.command(name="list", help="List agents in an organization.")

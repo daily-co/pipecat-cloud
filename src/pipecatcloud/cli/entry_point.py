@@ -2,17 +2,17 @@ import sys
 
 import typer
 from loguru import logger
-from rich import print_json
-
-from pipecatcloud.cli.commands.auth import auth_cli
-from pipecatcloud.cli.commands.init import create_init_command
-from pipecatcloud.cli.commands.organizations import organization_cli
-from pipecatcloud.cli.commands.secrets import secrets_cli
-from pipecatcloud.cli.config import config
 
 # from pipecatcloud.cli.agent import agent_cli
 # from pipecatcloud.cli.deploy import create_deploy_command
-# from pipecatcloud.cli.run import create_run_command
+from pipecatcloud._utils.console_utils import console
+from pipecatcloud.cli.commands.auth import auth_cli
+from pipecatcloud.cli.commands.init import create_init_command
+from pipecatcloud.cli.commands.organizations import organization_cli
+from pipecatcloud.cli.commands.run import create_run_command
+from pipecatcloud.cli.commands.secrets import secrets_cli
+from pipecatcloud.cli.config import config
+from pipecatcloud.exception import ConfigFileError
 
 logger.remove()
 logger.add(sys.stderr, level=str(config.get("cli_log_level", "INFO")).upper())
@@ -33,17 +33,20 @@ def config_callback(value: bool):
 
         from pipecatcloud._utils.deploy_utils import load_deploy_config_file
 
-        # Check for deploy config
-        deploy_config = load_deploy_config_file()
-        if deploy_config:
-            print("Deploy config:")
-            print_json(data=deploy_config)
-
-            print("Config:")
-            print_json(data=config.to_dict())
-
+        # Print local config
         pprint(config.to_dict())
-        raise typer.Exit()
+
+        # Check for deploy config
+        try:
+            deploy_config = load_deploy_config_file()
+            if deploy_config:
+                console.print("Deploy config [dim](pcc-deploy.toml)[/dim]:")
+                console.print_json(data=deploy_config.to_dict())
+        except ConfigFileError as e:
+            console.error(
+                f"Malformed pcc-deploy.toml - Please correct errors and try again.\n\n{e}")
+
+    raise typer.Exit()
 
 
 entrypoint_cli_typer = typer.Typer(
@@ -67,7 +70,7 @@ def pipecat(
 
 
 # create_deploy_command(entrypoint_cli_typer)
-# create_run_command(entrypoint_cli_typer)
+create_run_command(entrypoint_cli_typer)
 create_init_command(entrypoint_cli_typer)
 entrypoint_cli_typer.add_typer(auth_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(organization_cli, rich_help_panel="Commands")

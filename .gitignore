@@ -1,3 +1,5 @@
+pcc-deploy.toml
+
 # Python
 __pycache__/
 *.py[cod]

@@ -21,7 +21,7 @@ from pipecatcloud.cli.config import (
     user_config_path,
 )
 
-auth_cli = typer.Typer(name="auth", help="Manage Pipecat Cloud credentials.", no_args_is_help=True)
+auth_cli = typer.Typer(name="auth", help="Manage Pipecat Cloud credentials", no_args_is_help=True)
 
 
 class _AuthFlow:

@@ -5,7 +5,11 @@ from pipecatcloud.errors import ERROR_CODES
 
 class Error(Exception):
     """Base class for exceptions in this module."""
+    pass
 
+
+class ConfigFileError(Exception):
+    """Error when config file is malformed"""
     pass
 
 

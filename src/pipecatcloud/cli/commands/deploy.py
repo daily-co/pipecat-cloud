@@ -3,18 +3,14 @@ from typing import Optional
 
 import aiohttp
 import typer
-from rich.console import Console, Group
+from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
+from pipecatcloud._utils.console_utils import console
 from pipecatcloud._utils.deploy_utils import load_deploy_config_file
-from pipecatcloud.cli import PANEL_TITLE_ERROR, PANEL_TITLE_SUCCESS
-
-console = Console()
-
-TEST_CONFIG_FILE = {}
 
 
 async def _poll_deployment_status(
@@ -99,7 +95,7 @@ async def _deploy(
     # Poll the deployment status until it's ready
     await _poll_deployment_status(token, organization, agent_name)
 
-# ----- Deploy
+# ----- Command
 
 
 def create_deploy_command(app: typer.Typer):
