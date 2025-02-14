@@ -41,6 +41,9 @@ class PipecatConsole(Console):
                 subtitle_align="left",
                 border_style="red"))
 
+    def cancel(self):
+        self.print("[yellow]Cancelled by user[/yellow]")
+
     def unauthorized(self):
         self.api_error("401", "Unauthorized", hide_subtitle=True)
 

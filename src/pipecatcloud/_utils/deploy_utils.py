@@ -10,8 +10,8 @@ from pipecatcloud.exception import ConfigFileError
 
 @dataclass
 class ScalingParams:
-    min_instances: Optional[int]
-    max_instances: Optional[int]
+    min_instances: Optional[int] = 0
+    max_instances: Optional[int] = 10
 
     def __attrs_post_init__(self):
         if self.min_instances is not None:
@@ -34,19 +34,23 @@ class ScalingParams:
 
 @dataclass
 class DeployConfigParams():
-    agent_name: str
-    image_url: Optional[str]
-    secret_set: Optional[str]
-    scaling: Optional[ScalingParams]
-    secrets: Optional[dict]
+    agent_name: Optional[str] = None
+    image: Optional[str] = None
+    image_credentials: Optional[str] = None
+    secret_set: Optional[str] = None
+    scaling: ScalingParams = ScalingParams()
+
+    def __attrs_post_init__(self):
+        if self.image is not None and ":" not in self.image:
+            raise ValueError("Provided image must include tag e.g. my-image:latest")
 
     def to_dict(self):
         return {
             "agent_name": self.agent_name,
-            "image_url": self.image_url,
+            "image": self.image,
+            "image_credentials": self.image_credentials,
             "secret_set": self.secret_set,
-            "scaling": self.scaling.to_dict() if self.scaling else None,
-            "secrets": self.secrets
+            "scaling": self.scaling.to_dict() if self.scaling else None
         }
 
 
@@ -61,20 +65,22 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             config_data = toml.load(f)
 
         # Extract scaling parameters if present
-        scaling_data = config_data.pop('scaling', None)
-        scaling_params = ScalingParams(**scaling_data) if scaling_data else None
+        scaling_data = config_data.pop('scaling', {})
+        scaling_params = ScalingParams(**scaling_data)
 
         # Create DeployConfigParams with validated data
         validated_config = DeployConfigParams(
-            agent_name=config_data['agent_name'],
-            image_url=config_data.get('image_url'),
-            secret_set=config_data.get('secret_set'),
+            **config_data,
             scaling=scaling_params,
-            secrets=config_data.get('secrets')
         )
 
         # Check for unexpected keys
-        expected_keys = {'agent_name', 'image_url', 'secret_set', 'scaling', 'secrets'}
+        expected_keys = {
+            'agent_name',
+            'image',
+            'image_credentials',
+            'secret_set',
+            'scaling'}
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:
             raise ConfigFileError(f"Unexpected keys in config file: {unexpected_keys}")

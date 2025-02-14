@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Local config now retains default keys when switching between organizations
 - Local config now retains defaukt keys when logging in again
+- `deploy` will check passed secret set exists before deployment
 - `secrets list` now takes an optional `--sets / -s` parameter that filters by secret sets or image pull secrets
 - `organizations keys create` now prompts you to set the newly created key as the default after creation (if active org matches)
 - `organizations keys delete` not prompts to confirm if selected key is currently your local config default

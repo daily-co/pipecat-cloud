@@ -4,9 +4,9 @@ import typer
 from loguru import logger
 
 # from pipecatcloud.cli.agent import agent_cli
-# from pipecatcloud.cli.deploy import create_deploy_command
 from pipecatcloud._utils.console_utils import console
 from pipecatcloud.cli.commands.auth import auth_cli
+from pipecatcloud.cli.commands.deploy import create_deploy_command
 from pipecatcloud.cli.commands.init import create_init_command
 from pipecatcloud.cli.commands.organizations import organization_cli
 from pipecatcloud.cli.commands.run import create_run_command
@@ -46,7 +46,7 @@ def config_callback(value: bool):
             console.error(
                 f"Malformed pcc-deploy.toml - Please correct errors and try again.\n\n{e}")
 
-    raise typer.Exit()
+        raise typer.Exit()
 
 
 entrypoint_cli_typer = typer.Typer(
@@ -69,9 +69,9 @@ def pipecat(
     pass
 
 
-# create_deploy_command(entrypoint_cli_typer)
 create_run_command(entrypoint_cli_typer)
 create_init_command(entrypoint_cli_typer)
+create_deploy_command(entrypoint_cli_typer)
 entrypoint_cli_typer.add_typer(auth_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(organization_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")

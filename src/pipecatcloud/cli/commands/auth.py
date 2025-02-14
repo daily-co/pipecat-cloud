@@ -216,7 +216,6 @@ async def whomai():
             user_data, error = await API.whoami(live=live)
 
             if error:
-                API.print_error()
                 return typer.Exit()
 
             live.update(

@@ -1,106 +1,153 @@
 import asyncio
-from typing import Optional
 
-import aiohttp
 import typer
 from rich.console import Group
+from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
-from pipecatcloud._utils.deploy_utils import load_deploy_config_file
+from pipecatcloud._utils.deploy_utils import (
+    DeployConfigParams,
+    ScalingParams,
+    load_deploy_config_file,
+)
+from pipecatcloud.cli import PIPECAT_CLI_NAME
+from pipecatcloud.cli.api import API
+from pipecatcloud.cli.config import config
 
-
-async def _poll_deployment_status(
-        token: str,
-        organization: str,
-        agent_id: str,
-        max_attempts: int = 10):
-
-    attempts = 0
-    while attempts < max_attempts:
-        with console.status(f"Monitoring status for deployment id: [bold]'{agent_id}'[/bold] (attempt {attempts + 1} of {max_attempts})", spinner="dots"):
-            async with aiohttp.ClientSession() as session:
-                response = await session.get(
-                    f"{construct_api_url('services_path').format(org=organization)}/{agent_id}",
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                data = await response.json()
-                if data["body"]["ready"]:
-                    console.print(Panel(
-                        f"[green]Agent '{agent_id}' is ready[/green]",
-                        title=f"[green]{PANEL_TITLE_SUCCESS}[/green]",
-                        title_align="left",
-                        border_style="green",
-                    ))
-                    break
-                """
-                if not data["body"]["ready"]:
-                    console.print(Panel(
-                        f"[red]Unable to deploy '{agent_id}'[/red]\n\n"
-                        f"[dim]Message from API:[/dim]\n{data['body']['conditions'][-1]['message']}",
-                        title=f"[red]{PANEL_TITLE_ERROR}[/red]",
-                        title_align="left",
-                        border_style="red",
-                    ))
-                    break
-                """
-                await asyncio.sleep(2)
-                attempts += 1
-
-
-async def _deploy(
-        token: str,
-        agent_name: str,
-        image: str,
-        deployment_config: dict,
-        credentials: Optional[str]):
-    organization = deployment_config.get("organization")
-    if not organization or not token:
-        console.print("[red]Not logged in[/red]")
-        return
-
-    try:
-        with console.status(f"Deploying [bold]'{agent_name}'[/bold]", spinner="dots"):
-            async with aiohttp.ClientSession() as session:
-                request_url = f"{construct_api_url('services_path').format(org=organization)}"
-                # Build request payload
-                payload = {
-                    "serviceName": agent_name,
-                    "image": image,
-                }
-                if deployment_config.get("secrets"):
-                    payload["secretSet"] = deployment_config["secrets"]
-
-                if credentials:
-                    payload["imagePullSecretSet"] = credentials
-
-                async with session.put(
-                    request_url,
-                    headers={"Authorization": f"Bearer {token}"},
-                    json=payload,
-                ) as resp:
-                    resp.raise_for_status()
-    except Exception as e:
-        console.print(Panel(
-            f"[red]Unable to deploy '{agent_name}'. {e}[/red]",
-            title=f"[red]{PANEL_TITLE_ERROR}[/red]",
-            title_align="left",
-            border_style="red",
-        ))
-        return typer.Exit(1)
-
-    # Poll the deployment status until it's ready
-    await _poll_deployment_status(token, organization, agent_name)
+MAX_ALIVE_CHECKS = 6
+ALIVE_CHECK_SLEEP = 5
 
 # ----- Command
 
 
+async def _deploy(params: DeployConfigParams, org, force: bool = False):
+    with Live(console.status("[dim]Preparing deployment...", spinner="dots")) as live:
+        """
+        # 1. Check for an existing deployment with this name
+        # if it exists, treat this as an update
+        # if not, treat this as a new deployment and require an image
+        """
+        existing_agent = False
+
+        data, error = await API.agent(agent_name=params.agent_name, org=org, live=live)
+
+        if error:
+            live.stop()
+            return typer.Exit(1)
+
+        if data:
+            existing_agent = True
+
+            if not force:
+                live.stop()
+                if not typer.confirm(
+                        f"Deployment for agent '{params.agent_name}' exists. Do you want to update it? Note: this will not interrupt any active sessions"):
+                    console.cancel()
+                    return typer.Exit()
+        else:
+            if not params.image:
+                live.stop()
+                console.error(
+                    "New agent deployments must include an image / repository url. Check --help for more information.")
+                return typer.Exit()
+
+        """
+        # 2. Check that provided secret set exists
+        """
+        if params.secret_set:
+            live.update(
+                console.status(f"[dim]Verifying secret set {params.secret_set} exists...[/dim]"))
+            secrets_exist, error = await API.secrets_list(secret_set=params.secret_set, org=org, live=live)
+
+            if error:
+                return typer.Exit()
+
+            if not secrets_exist:
+                live.stop()
+                console.error(
+                    f"Secret set [bold]'{params.secret_set}'[/bold] not found in namespace [bold]'{org}'[/bold]")
+                return typer.Exit()
+
+        """
+        # 3. Check that provided image pull secret exists
+        """
+        if params.image_credentials:
+            live.update(console.status(
+                f"[dim]Verifying image pull secret {params.image_credentials} exists...[/dim]"))
+            creds_exist, error = await API.bubble_error().secrets_list(secret_set=params.image_credentials, org=org, live=live)
+
+            if error:
+                if error == 400:
+                    creds_exist = True
+                else:
+                    API.print_error()
+                    return typer.Exit()
+
+            if not creds_exist:
+                live.stop()
+                console.error(
+                    f"Image pull secret with name [bold]'{params.image_credentials}'[/bold] not found in namespace [bold]'{org}'[/bold]")
+
+        live.update(console.status(
+            f"[dim]{'Updating' if existing_agent else 'Pushing'} agent manifest...[/dim]"))
+
+        result, error = await API.deploy(deploy_config=params, update=existing_agent, org=org, live=live)
+
+        if error:
+            return typer.Exit()
+
+        if not existing_agent and not result:
+            live.stop()
+            console.error("A problem occured during deployment. Please contact support.")
+
+        """
+        # 4. Poll status until healthy
+        """
+        attempts = 0
+        while attempts < MAX_ALIVE_CHECKS:
+            try:
+                live.update(
+                    console.status(
+                        f"[dim]Waiting for deployment to become ready (attempt: {attempts + 1})[dim]",
+                        spinner="bouncingBar"))
+                await asyncio.sleep(ALIVE_CHECK_SLEEP)
+
+                status, error = await API.agent(agent_name=params.agent_name, org=org, live=live)
+
+                if error:
+                    return typer.Exit()
+
+                if status["body"]["ready"]:
+                    live.stop()
+                    console.success(
+                        f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
+                        f"[dim]Start a session with your new agent[/dim]"
+                        f"Run [bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
+                        title_extra="Deployment complete"
+                    )
+                    break
+
+            except KeyboardInterrupt:
+                live.stop()
+                console.print(
+                    "\n[yellow]Deployment monitoring interrupted. The deployment may still be in progress.[/yellow]")
+                return typer.Exit()
+            attempts += 1
+
+        live.stop()
+        console.error(
+            f"Deployment did not enter ready state. Please check logs `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`")
+
+        return typer.Exit()
+
+
 def create_deploy_command(app: typer.Typer):
-    # Note we wrap the deploy command to avoid circular imports
-    @app.command(name="deploy", help="Deploy to Pipecat Cloud")
+    @app.command(name="deploy", help="Deploy agent to Pipecat Cloud")
     @synchronizer.create_blocking
     @requires_login
     async def deploy(
@@ -114,79 +161,80 @@ def create_deploy_command(app: typer.Typer):
             help="Docker image location e.g. 'my-image:latest'",
             show_default=False),
         min_instances: int = typer.Option(
-            1,
+            None,
             "--min-instances",
+            "-min",
             help="Minimum number of instances to keep warm",
             rich_help_panel="Deployment Configuration",
-            min=1),
+            min=0),
         max_instances: int = typer.Option(
-            20,
+            None,
             "--max-instances",
+            "-max",
             help="Maximum number of allowed instances",
             rich_help_panel="Deployment Configuration",
-            min=0,
+            min=1,
             max=50),
-        secrets: str = typer.Option(
+        secret_set: str = typer.Option(
             None,
             "--secrets",
-            "--s",
+            "-s",
             help="Secret set to use for deployment",
             rich_help_panel="Deployment Configuration",
         ),
         organization: str = typer.Option(
             None,
             "--organization",
-            "--org",
+            "-o",
             help="Organization to deploy to",
             rich_help_panel="Deployment Configuration",
         ),
         credentials: str = typer.Option(
             None,
             "--credentials",
-            "--c",
+            "-c",
             help="Image pull secret to use for deployment",
             rich_help_panel="Deployment Configuration",
         ),
+        skip_confirm: bool = typer.Option(
+            False,
+            "--force",
+            "-f",
+            help="Force deployment / skip confirmation",
+        ),
     ):
-        token = ctx.obj["token"]
+        org = organization or config.get("org")
 
         # Compose deployment config from CLI options and config file (if provided)
         # Order of precedence:
         #   1. Arguments provided to the CLI deploy command
         #   2. Values from the config toml file
         #   3. CLI command defaults
-        deployment_config = {
-            "min_instances": min_instances or 1,
-            "max_instances": max_instances or 20,
-            "organization": organization or ctx.obj.get("org"),
-            "secrets": secrets,
-        }
 
-        # Collect passed values from CLI arguments (ignoring defaults)
-        passed_values = {}
-        for param in ctx.command.params:
-            if param.name == "agent_name" or param.name == "image":
-                continue
-            value = ctx.params.get(str(param.name))
-            # Only include if the value is different from the parameter's default
-            if value != param.default:
-                passed_values[param.name] = value
-        deployment_config.update(passed_values)
+        partial_config = DeployConfigParams()
 
-        # Merge with values from deployment config file
-        if deploy_config := load_deploy_config_file():
-            for key, value in deploy_config.items():
-                deployment_config.setdefault(key, value)
+        # Load values from deployment config file (if one exists)
+        try:
+            if deploy_config := load_deploy_config_file():
+                partial_config = deploy_config
+        except Exception as e:
+            console.error(str(e))
+            return typer.Exit()
 
-        final_agent_name = agent_name or deployment_config.get("agent_name")
-        final_image = image or deployment_config.get("image")
+        # Override any local config values from passed CLI arguments
+        partial_config.agent_name = agent_name or partial_config.agent_name
+        partial_config.image = image or partial_config.image
+        partial_config.image_credentials = credentials or partial_config.image_credentials
+        partial_config.secret_set = secret_set or partial_config.secret_set
+        partial_config.scaling = ScalingParams(
+            min_instances=min_instances if min_instances is not None else partial_config.scaling.min_instances,
+            max_instances=max_instances if max_instances is not None else partial_config.scaling.max_instances,
+        )
 
         # Assert agent name and image are provided
-        if not final_agent_name:
-            raise typer.BadParameter("Agent name is required")
-        if not final_image:
-            console.print("[red]Error:[/red] Image location is required", style="bold red")
-            raise typer.BadParameter("Image location is required")
+        if not partial_config.agent_name:
+            console.error("Agent name is required")
+            return typer.Exit()
 
         # Create and display table
         table = Table(
@@ -196,17 +244,23 @@ def create_deploy_command(app: typer.Typer):
             show_lines=True)
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
-        table.add_row("Min instances", str(deployment_config['min_instances']))
-        table.add_row("Max instances", str(deployment_config['max_instances']))
+        table.add_row("Min instances", str(partial_config.scaling.min_instances))
+        table.add_row("Max instances", str(partial_config.scaling.max_instances))
 
         content = Group(
-            (f"[bold white]Agent name:[/bold white] [green]{final_agent_name}[/green]"),
-            (f"[bold white]Image:[/bold white] [green]{final_image}[/green]"),
-            (f"[bold white]Organization:[/bold white] [green]{deployment_config['organization']}[/green]"),
-            (f"[bold white]Secret set:[/bold white] [green]{secrets}[/green]"),
+            (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
+            (f"[bold white]Image:[/bold white] [green]{'[dim]Use Existing[/dim]' if not partial_config.image else partial_config.image }[/green]"),
+            (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
+            (f"[bold white]Secret set:[/bold white] [green]{secret_set}[/green]"),
             (f"[bold white]Image pull secret:[/bold white] [green]{credentials}[/green]"),
-            "\n[dim]Deployment configuration:[/dim]",
-            table)
+            "\n[dim]Scaling configuration:[/dim]",
+            table,
+            *
+            (
+                [] if partial_config.scaling.min_instances else [
+                    Text(
+                        "Note: Deploying with 0 minimum instances may result in cold starts",
+                        style="red")]))
 
         console.print(
             Panel(
@@ -217,9 +271,12 @@ def create_deploy_command(app: typer.Typer):
                 style="yellow",
                 border_style="yellow"))
 
-        if not typer.confirm("\nDo you want to proceed with deployment?", default=True):
-            raise typer.Abort()
+        if not skip_confirm and not typer.confirm(
+                "\nDo you want to proceed with deployment?", default=True):
+            console.cancel()
+            return typer.Abort()
 
         # Deploy method posts the deployment config to the API
         # and polls the deployment status until it's ready
-        await _deploy(token, final_agent_name, final_image, deployment_config, credentials)
+        await _deploy(partial_config, org, skip_confirm)
+    return deploy

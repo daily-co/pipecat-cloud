@@ -4,6 +4,7 @@ from typing import Callable, Optional
 import aiohttp
 from loguru import logger
 
+from pipecatcloud._utils.deploy_utils import DeployConfigParams
 from pipecatcloud.config import config
 
 
@@ -75,12 +76,11 @@ class _API():
                 self.bubble_next = False
                 return result, self.error
             except Exception as e:
-                if live:
+                if live and not self.bubble_next:
                     live.stop()
 
-                logger.debug(e)
-
                 if self.error and not self.bubble_next:
+                    logger.debug(e)
                     self.print_error()
 
                 self.bubble_next = False
@@ -199,9 +199,6 @@ class _API():
 
         result = await self._base_request("GET", url, not_found_is_empty=True) or {}
 
-        if self.error == 400:
-            print("OH NO")
-
         if "sets" in result:
             return result["sets"]
 
@@ -260,3 +257,53 @@ class _API():
             org: Organization ID
         """
         return self.create_api_method(self._secrets_delete_set)
+
+    # Deploy
+
+    async def _deploy(
+            self,
+            deploy_config: DeployConfigParams,
+            org: str,
+            update: bool = False) -> dict | None:
+        url = f"{self.construct_api_url('services_path').format(org=org)}"
+        if update:
+            # Note: need to ignore null values
+            print("this is an update!")
+            pass
+        else:
+            return await self._base_request("POST", url, json={
+                "serviceName": deploy_config.agent_name,
+                "image": deploy_config.image,
+                "imagePullSecretSet": deploy_config.image_credentials,
+                "secretSet": deploy_config.secret_set,
+                "autoScaling": {
+                    "minReplicas": deploy_config.scaling.min_instances,
+                    "maxReplicas": deploy_config.scaling.max_instances
+                }
+
+            })
+
+    @property
+    def deploy(self):
+        """Lookup agent by name
+        Args:
+            deploy_config: Deploy config object to send as JSON to deployment
+            update: Updated existing deployment
+            org: Organization ID
+        """
+        return self.create_api_method(self._deploy)
+
+    # Agents
+
+    async def _agent(self, agent_name: str, org: str) -> dict | None:
+        url = f"{self.construct_api_url('services_path').format(org=org)}/{agent_name}"
+        return await self._base_request("GET", url, not_found_is_empty=True)
+
+    @property
+    def agent(self):
+        """Lookup agent by name
+        Args:
+            agent_name: name of agent to lookup
+            org: Organization ID
+        """
+        return self.create_api_method(self._agent)
