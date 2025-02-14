@@ -10,7 +10,6 @@ from rich.table import Table
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.deploy_utils import load_deploy_config_file
-from pipecatcloud._utils.http_utils import construct_api_url
 from pipecatcloud.cli import PANEL_TITLE_ERROR, PANEL_TITLE_SUCCESS
 
 console = Console()

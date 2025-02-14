@@ -2,14 +2,16 @@ import sys
 
 import typer
 from loguru import logger
+from rich import print_json
 
-from pipecatcloud.cli.agent import agent_cli
-from pipecatcloud.cli.auth import auth_cli
-from pipecatcloud.cli.deploy import create_deploy_command
-from pipecatcloud.cli.organizations import organization_cli
-from pipecatcloud.cli.run import create_run_command
-from pipecatcloud.cli.secrets import secrets_cli
-from pipecatcloud.config import config
+from pipecatcloud.cli.commands.auth import auth_cli
+from pipecatcloud.cli.commands.organizations import organization_cli
+from pipecatcloud.cli.config import config
+
+# from pipecatcloud.cli.agent import agent_cli
+# from pipecatcloud.cli.deploy import create_deploy_command
+# from pipecatcloud.cli.run import create_run_command
+# from pipecatcloud.cli.secrets import secrets_cli
 
 logger.remove()
 logger.add(sys.stderr, level=str(config.get("cli_log_level", "INFO")).upper())
@@ -26,11 +28,9 @@ def version_callback(value: bool):
 
 def config_callback(value: bool):
     if value:
-        from rich import print_json
         from rich.pretty import pprint
 
         from pipecatcloud._utils.deploy_utils import load_deploy_config_file
-        from pipecatcloud.config import config
 
         # Check for deploy config
         deploy_config = load_deploy_config_file()
@@ -63,20 +63,12 @@ def pipecat(
     _config: bool = typer.Option(None, "--config", callback=config_callback, help="CLI config"),
 ):
     pass
-    """
-    if not ctx.obj:
-        ctx.obj = {}
-
-    # Configure dynamic CLI context properties
-    ctx.obj["token"] = config.get("token")
-    ctx.obj["org"] = config.get("org")
-    """
 
 
-create_deploy_command(entrypoint_cli_typer)
-create_run_command(entrypoint_cli_typer)
+# create_deploy_command(entrypoint_cli_typer)
+# create_run_command(entrypoint_cli_typer)
 entrypoint_cli_typer.add_typer(auth_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(organization_cli, rich_help_panel="Commands")
-entrypoint_cli_typer.add_typer(agent_cli, rich_help_panel="Commands")
-entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")
+# entrypoint_cli_typer.add_typer(agent_cli, rich_help_panel="Commands")
+# entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")
 entrypoint_cli = typer.main.get_command(entrypoint_cli_typer)

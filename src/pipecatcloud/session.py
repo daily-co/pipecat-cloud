@@ -5,22 +5,22 @@ import aiohttp
 from loguru import logger
 
 from pipecatcloud._utils.agent_utils import handle_agent_start_error
-from pipecatcloud._utils.http_utils import construct_api_url
+from pipecatcloud.cli.api import API
 from pipecatcloud.exception import AgentStartError
 
 
 @dataclass
-class AgentParams:
+class SessionParams:
     data: Optional[dict] = None
     use_daily: Optional[bool] = False
 
 
-class Agent:
+class Session:
     def __init__(
         self,
         agent_name: str,
         api_key: str,
-        params: Optional[AgentParams] = None,
+        params: Optional[SessionParams] = None,
     ):
         self.agent_name = agent_name
         self.api_key = api_key
@@ -28,7 +28,7 @@ class Agent:
         if not self.agent_name:
             raise ValueError("Agent name is required")
 
-        self.params = params or AgentParams()
+        self.params = params or SessionParams()
 
     async def start(self) -> bool:
         if not self.api_key:
@@ -40,7 +40,7 @@ class Agent:
         try:
             async with aiohttp.ClientSession() as session:
                 response = await session.post(
-                    f"{construct_api_url('start_path').format(service=self.agent_name)}",
+                    f"{API.construct_api_url('start_path').format(service=self.agent_name)}",
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     json={
                         "createDailyRoom": bool(self.params.use_daily),

@@ -13,11 +13,9 @@ from rich.panel import Panel
 from pipecatcloud._utils.async_utils import synchronize_api, synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
-from pipecatcloud._utils.http_utils import construct_api_url
-from pipecatcloud.api import API
-from pipecatcloud.config import (
+from pipecatcloud.cli.api import API
+from pipecatcloud.cli.config import (
     config,
-    dashboard_host,
     remove_user_config,
     update_user_config,
     user_config_path,
@@ -92,7 +90,7 @@ async def _get_account_org(
 
     async with aiohttp.ClientSession() as session:
         async with session.get(
-            f"{construct_api_url('organization_path')}",
+            f"{API.construct_api_url('organization_path')}",
             headers={"Authorization": f"Bearer {token}"},
         ) as resp:
             if resp.status == 200:
@@ -204,7 +202,7 @@ async def logout():
 
     console.success(
         "User credentials for Pipecat Cloud removed. Please sign out via dashboard to fully revoke session.",
-        subtitle=f"[dim]Please visit:[/dim] {dashboard_host}/sign-out")
+        subtitle=f"[dim]Please visit:[/dim] {config.get('dashboard_host')}/sign-out")
 
 
 @auth_cli.command(name="whoami", help="Display data about the current user.")

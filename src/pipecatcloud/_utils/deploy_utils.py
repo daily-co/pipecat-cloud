@@ -1,12 +1,11 @@
+import os
+
+import toml
 from loguru import logger
 
 
 def load_deploy_config_file() -> dict | None:
-    import os
-
-    import toml
-
-    from pipecatcloud.config import deploy_config_path
+    from pipecatcloud.cli.config import deploy_config_path
 
     logger.info(f"Deploy config path: {deploy_config_path}")
     logger.info(f"Deploy config path exists: {os.path.exists(deploy_config_path)}")

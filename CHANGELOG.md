@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `organizations select` allows passing an `--org / -o` option to bypass prompt
 
 ### Fixed
+- All commands use the correct shorthand flag syntax (`-` vs. `--`)
+- CLI config extends from module config to avoid loading config TOML with package imports
 - `secrets list` now correctly lists all secrets vs. just a single entry
 - `deploy` command displays live status to prevent skewed terminal output
 - `deploy` command no longer allows pushing images without a tag
@@ -24,8 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Switching organizations will fully remove any default API tokens from the previously selected organization
 
 ### Changed
+- Local config now retains default keys when switching between organizations
+- Local config now retains defaukt keys when logging in again
 - `secrets list` now takes an optional `--sets / -s` parameter that filters by secret sets or image pull secrets
 - `organizations keys create` now prompts you to set the newly created key as the default after creation (if active org matches)
+- `organizations keys delete` not prompts to confirm if selected key is currently your local config default
+- `Agent` module import has been renamed to `Session` to better reflect API
 
 
 ## [0.0.7] - 2025-02-01

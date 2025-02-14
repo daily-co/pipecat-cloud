@@ -12,12 +12,12 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
-from pipecatcloud import PIPECAT_CLI_NAME
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console, print_api_error
 from pipecatcloud._utils.http_utils import construct_api_url
-from pipecatcloud.cli import PANEL_TITLE_ERROR, PANEL_TITLE_SUCCESS
+from pipecatcloud.cli import PIPECAT_CLI_NAME
+from pipecatcloud.cli.config import config
 
 secrets_cli = typer.Typer(
     name="secrets", help="Secret and image pull secret management", no_args_is_help=True
@@ -365,7 +365,6 @@ async def unset(
 @synchronizer.create_blocking
 @requires_login
 async def list(
-    ctx: typer.Context,
     name: str = typer.Argument(
         None,
         help="Name of the secret set to list secrets from e.g. 'my-secret-set'"
@@ -382,8 +381,7 @@ async def list(
         "-o"
     )
 ):
-    token = ctx.obj["token"]
-    org = organization or ctx.obj["org"]
+    org = organization or config.get("org")
 
     status_title = "Retrieving secret sets"
 

@@ -4,14 +4,13 @@ from loguru import logger
 from rich import box
 from rich.table import Table
 
-from pipecatcloud import PIPECAT_CLI_NAME
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
-from pipecatcloud.api import API
-from pipecatcloud.config import (
+from pipecatcloud.cli import PIPECAT_CLI_NAME
+from pipecatcloud.cli.api import API
+from pipecatcloud.cli.config import (
     config,
-    dashboard_host,
     update_user_config,
     user_config_path,
 )
@@ -95,7 +94,7 @@ async def list():
     if not org_list or not len(org_list):
         console.error(
             "No namespaces associated with user account. Please complete onboarding via the dashboard.",
-            subtitle=dashboard_host)
+            subtitle=config.get('dashboard_host'))
         return typer.Exit(1)
 
     table = Table(

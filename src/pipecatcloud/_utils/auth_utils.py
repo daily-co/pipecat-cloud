@@ -1,8 +1,8 @@
 import functools
 
-from pipecatcloud import PIPECAT_CLI_NAME
 from pipecatcloud._utils.console_utils import console
-from pipecatcloud.config import config
+from pipecatcloud.cli import PIPECAT_CLI_NAME
+from pipecatcloud.cli.config import config
 
 
 def requires_login(func):

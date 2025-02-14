@@ -21,18 +21,19 @@ def api_method(func):
 
 
 class _API():
-    def __init__(self):
+    def __init__(self, token: Optional[str] = None):
+        self.token = token
         self.error = None
 
     @staticmethod
     def construct_api_url(path: str) -> str:
-        if not config.get("server_url", ""):
-            raise ValueError("Server URL is not set")
+        if not config.get("api_host", ""):
+            raise ValueError("API host config variable is not set")
 
         if not config.get(path, ""):
             raise ValueError(f"Endpoint {path} is not set")
 
-        return f"{config.get('server_url', '')}{config.get(path, '')}"
+        return f"{config.get('api_host', '')}{config.get(path, '')}"
 
     def _configure_headers(self) -> dict:
         token = config.get("token")

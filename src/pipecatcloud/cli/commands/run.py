@@ -1,10 +1,6 @@
 import typer
-from rich.console import Console
 
 from pipecatcloud._utils.async_utils import synchronizer
-
-console = Console()
-
 
 # ----- Run
 
@@ -13,7 +9,6 @@ def create_run_command(app: typer.Typer):
     @app.command(name="run", help="Run an agent locally")
     @synchronizer.create_blocking
     async def run(
-        ctx: typer.Context,
         entrypoint: str,
         host: str = typer.Option(
             "0.0.0.0",
@@ -28,6 +23,7 @@ def create_run_command(app: typer.Typer):
             rich_help_panel="Run Configuration",
         ),
     ):
-        from pipecatcloud._utils.local_runner import start_server
-        await start_server(entrypoint, host, port)
+        # from pipecatcloud._utils.local_runner import start_server
+        # await start_server(entrypoint, host, port)
+        print("Not yet implemented")
     return run
