@@ -7,6 +7,12 @@ from loguru import logger
 
 from pipecatcloud.exception import ConfigFileError
 
+DEPLOY_STATUS_MAP = {
+    "Unknown": "[dim]Waiting[/dim]",
+    "True": "[green]Ready[/green]",
+    "False": "[yellow]Creating[/yellow]"
+}
+
 
 @dataclass
 class ScalingParams:

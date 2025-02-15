@@ -1,8 +1,10 @@
 import asyncio
 
 import typer
+from rich import box
 from rich.console import Group
 from rich.live import Live
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -11,6 +13,7 @@ from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
 from pipecatcloud._utils.deploy_utils import (
+    DEPLOY_STATUS_MAP,
     DeployConfigParams,
     ScalingParams,
     load_deploy_config_file,
@@ -19,7 +22,7 @@ from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
-MAX_ALIVE_CHECKS = 6
+MAX_ALIVE_CHECKS = 10
 ALIVE_CHECK_SLEEP = 5
 
 # ----- Command
@@ -109,27 +112,72 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         # 4. Poll status until healthy
         """
         attempts = 0
+        condition_table = None
+        active_deployment_id = None
+        has_failed = False
+        is_ready = False
+
         while attempts < MAX_ALIVE_CHECKS:
+            status_render_group = Panel.fit(
+                Group(
+                    Padding(
+                        console.status(
+                            f"[dim]Watching for deployment status (attempt: {attempts + 1})[dim]" if not active_deployment_id else f"Waiting for deployment to enter ready state [dim](attempt: {attempts + 1})[/dim]",
+                            spinner="bouncingBar"), (1, 0)),
+                    *([] if condition_table is None else [condition_table])
+                ),
+                title=f"[bold]{'Deploying' if not existing_agent else 'Updating'} agent[/bold]",
+                border_style="dim" if not active_deployment_id else "white",
+                subtitle=f"[dim]ID: {'Waiting...' if not active_deployment_id else active_deployment_id}[/dim]")
             try:
-                live.update(
-                    console.status(
-                        f"[dim]Waiting for deployment to become ready (attempt: {attempts + 1})[dim]",
-                        spinner="bouncingBar"))
                 await asyncio.sleep(ALIVE_CHECK_SLEEP)
+
+                live.update(status_render_group)
+
+                if has_failed:
+                    break
 
                 status, error = await API.agent(agent_name=params.agent_name, org=org, live=live)
 
                 if error:
                     return typer.Exit()
 
-                if status["body"]["ready"]:
-                    live.stop()
-                    console.success(
-                        f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
-                        f"[dim]Start a session with your new agent[/dim]"
-                        f"Run [bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
-                        title_extra="Deployment complete"
+                if not active_deployment_id and status["activeDeploymentId"]:
+                    # Reset attempts when deployment is assigned an ID
+                    attempts = 0
+                    active_deployment_id = status["activeDeploymentId"]
+
+                # Update status display
+                conditions = status["conditions"]
+                table = Table(
+                    show_header=False,
+                    show_lines=True,
+                    border_style="dim",
+                    box=box.MINIMAL
+                )
+                table.add_column("Status")
+                table.add_column("Type")
+                table.add_column("Reason")
+
+                for condition in conditions:
+                    c_status = DEPLOY_STATUS_MAP.get(condition["status"], "[dim]Unknown[/dim]")
+                    if condition.get('reason') == "RevisionFailed":
+                        c_status = "[red]Failded[/red]"
+                        has_failed = condition
+                    if condition["type"] == "Ready":
+                        continue
+                    table.add_row(
+                        c_status,
+                        condition['type'],
+                        condition.get(
+                            'reason',
+                            'No reason'),
                     )
+                condition_table = table
+
+                # Deployment is ready
+                if status["ready"]:
+                    is_ready = True
                     break
 
             except KeyboardInterrupt:
@@ -137,11 +185,26 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 console.print(
                     "\n[yellow]Deployment monitoring interrupted. The deployment may still be in progress.[/yellow]")
                 return typer.Exit()
+
             attempts += 1
 
         live.stop()
-        console.error(
-            f"Deployment did not enter ready state. Please check logs `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`")
+
+        if has_failed:
+            console.print(has_failed["message"])
+            console.error("Deployment failed with the above error")
+            return typer.Exit()
+
+        if is_ready:
+            console.success(
+                f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
+                f"[dim]Start a session with your new agent by running:\n[/dim]"
+                f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
+                title_extra="Deployment complete"
+            )
+        else:
+            console.error(
+                f"Deployment did not enter ready state. Please check logs `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`")
 
         return typer.Exit()
 
@@ -267,7 +330,6 @@ def create_deploy_command(app: typer.Typer):
                 content,
                 title="Review deployment",
                 title_align="left",
-                padding=1,
                 style="yellow",
                 border_style="yellow"))
 

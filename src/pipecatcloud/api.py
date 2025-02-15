@@ -297,7 +297,12 @@ class _API():
 
     async def _agent(self, agent_name: str, org: str) -> dict | None:
         url = f"{self.construct_api_url('services_path').format(org=org)}/{agent_name}"
-        return await self._base_request("GET", url, not_found_is_empty=True)
+        result = await self._base_request("GET", url, not_found_is_empty=True)
+
+        if result and "body" in result:
+            return result["body"]
+
+        return None
 
     @property
     def agent(self):
