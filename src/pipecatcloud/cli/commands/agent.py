@@ -13,33 +13,15 @@ from pipecatcloud._utils.agent_utils import handle_agent_start_error
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
+from pipecatcloud._utils.deploy_utils import DEPLOY_STATUS_MAP
+from pipecatcloud.cli import PIPECAT_CLI_NAME
+from pipecatcloud.cli.api import API
+from pipecatcloud.cli.config import config
 
 agent_cli = typer.Typer(
     name="agent", help="Agent management", no_args_is_help=True
 )
 
-
-# ----- Agent Methods -----
-
-"""
-async def lookup_agent(token: str, org: str, agent_name: str) -> dict | None:
-    try:
-        error_code = None
-        async with aiohttp.ClientSession() as session:
-            response = await session.get(
-                f"{construct_api_url('services_path').format(org=org)}/{agent_name}",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            if response.status != 200:
-                error_code = str(response.status)
-                response.raise_for_status()
-            data = await response.json()
-            return data["body"]
-    except Exception as e:
-        logger.debug(e)
-        print_api_error(error_code, f"Unable to get deployments for {agent_name}")
-        return None
-"""
 
 # ----- Agent Commands -----
 
@@ -48,79 +30,69 @@ async def lookup_agent(token: str, org: str, agent_name: str) -> dict | None:
 @synchronizer.create_blocking
 @requires_login
 async def status(
-    ctx: typer.Context,
     agent_name: str = typer.Argument(
         help="Name of the agent to get status of e.g. 'my-agent'"
     ),
     organization: str = typer.Option(
         None,
         "--organization",
-        "--org",
+        "-o",
         help="Organization to get status of agent for"
     ),
 ):
-    console = Console()
-    token = ctx.obj["token"]
-    org = organization or ctx.obj["org"]
+    org = organization or config.get("org")
 
-    error_code = None
-    try:
-        with console.status(f"Checking status of agent: [bold]'{agent_name}'[/bold]", spinner="dots"):
-            async with aiohttp.ClientSession() as session:
-                response = await session.get(
-                    f"{construct_api_url('services_path').format(org=org)}/{agent_name}",
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                if response.status != 200:
-                    error_code = str(response.status)
-                    response.raise_for_status()
+    with Live(console.status(f"[dim]Looking up agent with name {agent_name}[/dim]", spinner="dots")) as live:
+        data, error = await API.agent(agent_name=agent_name, org=org, live=live)
 
-                data = await response.json()
+        live.stop()
 
-                conditions = data["body"]["conditions"]
-                table = Table(
-                    show_header=True,
-                    show_lines=True,
-                    border_style="dim",
-                    box=box.SIMPLE
-                )
-                table.add_column("Date")
-                table.add_column("Status")
-                table.add_column("Type")
-                table.add_column("Message")
-                table.add_column("Reason")
+        if error:
+            return typer.Exit()
 
-                for condition in conditions:
-                    table.add_row(
-                        condition['lastTransitionTime'],
-                        f"[{'red' if condition['status'] == 'False' else 'green'}]{condition['status']}[/]",
-                        condition['type'],
-                        condition.get(
-                            'message',
-                            'No message'),
-                        condition.get(
-                            'reason',
-                            'No reason'),
-                    )
+        if not data:
+            console.error(f"No deployment data found for agent with name '{agent_name}'")
+            return typer.Exit()
 
-                color = "bold green" if data['body']['ready'] else "bold yellow"
-                console.print(
+        conditions = data["conditions"]
+        table = Table(
+            show_header=True,
+            show_lines=True,
+            border_style="dim",
+            box=box.SIMPLE
+        )
+        table.add_column("Status")
+        table.add_column("Type")
+        table.add_column("Message")
+        table.add_column("Reason")
+        table.add_column("Date")
+
+        for condition in conditions:
+            table.add_row(
+                DEPLOY_STATUS_MAP.get(condition["status"], "[dim]Unknown[/dim]"),
+                condition['type'],
+                condition.get('message', 'No message'),
+                condition.get('reason', 'No reason'),
+                condition['lastTransitionTime']
+            )
+
+        color = "bold green" if data['ready'] else "bold yellow"
+        subtitle = f"[dim]Start a new active session with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]" if data[
+            'ready'] else f"[dim]For more information check logs with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent logs {agent_name}[/bold cyan]"
+        console.print(
+            Panel(
+                Group(
                     Panel(
-                        Group(
-                            Panel(
-                                f"[{color}]Health: {'Ready' if data['body']['ready'] else 'Stopped'}[/]",
-                                border_style="green" if data['body']['ready'] else "yellow",
-                                expand=False,
-                            ),
-                            table,
-                        ),
-                        padding=1,
-                        title=f"[bold]Status for agent: {agent_name}[/bold]",
-                        title_align="left",
-                    ))
-    except Exception:
-        print_api_error(error_code, f"Unable to get status for {agent_name}")
-        return typer.Exit(1)
+                        f"[{color}]Health: {'Ready' if data['ready'] else 'Stopped'}[/]",
+                        border_style="green" if data['ready'] else "yellow",
+                        expand=False,
+                    ),
+                    table),
+                title=f"Status for agent [bold]{agent_name}[/bold]",
+                title_align="left",
+                subtitle_align="left",
+                subtitle=subtitle,
+            ))
 
 
 @agent_cli.command(name="scale", help="Modify agent runtime configuration")
@@ -134,35 +106,30 @@ async def scale():
 @synchronizer.create_blocking
 @requires_login
 async def list(
-    ctx: typer.Context,
     organization: str = typer.Option(
         None,
         "--organization",
-        "--org",
         "-o",
         help="Organization to list agents for"
     ),
 ):
-    console = Console()
-    token = ctx.obj["token"]
-    org = organization or ctx.obj["org"]
+    token = config.get("token")
+    org = organization or config.get("org")
 
     with console.status(f"Fetching agents for organization: [bold]'{org}'[/bold]", spinner="dots"):
         async with aiohttp.ClientSession() as session:
             response = await session.get(
-                f"{construct_api_url('services_path').format(org=org)}",
+                f"{API.construct_api_url('services_path').format(org=org)}",
                 headers={"Authorization": f"Bearer {token}"},
             )
+
         data = await response.json()
 
         if "error" in data:
-            console.print(Panel(
+            console.error(
                 f"[red]Unable to get agents for '{org}'[/red]\n\n"
                 f"[dim]API response:[/dim] {data['error']}",
-                title=f"[red]{PANEL_TITLE_ERROR}[/red]",
-                title_align="left",
-                border_style="red",
-            ))
+            )
         else:
             table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
             table.add_column("Name")
@@ -192,49 +159,49 @@ async def list(
 @agent_cli.command(name="logs", help="Get logs for the given agent.")
 @synchronizer.create_blocking
 @requires_login
-async def logs(ctx: typer.Context, agent_name: str):
-    console = Console()
-    token = ctx.obj["token"]
-    org = ctx.obj["org"]
+async def logs(ctx: typer.Context, agent_name: str, organization: str = typer.Option(
+    None,
+    "--organization",
+    "-o",
+    help="Organization to get status of agent for"
+),):
+    org = organization or config.get("org")
+    token = config.get("token")
 
-    error_code = None
     try:
         with console.status(f"Fetching logs for agent: [bold]'{agent_name}'[/bold]", spinner="dots"):
             async with aiohttp.ClientSession() as session:
                 response = await session.get(
-                    f"{construct_api_url('services_logs_path').format(org=org, service=agent_name)}?limit=100&order=desc",
+                    f"{API.construct_api_url('services_logs_path').format(org=org, service=agent_name)}?limit=100&order=desc",
                     headers={"Authorization": f"Bearer {token}"},
                 )
                 if response.status != 200:
-                    error_code = str(response.status)
                     response.raise_for_status()
                 data = await response.json()
                 console.print(data)
     except Exception:
-        print_api_error(error_code, f"Unable to get logs for {agent_name}")
+        console.error(f"Unable to get logs for {agent_name}")
 
 
 @agent_cli.command(name="delete", help="Delete an agent.")
 @synchronizer.create_blocking
 @requires_login
 async def delete(
-    ctx: typer.Context,
     agent_name: str,
     organization: str = typer.Option(
         None,
         "--organization",
-        "--org",
+        "-o",
         help="Organization to delete agent from",
     ),
 ):
-    console = Console()
-    token = ctx.obj["token"]
-    org = organization or ctx.obj["org"]
+    token = config.get("token")
+    org = organization or config.get("org")
 
     with console.status(f"Deleting agent: [bold]'{agent_name}'[/bold]", spinner="dots"):
         async with aiohttp.ClientSession() as session:
             response = await session.delete(
-                f"{construct_api_url('services_path').format(org=org)}/{agent_name}",
+                f"{API.construct_api_url('services_path').format(org=org)}/{agent_name}",
                 headers={"Authorization": f"Bearer {token}"},
             )
             data = await response.json()
@@ -245,18 +212,16 @@ async def delete(
 @synchronizer.create_blocking
 @requires_login
 async def deployments(
-    ctx: typer.Context,
     agent_name: str,
     organization: str = typer.Option(
         None,
         "--organization",
-        "--org",
+        "-o",
         help="Organization to get deployments for",
     ),
 ):
-    console = Console()
-    token = ctx.obj["token"]
-    org = organization or ctx.obj["org"]
+    token = config.get("token")
+    org = organization or config.get("org")
 
     error_code = None
 
@@ -264,7 +229,7 @@ async def deployments(
         with console.status(f"Fetching deployments for agent: [bold]'{agent_name}'[/bold]", spinner="dots"):
             async with aiohttp.ClientSession() as session:
                 response = await session.get(
-                    f"{construct_api_url('services_deployments_path').format(org=org, service=agent_name)}",
+                    f"{API.construct_api_url('services_deployments_path').format(org=org, service=agent_name)}",
                     headers={"Authorization": f"Bearer {token}"},
                 )
             if response.status != 200:
@@ -300,7 +265,7 @@ async def deployments(
             ))
     except Exception as e:
         logger.debug(e)
-        print_api_error(error_code, f"Unable to get deployments for {agent_name}")
+        console.api_error(error_code, f"Unable to get deployments for {agent_name}")
 
 
 @agent_cli.command(name="start", help="Start an agent instance")

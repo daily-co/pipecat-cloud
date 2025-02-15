@@ -3,8 +3,8 @@ import sys
 import typer
 from loguru import logger
 
-# from pipecatcloud.cli.agent import agent_cli
 from pipecatcloud._utils.console_utils import console
+from pipecatcloud.cli.commands.agent import agent_cli
 from pipecatcloud.cli.commands.auth import auth_cli
 from pipecatcloud.cli.commands.deploy import create_deploy_command
 from pipecatcloud.cli.commands.init import create_init_command
@@ -75,6 +75,6 @@ create_deploy_command(entrypoint_cli_typer)
 entrypoint_cli_typer.add_typer(auth_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(organization_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")
+entrypoint_cli_typer.add_typer(agent_cli, rich_help_panel="Commands")
 
-# entrypoint_cli_typer.add_typer(agent_cli, rich_help_panel="Commands")
 entrypoint_cli = typer.main.get_command(entrypoint_cli_typer)

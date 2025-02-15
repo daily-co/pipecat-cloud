@@ -11,9 +11,12 @@ class PipecatConsole(Console):
     def success(
             self,
             message,
+            title: Optional[str] = None,
             title_extra: Optional[str] = None,
             subtitle: Optional[str] = None):
-        title = f"{PANEL_TITLE_SUCCESS}{f' - {title_extra}' if title_extra is not None else ''}"
+
+        if not title:
+            title = f"{PANEL_TITLE_SUCCESS}{f' - {title_extra}' if title_extra is not None else ''}"
 
         self.print(
             Panel(
