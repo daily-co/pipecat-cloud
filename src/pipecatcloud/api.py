@@ -266,22 +266,33 @@ class _API():
             org: str,
             update: bool = False) -> dict | None:
         url = f"{self.construct_api_url('services_path').format(org=org)}"
-        if update:
-            # Note: need to ignore null values
-            print("this is an update!")
-            pass
-        else:
-            return await self._base_request("POST", url, json={
-                "serviceName": deploy_config.agent_name,
-                "image": deploy_config.image,
-                "imagePullSecretSet": deploy_config.image_credentials,
-                "secretSet": deploy_config.secret_set,
-                "autoScaling": {
-                    "minReplicas": deploy_config.scaling.min_instances,
-                    "maxReplicas": deploy_config.scaling.max_instances
-                }
 
-            })
+        # Create base payload and filter out None values
+        payload = {
+            "serviceName": deploy_config.agent_name,
+            "image": deploy_config.image,
+            "imagePullSecretSet": deploy_config.image_credentials,
+            "secretSet": deploy_config.secret_set,
+            "autoScaling": {
+                "minReplicas": deploy_config.scaling.min_instances,
+                "maxReplicas": deploy_config.scaling.max_instances
+            }
+        }
+
+        # Remove None values recursively
+        def remove_none_values(d):
+            return {
+                k: remove_none_values(v) if isinstance(v, dict) else v
+                for k, v in d.items()
+                if v is not None
+            }
+
+        cleaned_payload = remove_none_values(payload)
+
+        if update:
+            return await self._base_request("PUT", url, json=cleaned_payload)
+        else:
+            return await self._base_request("POST", url, json=cleaned_payload)
 
     @property
     def deploy(self):

@@ -29,14 +29,10 @@ ALIVE_CHECK_SLEEP = 5
 
 
 async def _deploy(params: DeployConfigParams, org, force: bool = False):
-    with Live(console.status("[dim]Preparing deployment...", spinner="dots")) as live:
-        """
-        # 1. Check for an existing deployment with this name
-        # if it exists, treat this as an update
-        # if not, treat this as a new deployment and require an image
-        """
-        existing_agent = False
+    existing_agent = False
 
+    # Check for an existing deployment with this agent name
+    with Live(console.status("[dim]Checking for exist agent deployment...[/dim]", spinner="dots")) as live:
         data, error = await API.agent(agent_name=params.agent_name, org=org, live=live)
 
         if error:
@@ -52,15 +48,11 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                         f"Deployment for agent '{params.agent_name}' exists. Do you want to update it? Note: this will not interrupt any active sessions"):
                     console.cancel()
                     return typer.Exit()
-        else:
-            if not params.image:
-                live.stop()
-                console.error(
-                    "New agent deployments must include an image / repository url. Check --help for more information.")
-                return typer.Exit()
 
+    # Start the deployment process
+    with Live(console.status("[dim]Preparing deployment...", spinner="dots")) as live:
         """
-        # 2. Check that provided secret set exists
+        # 1. Check that provided secret set exists
         """
         if params.secret_set:
             live.update(
@@ -77,7 +69,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 return typer.Exit()
 
         """
-        # 3. Check that provided image pull secret exists
+        # 2. Check that provided image pull secret exists
         """
         if params.image_credentials:
             live.update(console.status(
@@ -107,9 +99,10 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         if not existing_agent and not result:
             live.stop()
             console.error("A problem occured during deployment. Please contact support.")
+            return typer.Exit()
 
         """
-        # 4. Poll status until healthy
+        # 3. Poll status until healthy
         """
         attempts = 0
         condition_table = None
@@ -177,6 +170,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
 
                 # Deployment is ready
                 if status["ready"]:
+                    live.update("")
                     is_ready = True
                     break
 
@@ -200,7 +194,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
                 f"[dim]Start a session with your new agent by running:\n[/dim]"
                 f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
-                title_extra="Deployment complete"
+                title_extra=f"{'Update'if existing_agent else 'Deployment'} complete :)"
             )
         else:
             console.error(
@@ -299,6 +293,10 @@ def create_deploy_command(app: typer.Typer):
             console.error("Agent name is required")
             return typer.Exit()
 
+        if not partial_config.image:
+            console.error("Image / repository URL is required")
+            return typer.Exit()
+
         # Create and display table
         table = Table(
             show_header=False,
@@ -312,10 +310,10 @@ def create_deploy_command(app: typer.Typer):
 
         content = Group(
             (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
-            (f"[bold white]Image:[/bold white] [green]{'[dim]Use Existing[/dim]' if not partial_config.image else partial_config.image }[/green]"),
+            (f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"),
             (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
-            (f"[bold white]Secret set:[/bold white] [green]{secret_set}[/green]"),
-            (f"[bold white]Image pull secret:[/bold white] [green]{credentials}[/green]"),
+            (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not secret_set else '[green] '+ secret_set + '[/green]'}"),
+            (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not credentials else '[green]' + credentials + '[/green]'}"),
             "\n[dim]Scaling configuration:[/dim]",
             table,
             *
@@ -330,7 +328,6 @@ def create_deploy_command(app: typer.Typer):
                 content,
                 title="Review deployment",
                 title_align="left",
-                style="yellow",
                 border_style="yellow"))
 
         if not skip_confirm and not typer.confirm(
