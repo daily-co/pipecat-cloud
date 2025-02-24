@@ -65,23 +65,11 @@ jobs:
         with:
           packages-dir: dist/
 
-      - name: Read CHANGELOG
-        id: changelog
-        run: |
-          if [ -f "CHANGELOG.md" ]; then
-            CHANGELOG_CONTENT=$(cat CHANGELOG.md)
-            echo "CHANGELOG_CONTENT=${CHANGELOG_CONTENT}" >> $GITHUB_ENV
-          else
-            echo "CHANGELOG_CONTENT=No changelog available." >> $GITHUB_ENV
-          fi
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref }}
           name: Release ${{ github.ref_name }}
-          body: |
-            ${{ env.CHANGELOG_CONTENT }}
           draft: false
           prerelease: false
           files: |
