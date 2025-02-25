@@ -42,7 +42,7 @@ pcc auth login
 
 2. Login to your account `pipecat auth login`
 
-3. (Optional): Clone the starter agent [here](https://github.com/pipecat-ai/pipecat-cloud-starter-agent)
+3. (Optional): Clone the starter agent [here](https://github.com/daily-co/pipecat-cloud-starter)
 
 4. Build your agent `docker build --platform linux/arm64 -t your-agent-name .`
 
