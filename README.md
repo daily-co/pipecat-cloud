@@ -4,7 +4,7 @@
 </div></h1>
 
 
-[![Docs](https://img.shields.io/badge/documentation-blue)](https://docs.pipecat.cloud)
+[![Docs](https://img.shields.io/badge/documentation-blue)](https://docs.pipecat.daily.co)
 [![PyPI](https://img.shields.io/pypi/v/pipecatcloud)](https://pypi.org/project/pipecatcloud)
 
 # Pipecat Cloud
@@ -20,7 +20,7 @@ Python module and CLI for interacting with [Pipecat Cloud](https://pipecat.cloud
 
 ### Documentation
 
-Documentation for Pipecat Cloud is available [here](https://docs.pipecat.cloud).
+Documentation for Pipecat Cloud is available [here](https://docs.pipecat.daily.co).
 
 ### Installation
 
