@@ -9,13 +9,13 @@
 
 # Pipecat Cloud
 
-Python module and CLI for interacting with [Pipecat Cloud](https://pipecat.cloud).
+Python module and CLI for interacting with [Pipecat Cloud](https://pipecat.daily.co).
 
 ### Requirements
 
 - Python 3.10+
 - Docker and a Docker repository (e.g. Docker Hub)
-- Active [Pipecat Cloud](https://dashboard.pipecat.cloud)
+- Active [Pipecat Cloud](https://pipecat.daily.co)
  account
 
 ### Documentation
@@ -38,11 +38,11 @@ pcc auth login
 
 ## Usage
 
-1. Create an account at [Pipecat Cloud](https://pipecat.cloud)
+1. Create an account at [Pipecat Cloud](https://pipecat.daily.co)
 
 2. Login to your account `pipecat auth login`
 
-3. (Optional): Clone the starter agent [here](https://github.com/pipecat-ai/pipecat-cloud-starter-agent)
+3. (Optional): Clone the starter agent [here](https://github.com/daily-co/pipecat-cloud-starter)
 
 4. Build your agent `docker build --platform linux/arm64 -t your-agent-name .`
 
