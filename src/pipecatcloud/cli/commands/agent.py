@@ -317,7 +317,8 @@ async def start(
     default_public_key_name = "CLI provided" if api_key else config.get("default_public_key_name")
 
     if not default_public_key:
-        print_api_error("PCC-1002", f"Unable to start agent '{agent_name}' without public api key")
+        print(f"Unable to start agent '{agent_name}' without public api key")
+        # API.print_error("PCC-1002", f"Unable to start agent '{agent_name}' without public api key")
         return typer.Exit(1)
 
     # Confirm start request
@@ -357,9 +358,10 @@ async def start(
             live.update(console.status(f"Agent '{agent_name}' failed to start", spinner="dots"))
             live.stop()
             logger.debug(e)
-            print_api_error(
-                error_code,
-                f"Unable to start agent '{agent_name}'. Please check logs for more information.")
+            print(f"Unable to start agent '{agent_name}'. Please check logs for more information.")
+            # API.print_error(
+                # error_code,
+                # f"Unable to start agent '{agent_name}'. Please check logs for more information.")
             return typer.Exit(1)
 
         live.update(console.status(f"Agent '{agent_name}' started successfully", spinner="dots"))
