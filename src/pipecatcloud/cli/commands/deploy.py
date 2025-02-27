@@ -45,7 +45,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             if not force:
                 live.stop()
                 if not typer.confirm(
-                        f"Deployment for agent '{params.agent_name}' exists. Do you want to update it? Note: this will not interrupt any active sessions"):
+                        f"Deployment for agent '{params.agent_name}' exists. Do you want to update it? Note: this will not interrupt any active sessions", default=True):
                     console.cancel()
                     return typer.Exit()
 

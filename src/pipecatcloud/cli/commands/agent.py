@@ -311,10 +311,10 @@ async def start(
 ):
     console = Console()
 
-    token = ctx.obj["token"]
-    org = organization or ctx.obj["org"]
-    default_public_key = api_key or ctx.obj["default_public_key"]
-    default_public_key_name = "CLI provided" if api_key else ctx.obj["default_public_key_name"]
+    token = config.get("token")
+    org = organization or config.get("org")
+    default_public_key = api_key or config.get("default_public_key")
+    default_public_key_name = "CLI provided" if api_key else config.get("default_public_key_name")
 
     if not default_public_key:
         print_api_error("PCC-1002", f"Unable to start agent '{agent_name}' without public api key")
@@ -342,7 +342,7 @@ async def start(
         try:
             async with aiohttp.ClientSession() as session:
                 response = await session.post(
-                    f"{construct_api_url('start_path').format(service=agent_name)}",
+                    f"{API.construct_api_url('start_path').format(service=agent_name)}",
                     headers={"Authorization": f"Bearer {default_public_key}"},
                     json={
                         "createDailyRoom": bool(use_daily),
