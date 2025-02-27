@@ -136,7 +136,7 @@ async def login():
                         console.status(
                             Panel(
                                 "The web browser should have opened for you to authenticate with Pipecat Cloud.\n"
-                                "If it didn't, please copy this URL into your web browser manually:\n\n"
+                                "If it didn't, or you see a 404, please copy this URL into your web browser manually:\n\n"
                                 f"[blue][link={web_url}]{web_url}[/link][/blue]\n", )))
                 else:
                     # For headless use-cases, just print the URL
