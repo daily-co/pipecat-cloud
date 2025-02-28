@@ -156,6 +156,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     c_status = DEPLOY_STATUS_MAP.get(condition["status"], "[dim]Unknown[/dim]")
                     if condition.get('reason') == "RevisionFailed":
                         c_status = "[red]Failded[/red]"
+                        # we wanna catch this on the backend before we get here...
                         has_failed = condition
                     if condition["type"] == "Ready":
                         continue
@@ -185,8 +186,9 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         live.stop()
 
         if has_failed:
-            console.print(has_failed["message"])
-            console.error("Deployment failed with the above error")
+            # we don't want to necessarily expose the error directly from the backend here... 
+            # console.print(has_failed["message"])
+            console.error("Deployment failed. Please try again.")
             return typer.Exit()
 
         if is_ready:
