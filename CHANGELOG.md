@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.9] - 2025-02-27
 
+### Added
+- `agent status [agent-name]` now shows deployment info and scaling configuration
+- `agent sessions [agent-name]` lists active session count for an agent (will list session details in future)
+
 ### Fixed
 
 - Fixed a bug where `pcc-deploy.toml` files were required to be present

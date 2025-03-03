@@ -215,6 +215,43 @@ async def status(
             ))
 
 
+@agent_cli.command(name="sessions", help="List active sessions for an agent")
+@synchronizer.create_blocking
+@requires_login
+async def sessions(
+    agent_name: str,
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization to list sessions for"
+    ),
+):
+    org = organization or config.get("org")
+
+    with Live(console.status(f"[dim]Looking up agent with name {agent_name}[/dim]", spinner="dots")) as live:
+        data, error = await API.agent(agent_name=agent_name, org=org, live=live)
+
+        live.stop()
+
+        if error:
+            return typer.Exit()
+
+        if not data:
+            console.error(f"No deployment data found for agent with name '{agent_name}'")
+            return typer.Exit()
+
+        if data.get('activeSessionCount', 0) > 0:
+            console.success(
+                f"{data.get('activeSessionCount', 0)}",
+                title=f"Active session count for agent {agent_name} [dim]({org})[/dim]")
+        else:
+            console.error(
+                f"No active sessions found for agent {agent_name}",
+                title=f"Active session count for agent {agent_name} [dim]({org})[/dim]",
+                subtitle=f"[white dim]Start a new session with[/white dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]")
+
+
 @agent_cli.command(name="scale", help="Modify agent runtime configuration")
 @synchronizer.create_blocking
 @requires_login
@@ -343,34 +380,34 @@ async def start(
     force: bool = typer.Option(
         False,
         "--force",
-        "--f",
+        "-f",
         help="Bypass prompt for confirmation",
         rich_help_panel="Start Configuration",
     ),
     organization: str = typer.Option(
         None,
         "--organization",
-        "--org",
+        "-o",
         help="Organization to start agent for",
     ),
     api_key: str = typer.Option(
         None,
         "--api-key",
-        "--key",
+        "-k",
         help="Public API key to use for starting agent",
         rich_help_panel="Start Configuration",
     ),
     data: str = typer.Option(
         None,
         "--data",
-        "--d",
+        "-d",
         help="Data to pass to the agent (stringified JSON)",
         rich_help_panel="Start Configuration",
     ),
     use_daily: bool = typer.Option(
         False,
         "--use-daily",
-        "--daily",
+        "-D",
         help="Create a Daily WebRTC session for the agent",
         rich_help_panel="Start Configuration",
     ),
