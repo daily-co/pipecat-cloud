@@ -24,7 +24,7 @@ dependencies = [
 
 [project.scripts]
 pcc = "pipecatcloud.__main__:main"
-pipecat = "pipecatcloud.__main__:main"
+pipecatcloud = "pipecatcloud.__main__:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

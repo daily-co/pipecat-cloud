@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `agent start [agent-name] -D` now shows the Daily room URL (and token) to join in the terminal output
 
 ### Changed
+- Changed CLI command from `pipecat` to `pipecatcloud` or `pcc`
 - `agent deploy` now defaults to "Y" for the confirmation prompts
 
 ### Fixed
