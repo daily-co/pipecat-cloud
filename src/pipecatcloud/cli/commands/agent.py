@@ -16,8 +16,7 @@ from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 from pipecatcloud._utils.deploy_utils import (
-    DEPLOY_STATUS_MAP,
-    load_deploy_config_file,
+    DEPLOY_STATUS_MAP
 )
 
 agent_cli = typer.Typer(

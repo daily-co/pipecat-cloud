@@ -1,11 +1,15 @@
 [build-system]
-requires = ["setuptools>=64", "setuptools_scm>=8"]
+requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pipecat-cloud"
 version = "0.0.9"
 requires-python = ">=3.10"
+description = "Cloud hosting for Pipecat AI applications"
+license = { text = "BSD 2-Clause License" }
+readme = "README.md"
+keywords = ["pipecat", "pipecat-ai", "voice", "ai", "llm"]
 dependencies = [
     "aiohttp~=3.11.13,<4.0.0",
     "fastapi~=0.115.6",
@@ -32,3 +36,6 @@ include = ["pipecatcloud*"]
 [tool.ruff]
 exclude = ["*_pb2.py"]
 line-length = 100
+
+[project.urls]
+Website = "https://docs.pipecat.daily.co/"
