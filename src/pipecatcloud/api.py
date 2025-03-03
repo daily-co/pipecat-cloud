@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 import aiohttp
 from loguru import logger
@@ -323,3 +323,16 @@ class _API():
             org: Organization ID
         """
         return self.create_api_method(self._agent)
+
+    async def _agents(self, org: str) -> List[dict] | None:
+        url = f"{self.construct_api_url('services_path').format(org=org)}"
+        result = await self._base_request("GET", url) or {}
+
+        if "services" in result:
+            return result["services"]
+
+        return None
+
+    @property
+    def agents(self):
+        return self.create_api_method(self._agents)

@@ -26,6 +26,55 @@ agent_cli = typer.Typer(
 # ----- Agent Commands -----
 
 
+@agent_cli.command(name="list", help="List agents in an organization.")
+@synchronizer.create_blocking
+@requires_login
+async def list(
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization to list agents for"
+    ),
+):
+    org = organization or config.get("org")
+
+    with console.status(f"Fetching agents for organization: [bold]'{org}'[/bold]", spinner="dots"):
+        data, error = await API.agents(org=org)
+
+        print(data)
+        if error:
+            typer.Exit()
+
+        if not data or len(data) == 0:
+            console.error(
+                f"[red]No agents found for namespace / organization '{org}'[/red]\n\n"
+                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]")
+            return typer.Exit(1)
+
+        else:
+            table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
+            table.add_column("Name")
+            table.add_column("Agent ID")
+            table.add_column("Active Deployment ID")
+            table.add_column("Created At")
+            table.add_column("Updated At")
+
+            for service in data:
+                table.add_row(
+                    f"[bold]{service['name']}[/bold]",
+                    service['id'],
+                    service['activeDeploymentId'],
+                    service['createdAt'],
+                    service['updatedAt']
+                )
+
+            console.success(
+                table,
+                title=f"Agents for organization: {org}",
+                title_extra=f"{len(data)} results")
+
+
 @agent_cli.command(name="status", help="Get status of agent deployment")
 @synchronizer.create_blocking
 @requires_login
@@ -54,6 +103,7 @@ async def status(
             console.error(f"No deployment data found for agent with name '{agent_name}'")
             return typer.Exit()
 
+        # Conditions
         conditions = data["conditions"]
         table = Table(
             show_header=True,
@@ -76,6 +126,73 @@ async def status(
                 condition['lastTransitionTime']
             )
 
+        # Deployment info
+
+        deployment_table = Table(
+            show_header=False,
+            show_lines=False,
+            box=box.SIMPLE
+        )
+        deployment_table.add_column("Key")
+        deployment_table.add_column("Value")
+        deployment_table.add_row(
+            "[bold]Image:[/bold]",
+            str(data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("image", "N/A")),
+        )
+        deployment_table.add_row(
+            "[bold]Active Session Count:[/bold]",
+            str(data.get("activeSessionCount", "N/A")),
+        )
+        deployment_table.add_row(
+            "[bold]Active Deployment ID:[/bold]",
+            str(data.get("activeDeploymentId", "N/A")),
+        )
+        deployment_table.add_row(
+            "[bold]Created At:[/bold]",
+            str(data.get("createdAt", "N/A")),
+        )
+        deployment_table.add_row(
+            "[bold]Updated At:[/bold]",
+            str(data.get("updatedAt", "N/A")),
+        )
+
+        deployment_panel = Panel(
+            deployment_table,
+            title="[bold]Deployment info:[/bold]",
+            title_align="left",
+            border_style="dim",
+        )
+
+        # Autoscaling info
+        autoscaling_data = data.get("autoScaling", None)
+        if autoscaling_data:
+            autoscaling_table = Table(
+                show_header=False,
+                show_lines=False,
+                box=box.SIMPLE
+            )
+            autoscaling_table.add_column("Key")
+            autoscaling_table.add_column("Value")
+
+            autoscaling_table.add_row(
+                "[bold]Max instances:[/bold]",
+                str(autoscaling_data.get("maxReplicas", 0)),
+            )
+            autoscaling_table.add_row(
+                "[bold]Min instances:[/bold]",
+                str(autoscaling_data.get("minReplicas", 0)),
+            )
+            autoscaling_table.add_row(
+                "[bold]Concurrency:[/bold]",
+                str(autoscaling_data.get("concurrency", 0)),
+            )
+            autoscaling_panel = Panel(
+                autoscaling_table,
+                title="[bold]Scaling configuration:[/bold]",
+                title_align="left",
+                border_style="dim",
+            )
+
         color = "bold green" if data['ready'] else "bold yellow"
         subtitle = f"[dim]Start a new active session with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]" if data[
             'ready'] else f"[dim]For more information check logs with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent logs {agent_name}[/bold cyan]"
@@ -87,7 +204,10 @@ async def status(
                         border_style="green" if data['ready'] else "yellow",
                         expand=False,
                     ),
-                    table),
+                    table,
+                    deployment_panel,
+                    autoscaling_panel if autoscaling_panel else ""
+                ),
                 title=f"Status for agent [bold]{agent_name}[/bold]",
                 title_align="left",
                 subtitle_align="left",
@@ -100,60 +220,6 @@ async def status(
 @requires_login
 async def scale():
     console.error("Not implemented")
-
-
-@agent_cli.command(name="list", help="List agents in an organization.")
-@synchronizer.create_blocking
-@requires_login
-async def list(
-    organization: str = typer.Option(
-        None,
-        "--organization",
-        "-o",
-        help="Organization to list agents for"
-    ),
-):
-    token = config.get("token")
-    org = organization or config.get("org")
-
-    with console.status(f"Fetching agents for organization: [bold]'{org}'[/bold]", spinner="dots"):
-        async with aiohttp.ClientSession() as session:
-            response = await session.get(
-                f"{API.construct_api_url('services_path').format(org=org)}",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-
-        data = await response.json()
-
-        if "error" in data:
-            console.error(
-                f"[red]Unable to get agents for '{org}'[/red]\n\n"
-                f"[dim]API response:[/dim] {data['error']}",
-            )
-        else:
-            table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
-            table.add_column("Name")
-            table.add_column("ID")
-            table.add_column("Active Deployment")
-            table.add_column("Created At")
-            table.add_column("Updated At")
-
-            for service in data['services']:
-                table.add_row(
-                    f"[bold]{service['name']}[/bold]",
-                    service['id'],
-                    service['activeDeploymentId'],
-                    service['createdAt'],
-                    service['updatedAt']
-                )
-
-            console.print(Panel(
-                table,
-                padding=1,
-                title=f"[bold]Agents for organization: {org}[/bold]",
-                title_align="left",
-                border_style="green",
-            ))
 
 
 @agent_cli.command(name="logs", help="Get logs for the given agent.")
