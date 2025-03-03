@@ -350,3 +350,11 @@ class _API():
     @property
     def start_agent(self):
         return self.create_api_method(self._start_agent)
+
+    async def _agent_delete(self, agent_name: str, org: str) -> dict | None:
+        url = f"{self.construct_api_url('services_path').format(org=org)}/{agent_name}"
+        return await self._base_request("DELETE", url, not_found_is_empty=True)
+
+    @property
+    def agent_delete(self):
+        return self.create_api_method(self._agent_delete)

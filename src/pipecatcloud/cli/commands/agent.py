@@ -299,17 +299,19 @@ async def delete(
         help="Organization to delete agent from",
     ),
 ):
-    token = config.get("token")
     org = organization or config.get("org")
 
     with console.status(f"Deleting agent: [bold]'{agent_name}'[/bold]", spinner="dots"):
-        async with aiohttp.ClientSession() as session:
-            response = await session.delete(
-                f"{API.construct_api_url('services_path').format(org=org)}/{agent_name}",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            data = await response.json()
-            console.print(data)
+        data, error = await API.agent_delete(agent_name=agent_name, org=org)
+
+        if error:
+            return typer.Exit(1)
+
+        if not data:
+            console.error(f"Agent '{agent_name}' not found in namespace / organization '{org}'")
+            return typer.Exit(1)
+
+        console.success(f"Agent '{agent_name}' deleted successfully")
 
 
 @agent_cli.command(name="deployments", help="Get deployments for an agent.")
