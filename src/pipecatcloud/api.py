@@ -37,10 +37,10 @@ class _API():
 
         return f"{config.get('api_host', '')}{config.get(path, '')}"
 
-    def _configure_headers(self) -> dict:
-        if not self.token:
+    def _configure_headers(self, override_token: Optional[str] = None) -> dict:
+        if not self.token and not override_token:
             return {}
-        return {"Authorization": f"Bearer {self.token}"}
+        return {"Authorization": f"Bearer {override_token or self.token}"}
 
     async def _base_request(
         self,
@@ -48,13 +48,14 @@ class _API():
         url: str,
         params: Optional[dict] = None,
         json: Optional[dict] = None,
-        not_found_is_empty: bool = False
+        not_found_is_empty: bool = False,
+        override_token: Optional[str] = None
     ) -> Optional[dict]:
         async with aiohttp.ClientSession() as session:
             response = await session.request(
                 method=method,
                 url=url,
-                headers=self._configure_headers(),
+                headers=self._configure_headers(override_token),
                 params=params,
                 json=json
             )
@@ -336,3 +337,16 @@ class _API():
     @property
     def agents(self):
         return self.create_api_method(self._agents)
+
+    async def _start_agent(
+            self,
+            agent_name: str,
+            api_key: str,
+            use_daily: bool,
+            data: str) -> dict | None:
+        url = f"{self.construct_api_url('start_path').format(service=agent_name)}"
+        return await self._base_request("POST", url, override_token=api_key, json={"createDailyRoom": use_daily, "body": data}, not_found_is_empty=True)
+
+    @property
+    def start_agent(self):
+        return self.create_api_method(self._start_agent)

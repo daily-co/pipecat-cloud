@@ -10,9 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `agent status [agent-name]` now shows deployment info and scaling configuration
 - `agent sessions [agent-name]` lists active session count for an agent (will list session details in future)
+- `agent start [agent-name] -D` now shows the Daily room URL (and token) to join in the terminal output
+
+### Changed
+- `agent deploy` now defaults to "Y" for the confirmation prompts
 
 ### Fixed
-
 - Fixed a bug where `pcc-deploy.toml` files were required to be present
 
 ## [0.0.8] - 2025-02-03

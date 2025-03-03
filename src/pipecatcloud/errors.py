@@ -1,5 +1,5 @@
 ERROR_CODES = {
-    "401": "Unauthorized / token expired. Please run `pipecat auth login` to login again.",
+    "401": "Unauthorized request to API. Please run `pipecat auth login` to login again.\nIf you are attempting to start an agent, please ensure the public API key used as part of the request is valid.",
     "404": "API endpoint not found / namespace or organization not found.",
     "PCC-1000": "Unable to start agent.",
     "PCC-1001": "Attempt to start agent when deployment is not in ready state",

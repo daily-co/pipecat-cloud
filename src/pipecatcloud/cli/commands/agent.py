@@ -1,4 +1,3 @@
-
 import aiohttp
 import questionary
 import typer
@@ -13,10 +12,13 @@ from pipecatcloud._utils.agent_utils import handle_agent_start_error
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
-from pipecatcloud._utils.deploy_utils import DEPLOY_STATUS_MAP
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
+from pipecatcloud._utils.deploy_utils import (
+    DEPLOY_STATUS_MAP,
+    load_deploy_config_file,
+)
 
 agent_cli = typer.Typer(
     name="agent", help="Agent management", no_args_is_help=True
@@ -375,20 +377,14 @@ async def deployments(
 @synchronizer.create_blocking
 @requires_login
 async def start(
-    ctx: typer.Context,
-    agent_name: str,
+    agent_name: str = typer.Argument(
+        help="Name of the agent to start e.g. 'my-agent'"),
     force: bool = typer.Option(
         False,
         "--force",
         "-f",
         help="Bypass prompt for confirmation",
         rich_help_panel="Start Configuration",
-    ),
-    organization: str = typer.Option(
-        None,
-        "--organization",
-        "-o",
-        help="Organization to start agent for",
     ),
     api_key: str = typer.Option(
         None,
@@ -412,23 +408,27 @@ async def start(
         rich_help_panel="Start Configuration",
     ),
 ):
-    console = Console()
+    default_public_api_key = api_key or config.get("default_public_key")
+    default_public_api_key_name = "CLI provided" if api_key else config.get(
+        "default_public_key_name")
 
-    token = ctx.obj["token"]
-    org = organization or ctx.obj["org"]
-    default_public_key = api_key or ctx.obj["default_public_key"]
-    default_public_key_name = "CLI provided" if api_key else ctx.obj["default_public_key_name"]
+    if not default_public_api_key:
+        console.print(
+            Panel(
+                f"No public API key provided. Please provide a public API key using the --api-key flag or set a default using [bold cyan]{PIPECAT_CLI_NAME} organizations keys use[/bold cyan].\n\n"
+                f"If you have not yet created a public API key, you can do so by running [bold cyan]{PIPECAT_CLI_NAME} organizations keys create[/bold cyan].",
+                title="Public API Key Required",
+                title_align="left",
+                border_style="yellow",
+            ))
 
-    if not default_public_key:
-        print_api_error("PCC-1002", f"Unable to start agent '{agent_name}' without public api key")
         return typer.Exit(1)
 
     # Confirm start request
     if not force:
         console.print(Panel(
             f"Agent Name: {agent_name}\n"
-            f"Organization: {org}\n"
-            f"Public API Key: {default_public_key_name} [dim]{default_public_key}[/dim]\n"
+            f"Public API Key: {default_public_api_key_name} [dim]{default_public_api_key}[/dim]\n"
             f"Use Daily: {use_daily}\n"
             f"Data: {data}",
             title=f"[bold]Start Request for agent: {agent_name}[/bold]",
@@ -439,38 +439,30 @@ async def start(
             console.print("[bold]Aborting start request[/bold]")
             return typer.Exit(1)
 
-    # Check if agent exists and is healthy
-    with Live(console.status(f"Sending start request with key: {default_public_key_name}", spinner="dots"), refresh_per_second=4) as live:
-        error_code = None
-        try:
-            async with aiohttp.ClientSession() as session:
-                response = await session.post(
-                    f"{construct_api_url('start_path').format(service=agent_name)}",
-                    headers={"Authorization": f"Bearer {default_public_key}"},
-                    json={
-                        "createDailyRoom": bool(use_daily),
-                        "body": {}
-                    }
-                )
-                if response.status != 200:
-                    error_code = handle_agent_start_error(response.status)
-                    response.raise_for_status()
+    with Live(console.status(f"Sending start request with key: {default_public_api_key_name}", spinner="dots"), refresh_per_second=4) as live:
+        data, error = await API.start_agent(agent_name=agent_name, api_key=default_public_api_key, use_daily=use_daily, data=data, live=live)
 
-        except Exception as e:
-            live.update(console.status(f"Agent '{agent_name}' failed to start", spinner="dots"))
+        if error:
+            return typer.Exit(1)
+
+        if not data:
             live.stop()
-            logger.debug(e)
-            print_api_error(
-                error_code,
-                f"Unable to start agent '{agent_name}'. Please check logs for more information.")
+            console.error(
+                f"Agent '{agent_name}' not found. Have you deployed the agent?",
+                subtitle=f"[white dim]Deploy an agent with[/white dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]")
             return typer.Exit(1)
 
         live.update(console.status(f"Agent '{agent_name}' started successfully", spinner="dots"))
         live.stop()
 
-        console.print(Panel(
-            f"Agent '{agent_name}' started successfully",
-            title=f"{PANEL_TITLE_SUCCESS}",
-            title_align="left",
-            border_style="green",
-        ))
+        message = f"Agent '{agent_name}' started successfully"
+        if use_daily and isinstance(data, dict):
+            daily_room = data.get("dailyRoom")
+            daily_token = data.get("dailyToken")
+            if daily_room:
+                message += f"\n\nDaily room: [link={daily_room}?t={daily_token}]{daily_room}?t={daily_token}[/link]"
+            return console.success(
+                message,
+                subtitle=f"[white dim]Join the session:[/white dim] [link={daily_room}?t={daily_token}]click here[/link]")
+
+        console.success(message)
