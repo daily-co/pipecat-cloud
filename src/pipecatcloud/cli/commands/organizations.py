@@ -338,7 +338,7 @@ async def use_key(
 
     # Prompt user to use a key
     key = await questionary.select(
-        "Select API key to delete",
+        "Select API key to use",
         choices=[{"name": key["metadata"]["name"], "value": (key["key"], key["metadata"]["name"])} for key in data["public"]],
     ).ask_async()
 
