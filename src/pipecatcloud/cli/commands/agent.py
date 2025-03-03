@@ -183,10 +183,6 @@ async def status(
                 "[bold]Min instances:[/bold]",
                 str(autoscaling_data.get("minReplicas", 0)),
             )
-            autoscaling_table.add_row(
-                "[bold]Concurrency:[/bold]",
-                str(autoscaling_data.get("concurrency", 0)),
-            )
             autoscaling_panel = Panel(
                 autoscaling_table,
                 title="[bold]Scaling configuration:[/bold]",
