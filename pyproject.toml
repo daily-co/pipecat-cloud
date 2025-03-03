@@ -3,7 +3,7 @@ requires = ["setuptools>=64", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pipecat-cloud"
+name = "pipecatcloud"
 version = "0.0.9"
 requires-python = ">=3.10"
 description = "Cloud hosting for Pipecat AI applications"

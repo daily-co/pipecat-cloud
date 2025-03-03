@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed a bug where `pcc-deploy.toml` files were required to be present
+- `deploy` command now correctly passes the secret set to the deployment from the `pcc-deploy.toml` file
 
 ## [0.0.8] - 2025-02-03
 
