@@ -1,8 +1,6 @@
-
 <h1><div align="center">
  <img alt="pipecat cloud" width="500px" height="auto" src="./pipecat-cloud.png">
 </div></h1>
-
 
 [![Docs](https://img.shields.io/badge/documentation-blue)](https://docs.pipecat.daily.co)
 [![PyPI](https://img.shields.io/pypi/v/pipecatcloud)](https://pypi.org/project/pipecatcloud)
@@ -16,7 +14,7 @@ Python module and CLI for interacting with [Pipecat Cloud](https://pipecat.daily
 - Python 3.10+
 - Docker and a Docker repository (e.g. Docker Hub)
 - Active [Pipecat Cloud](https://pipecat.daily.co)
- account
+  account
 
 ### Documentation
 
@@ -27,10 +25,10 @@ Documentation for Pipecat Cloud is available [here](https://docs.pipecat.daily.c
 ```shell
 pip install pipecatcloud
 
-pipecat --version
-pipecat --help
+pcc --version
+pcc --help
 
-# Note: you can use `pipecat` or `pcc` interchangeably
+# Note: you can use `pcc` or `pipecatcloud` interchangeably
 pcc auth login
 ```
 
@@ -40,7 +38,7 @@ pcc auth login
 
 1. Create an account at [Pipecat Cloud](https://pipecat.daily.co)
 
-2. Login to your account `pipecat auth login`
+2. Login to your account `pcc auth login`
 
 3. (Optional): Clone the starter agent [here](https://github.com/daily-co/pipecat-cloud-starter)
 
@@ -48,7 +46,7 @@ pcc auth login
 
 5. Push your Docker image to your repository `docker push your-repository/your-agent-name:0.1`
 
-6. Deploy your agent `pipecat deploy starter-agent your-repository/your-agent-name:0.1`
+6. Deploy your agent `pcc deploy starter-agent your-repository/your-agent-name:0.1`
 
 ### Usage in Python scripts
 
