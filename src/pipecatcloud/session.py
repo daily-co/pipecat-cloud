@@ -4,8 +4,7 @@ from typing import Optional
 import aiohttp
 from loguru import logger
 
-from pipecatcloud._utils.agent_utils import handle_agent_start_error
-from pipecatcloud.api import API
+from pipecatcloud.api import _API as API
 from pipecatcloud.exception import AgentStartError
 
 
@@ -32,28 +31,38 @@ class Session:
 
     async def start(self) -> bool:
         if not self.api_key:
-            raise AgentStartError(error_code="PCC-1002")
+            raise AgentStartError({"code": "PCC-1002", "error": "No API key provided"})
 
         logger.debug(f"Starting agent {self.agent_name}")
 
-        start_error_code = None
+        start_error = None
+
+        payload: dict = {"createDailyRoom": bool(self.params.use_daily)}
+        if self.params.data is not None:
+            payload["body"] = self.params.data
+
         try:
             async with aiohttp.ClientSession() as session:
                 response = await session.post(
                     f"{API.construct_api_url('start_path').format(service=self.agent_name)}",
                     headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={
-                        "createDailyRoom": bool(self.params.use_daily),
-                        "body": self.params.data
-                    }
+                    json=payload
                 )
+
                 if response.status != 200:
-                    start_error_code = handle_agent_start_error(response.status)
+                    # Attempt to parse the error code from the response
+                    try:
+                        error_data = await response.json()
+                        start_error = error_data
+                    except Exception:
+                        start_error = {"code": "PCC-1000",
+                                       "error": "Unknown error occurred. Please contact support."}
+
                     response.raise_for_status()
                 else:
                     logger.debug(f"Agent {self.agent_name} started successfully")
         except Exception as e:
             logger.error(f"Error starting agent {self.agent_name}: {e}")
-            raise AgentStartError(error_code=start_error_code)
+            raise AgentStartError(error=start_error)
 
         return True

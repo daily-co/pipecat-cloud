@@ -212,13 +212,6 @@ async def set(
             if not create:
                 console.print("[bold red]Secret set creation cancelled[/bold red]")
                 return typer.Exit(1)
-    else:
-        if not skip_confirm:
-            create = await questionary.confirm(
-                f"Secret set with name '{name}' does not exist. Would you like to create it?").ask_async()
-            if not create:
-                console.print("[bold red]Secret set creation cancelled[/bold red]")
-                return typer.Exit(1)
 
     with console.status(f"[dim]{'Modifying' if existing_set else 'Creating'} secret set [bold]'{name}'[/bold][/dim]", spinner="dots"):
         for key, value in secrets_dict.items():

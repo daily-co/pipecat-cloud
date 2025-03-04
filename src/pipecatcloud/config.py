@@ -12,6 +12,7 @@ class _Setting(typing.NamedTuple):
 _SETTINGS = {
     "api_host": _Setting("https://api.pipecat.daily.co"),
     "dashboard_host": _Setting("https://pipecat.daily.co"),
+    "init_zip_url": _Setting("https://github.com/daily-co/pipecat-cloud-starter/archive/refs/heads/main.zip"),
     "onboarding_path": _Setting("/v1/onboarding"),
     "login_path": _Setting("/auth/login"),
     "login_status_path": _Setting("/auth/status"),
@@ -22,8 +23,7 @@ _SETTINGS = {
     "services_deployments_path": _Setting("/v1/organizations/{org}/services/{service}/deployments"),
     "start_path": _Setting("/v1/public/{service}/start"),
     "api_keys_path": _Setting("/v1/organizations/{org}/apiKeys"),
-    "secrets_path": _Setting("/v1/organizations/{org}/secrets")
-}
+    "secrets_path": _Setting("/v1/organizations/{org}/secrets")}
 
 
 class Config:
