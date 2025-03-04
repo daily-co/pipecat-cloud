@@ -32,7 +32,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     existing_agent = False
 
     # Check for an existing deployment with this agent name
-    with Live(console.status("[dim]Checking for exist agent deployment...[/dim]", spinner="dots")) as live:
+    with Live(console.status("[dim]Checking for existing agent deployment...[/dim]", spinner="dots")) as live:
         data, error = await API.agent(agent_name=params.agent_name, org=org, live=live)
 
         if error:
