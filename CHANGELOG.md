@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `init` convenience command will now populate the working directory with files from the starter project
+- `agent log` allows for optional severity level filtering
 
 ### Changed
 - `session.py` now correctly handles errors when starting agents

@@ -371,3 +371,11 @@ class _API():
     @property
     def agent_delete(self):
         return self.create_api_method(self._agent_delete)
+
+    async def _agent_logs(self, agent_name: str, org: str, limit: int = 100) -> dict | None:
+        url = f"{self.construct_api_url('services_logs_path').format(org=org, service=agent_name)}"
+        return await self._base_request("GET", url, params={"limit": limit})
+
+    @property
+    def agent_logs(self):
+        return self.create_api_method(self._agent_logs)

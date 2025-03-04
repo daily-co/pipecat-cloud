@@ -7,10 +7,12 @@ from rich.console import Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
+from enum import Enum
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
-from pipecatcloud._utils.console_utils import console
+from pipecatcloud._utils.console_utils import console, format_timestamp
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -251,31 +253,69 @@ async def scale():
     console.error("Not implemented")
 
 
+class LogLevel(str, Enum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+
+class LogLevelColors(str, Enum):
+    DEBUG = "dim white"
+    INFO = "white"
+    WARNING = "yellow"
+    ERROR = "red"
+    CRITICAL = "bold red"
+
+
 @agent_cli.command(name="logs", help="Get logs for the given agent.")
 @synchronizer.create_blocking
 @requires_login
-async def logs(ctx: typer.Context, agent_name: str, organization: str = typer.Option(
-    None,
-    "--organization",
-    "-o",
-    help="Organization to get status of agent for"
-),):
+async def logs(
+    agent_name: str,
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization to get status of agent for"
+    ),
+    level: LogLevel = typer.Option(
+        None,
+        "--level", "-l",
+        help="Level of logs to get"
+    ),
+    limit: int = typer.Option(
+        100,
+        "--limit", "-n",
+        help="Number of logs to get"
+    ),
+):
     org = organization or config.get("org")
-    token = config.get("token")
 
-    try:
-        with console.status(f"Fetching logs for agent: [bold]'{agent_name}'[/bold]", spinner="dots"):
-            async with aiohttp.ClientSession() as session:
-                response = await session.get(
-                    f"{API.construct_api_url('services_logs_path').format(org=org, service=agent_name)}?limit=100&order=desc",
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                if response.status != 200:
-                    response.raise_for_status()
-                data = await response.json()
-                console.print(data)
-    except Exception:
-        console.error(f"Unable to get logs for {agent_name}")
+    with console.status(f"[dim]Fetching logs for agent: [bold]'{agent_name}'[/bold] with severity: [bold cyan]{level.value if level else 'ALL'}[/bold cyan][/dim]", spinner="dots"):
+        data, error = await API.agent_logs(agent_name=agent_name, org=org, limit=limit)
+
+        if not data or not data.get("logs"):
+            console.print("[dim]No logs found for agent[/dim]")
+            return typer.Exit(1)
+
+    for l in data["logs"]:
+        log_data = l.get("log", "")
+        if log_data:
+            timestamp = format_timestamp(l.get("timestamp", ""))
+            severity = LogLevel.INFO
+            for log_severity in LogLevel:
+                if log_severity.value in log_data.upper():
+                    severity = log_severity
+                    break
+            # filter out any messages that do not match our log level
+            if level and severity.value != level.value:
+                continue
+            color = getattr(LogLevelColors, severity, LogLevelColors.DEBUG).value
+            console.print(Text(timestamp, style="bold dim"))
+            console.print(Text(l.get("log", ""), style=color))
+            console.rule(style="dim")
 
 
 @agent_cli.command(name="delete", help="Delete an agent.")

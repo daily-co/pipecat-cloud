@@ -87,3 +87,38 @@ class PipecatConsole(Console):
 
 
 console = PipecatConsole()
+
+
+def format_timestamp(timestamp: str) -> str:
+    """
+    Format a timestamp string to a more readable format.
+    Handles timestamps with variable microsecond precision.
+
+    Args:
+        timestamp (str): The timestamp string in ISO format with microseconds (e.g. "2024-01-01T12:34:56.789Z")
+
+    Returns:
+        str: The formatted timestamp string
+    """
+    from datetime import datetime
+
+    # First try parsing the timestamp directly
+    try:
+        return datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        pass
+
+    # Handle case where microseconds have higher precision
+    try:
+        parts = timestamp.split(".")
+        if len(parts) == 2 and parts[1].endswith("Z"):
+            # Truncate microseconds to 6 digits
+            microseconds = parts[1][:-1][:6].ljust(6, '0')
+            normalized = f"{parts[0]}.{microseconds}Z"
+            return datetime.strptime(normalized,
+                                     "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, IndexError):
+        pass
+
+    # Return original if parsing fails
+    return timestamp
