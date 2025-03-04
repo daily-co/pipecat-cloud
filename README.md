@@ -50,15 +50,26 @@ pcc auth login
 
 ### Usage in Python scripts
 
-If want to programmatically start an agent within a Python script, you can use the `pipecatcloud.agent` module.
+If want to programmatically start an agent within a Python script, you can use the `pipecatcloud.session` module.
 
 ```python
 from pipecatcloud.session import Session
+from pipecatcloud.exception import AgentStartError
+import asyncio
 
-session = Session(
-    agent_name="your-agent-name",
-    api_key="your-public-api-key",
-)
+async def main():
+    session = Session(
+        agent_name="your-agent-name",
+        api_key="pk_...",
+    )
 
-await session.start()
+    try:
+        await session.start()
+    except AgentStartError as e:
+        print(e)
+    except Exception as e:
+        raise (e)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```

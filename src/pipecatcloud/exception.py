@@ -46,16 +46,16 @@ class AgentStartError(Error):
 
     def __init__(
             self,
-            error_code: Optional[Union[str, dict]] = None):
+            error: Optional[Union[str, dict]] = None):
 
-        if isinstance(error_code, dict):
-            error_message = error_code.get("error", "Unknown error. Please contact support.")
-            code = error_code.get("code")
+        if isinstance(error, dict):
+            error_message = error.get("error", "Unknown error. Please contact support.")
+            code = error.get("code")
         else:
             error_message = str(
-                error_code) if error_code else "Unknown error. Please contact support."
+                error) if error else "Unknown error. Please contact support."
             code = None
 
-        self.message = f"{error_message} (Error code: {code})"
+        self.message = f"{code} - {error_message}"
         self.error_code = code
         super().__init__(self.message)
