@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
 import typer
 
 from pipecatcloud._utils.async_utils import synchronizer
@@ -26,4 +32,5 @@ def create_run_command(app: typer.Typer):
         # from pipecatcloud._utils.local_runner import start_server
         # await start_server(entrypoint, host, port)
         print("Not yet implemented")
+
     return run

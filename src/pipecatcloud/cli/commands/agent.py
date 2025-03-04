@@ -1,29 +1,31 @@
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
+from enum import Enum
+
 import aiohttp
 import questionary
 import typer
 from loguru import logger
 from rich import box
-from rich.console import Group
 from rich.columns import Columns
+from rich.console import Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from enum import Enum
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console, format_timestamp
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
-from pipecatcloud._utils.deploy_utils import (
-    DEPLOY_STATUS_MAP
-)
 
-agent_cli = typer.Typer(
-    name="agent", help="Agent management", no_args_is_help=True
-)
+agent_cli = typer.Typer(name="agent", help="Agent management", no_args_is_help=True)
 
 
 # ----- Agent Commands -----
@@ -34,10 +36,7 @@ agent_cli = typer.Typer(
 @requires_login
 async def list(
     organization: str = typer.Option(
-        None,
-        "--organization",
-        "-o",
-        help="Organization to list agents for"
+        None, "--organization", "-o", help="Organization to list agents for"
     ),
 ):
     org = organization or config.get("org")
@@ -52,7 +51,8 @@ async def list(
         if not data or len(data) == 0:
             console.error(
                 f"[red]No agents found for namespace / organization '{org}'[/red]\n\n"
-                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]")
+                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]"
+            )
             return typer.Exit(1)
 
         else:
@@ -66,35 +66,31 @@ async def list(
             for service in data:
                 table.add_row(
                     f"[bold]{service['name']}[/bold]",
-                    service['id'],
-                    service['activeDeploymentId'],
-                    service['createdAt'],
-                    service['updatedAt']
+                    service["id"],
+                    service["activeDeploymentId"],
+                    service["createdAt"],
+                    service["updatedAt"],
                 )
 
             console.success(
-                table,
-                title=f"Agents for organization: {org}",
-                title_extra=f"{len(data)} results")
+                table, title=f"Agents for organization: {org}", title_extra=f"{len(data)} results"
+            )
 
 
 @agent_cli.command(name="status", help="Get status of agent deployment")
 @synchronizer.create_blocking
 @requires_login
 async def status(
-    agent_name: str = typer.Argument(
-        help="Name of the agent to get status of e.g. 'my-agent'"
-    ),
+    agent_name: str = typer.Argument(help="Name of the agent to get status of e.g. 'my-agent'"),
     organization: str = typer.Option(
-        None,
-        "--organization",
-        "-o",
-        help="Organization to get status of agent for"
+        None, "--organization", "-o", help="Organization to get status of agent for"
     ),
 ):
     org = organization or config.get("org")
 
-    with Live(console.status(f"[dim]Looking up agent with name {agent_name}[/dim]", spinner="dots")) as live:
+    with Live(
+        console.status(f"[dim]Looking up agent with name {agent_name}[/dim]", spinner="dots")
+    ) as live:
         data, error = await API.agent(agent_name=agent_name, org=org, live=live)
 
         live.stop()
@@ -108,11 +104,7 @@ async def status(
 
         # Deployment info
 
-        deployment_table = Table(
-            show_header=False,
-            show_lines=False,
-            box=box.SIMPLE
-        )
+        deployment_table = Table(show_header=False, show_lines=False, box=box.SIMPLE)
         deployment_table.add_column("Key")
         deployment_table.add_column("Value")
         deployment_table.add_row(
@@ -142,22 +134,26 @@ async def status(
             scaling_renderables = [
                 Panel(
                     f"[bold]Minimum Instances[/bold]\n{autoscaling_data.get('minReplicas', 0)}",
-                    expand=True),
+                    expand=True,
+                ),
                 Panel(
                     f"[bold]Maximum Instances[/bold]\n{autoscaling_data.get('maxReplicas', 0)}",
-                    expand=True)]
-            scaling_panel = Panel(
-                Columns(
-                    scaling_renderables
+                    expand=True,
                 ),
+            ]
+            scaling_panel = Panel(
+                Columns(scaling_renderables),
                 title="[bold]Scaling configuration:[/bold]",
                 title_align="left",
                 border_style="dim",
             )
 
-        color = "bold green" if data['ready'] else "bold yellow"
-        subtitle = f"[dim]Start a new active session with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]" if data[
-            'ready'] else f"[dim]For more information check logs with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent logs {agent_name}[/bold cyan]"
+        color = "bold green" if data["ready"] else "bold yellow"
+        subtitle = (
+            f"[dim]Start a new active session with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]"
+            if data["ready"]
+            else f"[dim]For more information check logs with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent logs {agent_name}[/bold cyan]"
+        )
         console.print(
             Panel(
                 Group(
@@ -165,15 +161,16 @@ async def status(
                     scaling_panel if scaling_panel else "",
                     Panel(
                         f"[{color}]Health: {'Ready' if data['ready'] else 'Stopped'}[/]",
-                        border_style="green" if data['ready'] else "yellow",
+                        border_style="green" if data["ready"] else "yellow",
                         expand=False,
-                    )
+                    ),
                 ),
                 title=f"Status for agent [bold]{agent_name}[/bold]",
                 title_align="left",
                 subtitle_align="left",
                 subtitle=subtitle,
-            ))
+            )
+        )
 
 
 @agent_cli.command(name="sessions", help="List active sessions for an agent")
@@ -182,15 +179,14 @@ async def status(
 async def sessions(
     agent_name: str,
     organization: str = typer.Option(
-        None,
-        "--organization",
-        "-o",
-        help="Organization to list sessions for"
+        None, "--organization", "-o", help="Organization to list sessions for"
     ),
 ):
     org = organization or config.get("org")
 
-    with Live(console.status(f"[dim]Looking up agent with name '{agent_name}'[/dim]", spinner="dots")) as live:
+    with Live(
+        console.status(f"[dim]Looking up agent with name '{agent_name}'[/dim]", spinner="dots")
+    ) as live:
         data, error = await API.agent(agent_name=agent_name, org=org, live=live)
 
         live.stop()
@@ -203,17 +199,20 @@ async def sessions(
             return typer.Exit()
 
         console.print(
-            "[yellow]Please note: this method is currently work in progress and will be updated in the future with more information[/yellow]")
+            "[yellow]Please note: this method is currently work in progress and will be updated in the future with more information[/yellow]"
+        )
 
-        if data.get('activeSessionCount', 0) > 0:
+        if data.get("activeSessionCount", 0) > 0:
             console.success(
                 f"{data.get('activeSessionCount', 0)}",
-                title=f"Active session count for agent {agent_name} [dim]({org})[/dim]")
+                title=f"Active session count for agent {agent_name} [dim]({org})[/dim]",
+            )
         else:
             console.error(
                 f"No active sessions found for agent {agent_name}",
                 title=f"Active session count for agent {agent_name} [dim]({org})[/dim]",
-                subtitle=f"[white dim]Start a new session with[/white dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]")
+                subtitle=f"[white dim]Start a new session with[/white dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]",
+            )
 
 
 @agent_cli.command(name="scale", help="Modify agent runtime configuration")
@@ -245,25 +244,17 @@ class LogLevelColors(str, Enum):
 async def logs(
     agent_name: str,
     organization: str = typer.Option(
-        None,
-        "--organization",
-        "-o",
-        help="Organization to get status of agent for"
+        None, "--organization", "-o", help="Organization to get status of agent for"
     ),
-    level: LogLevel = typer.Option(
-        None,
-        "--level", "-l",
-        help="Level of logs to get"
-    ),
-    limit: int = typer.Option(
-        100,
-        "--limit", "-n",
-        help="Number of logs to get"
-    ),
+    level: LogLevel = typer.Option(None, "--level", "-l", help="Level of logs to get"),
+    limit: int = typer.Option(100, "--limit", "-n", help="Number of logs to get"),
 ):
     org = organization or config.get("org")
 
-    with console.status(f"[dim]Fetching logs for agent: [bold]'{agent_name}'[/bold] with severity: [bold cyan]{level.value if level else 'ALL'}[/bold cyan][/dim]", spinner="dots"):
+    with console.status(
+        f"[dim]Fetching logs for agent: [bold]'{agent_name}'[/bold] with severity: [bold cyan]{level.value if level else 'ALL'}[/bold cyan][/dim]",
+        spinner="dots",
+    ):
         data, error = await API.agent_logs(agent_name=agent_name, org=org, limit=limit)
 
         if not data or not data.get("logs"):
@@ -309,7 +300,9 @@ async def delete(
     org = organization or config.get("org")
 
     if not force:
-        if not await questionary.confirm("Are you sure you want to delete this agent? Note: active sessions will not be interrupted and will continue to run until completion.").ask_async():
+        if not await questionary.confirm(
+            "Are you sure you want to delete this agent? Note: active sessions will not be interrupted and will continue to run until completion."
+        ).ask_async():
             console.print("[bold]Aborting delete request[/bold]")
             return typer.Exit(1)
 
@@ -344,7 +337,10 @@ async def deployments(
     error_code = None
 
     try:
-        with console.status(f"[dim]Fetching deployments for agent: [bold]'{agent_name}'[/bold][/dim]", spinner="dots"):
+        with console.status(
+            f"[dim]Fetching deployments for agent: [bold]'{agent_name}'[/bold][/dim]",
+            spinner="dots",
+        ):
             async with aiohttp.ClientSession() as session:
                 response = await session.get(
                     f"{API.construct_api_url('services_deployments_path').format(org=org, service=agent_name)}",
@@ -369,7 +365,7 @@ async def deployments(
             table.add_column("Created At")
             table.add_column("Updated At")
 
-            for deployment in data['deployments']:
+            for deployment in data["deployments"]:
                 table.add_row(
                     deployment["id"],
                     deployment["manifest"]["spec"]["dailyNodeType"],
@@ -378,11 +374,13 @@ async def deployments(
                     deployment["updatedAt"],
                 )
 
-            console.print(Panel(
-                table,
-                title=f"[bold]Deployments for agent: {agent_name}[/bold]",
-                title_align="left",
-            ))
+            console.print(
+                Panel(
+                    table,
+                    title=f"[bold]Deployments for agent: {agent_name}[/bold]",
+                    title_align="left",
+                )
+            )
     except Exception as e:
         logger.debug(e)
         console.api_error(error_code, f"Unable to get deployments for {agent_name}")
@@ -392,8 +390,7 @@ async def deployments(
 @synchronizer.create_blocking
 @requires_login
 async def start(
-    agent_name: str = typer.Argument(
-        help="Name of the agent to start e.g. 'my-agent'"),
+    agent_name: str = typer.Argument(help="Name of the agent to start e.g. 'my-agent'"),
     force: bool = typer.Option(
         False,
         "--force",
@@ -432,8 +429,9 @@ async def start(
     org = organization or config.get("org")
 
     default_public_api_key = api_key or config.get("default_public_key")
-    default_public_api_key_name = "CLI provided" if api_key else config.get(
-        "default_public_key_name")
+    default_public_api_key_name = (
+        "CLI provided" if api_key else config.get("default_public_key_name")
+    )
 
     if not default_public_api_key:
         console.print(
@@ -443,40 +441,55 @@ async def start(
                 title="Public API Key Required",
                 title_align="left",
                 border_style="yellow",
-            ))
+            )
+        )
 
         return typer.Exit(1)
 
     # Confirm start request
     if not force:
-        console.print(Panel(
-            f"Agent Name: {agent_name}\n"
-            f"Public API Key: {default_public_api_key_name} [dim]{default_public_api_key}[/dim]\n"
-            f"Use Daily: {use_daily}\n"
-            f"Data: {data}",
-            title=f"[bold]Start Request for agent: {agent_name}[/bold]",
-            title_align="left",
-            border_style="yellow",
-        ))
-        if not await questionary.confirm("Are you sure you want to start an active session for this agent?").ask_async():
+        console.print(
+            Panel(
+                f"Agent Name: {agent_name}\n"
+                f"Public API Key: {default_public_api_key_name} [dim]{default_public_api_key}[/dim]\n"
+                f"Use Daily: {use_daily}\n"
+                f"Data: {data}",
+                title=f"[bold]Start Request for agent: {agent_name}[/bold]",
+                title_align="left",
+                border_style="yellow",
+            )
+        )
+        if not await questionary.confirm(
+            "Are you sure you want to start an active session for this agent?"
+        ).ask_async():
             console.print("[bold]Aborting start request[/bold]")
             return typer.Exit(1)
 
-    with Live(console.status(f"[dim]Checking agent health...[/dim]", spinner="dots"), refresh_per_second=4) as live:
-
+    with Live(
+        console.status("[dim]Checking agent health...[/dim]", spinner="dots"), refresh_per_second=4
+    ) as live:
         health_data, error = await API.agent(agent_name=agent_name, org=org, live=live)
-        if not health_data or not health_data['ready']:
+        if not health_data or not health_data["ready"]:
             live.stop()
             console.error(
-                f"Agent '{agent_name}' does not exist or is not in a health state. Please check the agent status with [bold cyan]{PIPECAT_CLI_NAME} agent status {agent_name}[/bold cyan]")
+                f"Agent '{agent_name}' does not exist or is not in a health state. Please check the agent status with [bold cyan]{PIPECAT_CLI_NAME} agent status {agent_name}[/bold cyan]"
+            )
             return typer.Exit(1)
 
         live.update(
             console.status(
                 f"[dim]Agent '{agent_name}' is healthy, sending start request...[/dim]",
-                spinner="dots"))
+                spinner="dots",
+            )
+        )
 
-        data, error = await API.start_agent(agent_name=agent_name, api_key=default_public_api_key, use_daily=use_daily, data=data, live=live)
+        data, error = await API.start_agent(
+            agent_name=agent_name,
+            api_key=default_public_api_key,
+            use_daily=use_daily,
+            data=data,
+            live=live,
+        )
 
         if error:
             return typer.Exit(1)
@@ -485,7 +498,8 @@ async def start(
             live.stop()
             console.error(
                 f"Agent '{agent_name}' not found. Have you deployed the agent?",
-                subtitle=f"[white dim]Deploy an agent with[/white dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]")
+                subtitle=f"[white dim]Deploy an agent with[/white dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]",
+            )
             return typer.Exit(1)
 
         live.stop()
@@ -498,6 +512,7 @@ async def start(
                 message += f"\n\nDaily room: [link={daily_room}?t={daily_token}]{daily_room}?t={daily_token}[/link]\n"
             return console.success(
                 message,
-                subtitle=f"[white dim]Join the session:[/white dim] [link={daily_room}?t={daily_token}]click here[/link]")
+                subtitle=f"[white dim]Join the session:[/white dim] [link={daily_room}?t={daily_token}]click here[/link]",
+            )
 
         console.success(message)
