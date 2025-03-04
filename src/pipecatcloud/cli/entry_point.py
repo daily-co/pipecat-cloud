@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
 import sys
 
 import typer
@@ -23,7 +29,8 @@ def version_callback(value: bool):
         from pipecatcloud.__version__ import version
 
         typer.echo(
-            f"ᓚᘏᗢ Pipecat Cloud Client Version: {typer.style(version, fg=typer.colors.GREEN)}")
+            f"ᓚᘏᗢ Pipecat Cloud Client Version: {typer.style(version, fg=typer.colors.GREEN)}"
+        )
         raise typer.Exit()
 
 
@@ -44,7 +51,8 @@ def config_callback(value: bool):
                 console.print_json(data=deploy_config.to_dict())
         except ConfigFileError as e:
             console.error(
-                f"Malformed pcc-deploy.toml - Please correct errors and try again.\n\n{e}")
+                f"Malformed pcc-deploy.toml - Please correct errors and try again.\n\n{e}"
+            )
 
         raise typer.Exit()
 

@@ -1,9 +1,16 @@
-import typer
-import questionary
-import aiohttp
-import zipfile
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
 import os
+import zipfile
 from typing import Set
+
+import aiohttp
+import questionary
+import typer
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.console_utils import console
@@ -24,8 +31,11 @@ FILES_TO_EXTRACT = {
 
 def check_existing_files() -> Set[str]:
     """Check which target files already exist in the current directory."""
-    return {os.path.basename(file)
-            for file in FILES_TO_EXTRACT if os.path.exists(os.path.basename(file))}
+    return {
+        os.path.basename(file)
+        for file in FILES_TO_EXTRACT
+        if os.path.exists(os.path.basename(file))
+    }
 
 
 def create_init_command(app: typer.Typer):
@@ -62,7 +72,7 @@ def create_init_command(app: typer.Typer):
                                 response.request_info,
                                 response.history,
                                 status=response.status,
-                                message=f"Failed to download starter project: {response.reason}"
+                                message=f"Failed to download starter project: {response.reason}",
                             )
 
                         # Stream the download to a file
@@ -80,7 +90,8 @@ def create_init_command(app: typer.Typer):
                                 f.write(source)
                         except KeyError:
                             console.print(
-                                f"[yellow]Warning:[/yellow] File {file} not found in starter project")
+                                f"[yellow]Warning:[/yellow] File {file} not found in starter project"
+                            )
                         except Exception as e:
                             raise Exception(f"Failed to extract {file}: {str(e)}")
 
@@ -88,7 +99,7 @@ def create_init_command(app: typer.Typer):
                 "You can now start building your agent in [bold]bot.py[/bold]"
                 "\n\n"
                 "Follow the steps in the [bold]README.md[/bold] file to get started.",
-                title="Project files downloaded successfully"
+                title="Project files downloaded successfully",
             )
 
         except aiohttp.ClientError as e:
@@ -107,6 +118,7 @@ def create_init_command(app: typer.Typer):
                     os.remove(zip_path)
                 except Exception as e:
                     console.print(
-                        f"[yellow]Warning:[/yellow] Failed to cleanup temporary file {zip_path}: {str(e)}")
+                        f"[yellow]Warning:[/yellow] Failed to cleanup temporary file {zip_path}: {str(e)}"
+                    )
 
     return init

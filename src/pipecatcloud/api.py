@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
 from functools import wraps
 from typing import Callable, List, Optional
 
@@ -18,10 +24,11 @@ def api_method(func):
             if live:
                 live.stop()
             raise e
+
     return wrapper
 
 
-class _API():
+class _API:
     def __init__(self, token: Optional[str] = None):
         self.token = token
         self.error = None
@@ -49,7 +56,7 @@ class _API():
         params: Optional[dict] = None,
         json: Optional[dict] = None,
         not_found_is_empty: bool = False,
-        override_token: Optional[str] = None
+        override_token: Optional[str] = None,
     ) -> Optional[dict]:
         async with aiohttp.ClientSession() as session:
             response = await session.request(
@@ -57,7 +64,7 @@ class _API():
                 url=url,
                 headers=self._configure_headers(override_token),
                 params=params,
-                json=json
+                json=json,
             )
             if not response.ok:
                 if not_found_is_empty and response.status == 404:
@@ -68,7 +75,7 @@ class _API():
                     try:
                         error_data = await response.json()
                         self.error = error_data
-                    except Exception as e:
+                    except Exception:
                         # Fallback structure matching API format
                         self.error = {"error": "Bad Request", "code": str(response.status)}
                 else:
@@ -80,6 +87,7 @@ class _API():
 
     def create_api_method(self, method_func: Callable) -> Callable:
         """Factory method that wraps API methods with error handling and live context"""
+
         @wraps(method_func)
         async def wrapper(*args, live=None, **kwargs):
             self.error = None
@@ -97,6 +105,7 @@ class _API():
 
                 self.bubble_next = False
                 return None, self.error
+
         return wrapper
 
     def print_error(self):
@@ -175,7 +184,10 @@ class _API():
 
     async def _api_key_create(self, api_key_name: str, org: str) -> dict:
         url = self.construct_api_url("api_keys_path").format(org=org)
-        return await self._base_request("POST", url, json={"name": api_key_name, "type": "public"}) or {}
+        return (
+            await self._base_request("POST", url, json={"name": api_key_name, "type": "public"})
+            or {}
+        )
 
     @property
     def api_key_create(self):
@@ -271,10 +283,8 @@ class _API():
     # Deploy
 
     async def _deploy(
-            self,
-            deploy_config: DeployConfigParams,
-            org: str,
-            update: bool = False) -> dict | None:
+        self, deploy_config: DeployConfigParams, org: str, update: bool = False
+    ) -> dict | None:
         url = f"{self.construct_api_url('services_path').format(org=org)}"
 
         # Create base payload and filter out None values
@@ -285,8 +295,8 @@ class _API():
             "secretSet": deploy_config.secret_set,
             "autoScaling": {
                 "minReplicas": deploy_config.scaling.min_instances,
-                "maxReplicas": deploy_config.scaling.max_instances
-            }
+                "maxReplicas": deploy_config.scaling.max_instances,
+            },
         }
 
         # Remove None values recursively
