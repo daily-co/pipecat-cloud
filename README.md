@@ -53,13 +53,12 @@ pcc auth login
 If want to programmatically start an agent within a Python script, you can use the `pipecatcloud.agent` module.
 
 ```python
-from pipecatcloud.agent import Agent
+from pipecatcloud.session import Session
 
-agent = Agent(
+session = Session(
     agent_name="your-agent-name",
-    organization="your-organization",
-    api_key="your-api-key",
+    api_key="your-public-api-key",
 )
 
-await agent.start()
+await session.start()
 ```
