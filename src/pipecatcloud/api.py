@@ -62,7 +62,18 @@ class _API():
             if not response.ok:
                 if not_found_is_empty and response.status == 404:
                     return None
-                self.error = response.status
+
+                # Extract PCC error code, where applicable
+                if response.status == 400:
+                    try:
+                        error_data = await response.json()
+                        self.error = error_data
+                    except Exception as e:
+                        # Fallback structure matching API format
+                        self.error = {"error": "Bad Request", "code": str(response.status)}
+                else:
+                    # Match API error format for non-400 errors
+                    self.error = {"error": response.reason, "code": str(response.status)}
                 response.raise_for_status()
 
             return await response.json()
@@ -91,14 +102,12 @@ class _API():
     def print_error(self):
         from pipecatcloud._utils.console_utils import console
 
-        # @TODO: handle coded errors here
-
         if not self.error:
             return
-        if self.error == 401:
+        if isinstance(self.error, dict) and self.error.get("code", "400") == "401":
             console.unauthorized()
         else:
-            console.api_error(str(self.error))
+            console.api_error(self.error)
 
     def bubble_error(self):
         self.bubble_next = True

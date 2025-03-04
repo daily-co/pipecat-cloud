@@ -8,12 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.10] - 2025-03-04
 
 ### Added
-
 - `init` convenience command will now populate the working directory with files from the starter project
 
 ### Changed
-
 - `secrets set` no longer prompts twice for confirmation if the secret set does not exist
+
+### Removed
+- `errors.py` removed as redundant (error message and code returned via API)
 
 ## [0.0.9] - 2025-02-27
 

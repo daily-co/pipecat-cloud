@@ -485,7 +485,7 @@ async def start(
             daily_room = data.get("dailyRoom")
             daily_token = data.get("dailyToken")
             if daily_room:
-                message += f"\n\nDaily room: [link={daily_room}?t={daily_token}]{daily_room}?t={daily_token}[/link]"
+                message += f"\n\nDaily room: [link={daily_room}?t={daily_token}]{daily_room}?t={daily_token}[/link]\n"
             return console.success(
                 message,
                 subtitle=f"[white dim]Join the session:[/white dim] [link={daily_room}?t={daily_token}]click here[/link]")

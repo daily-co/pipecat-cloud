@@ -1,6 +1,4 @@
-from typing import Optional
-
-from pipecatcloud.errors import ERROR_CODES
+from typing import Optional, Union
 
 
 class Error(Exception):
@@ -48,12 +46,16 @@ class AgentStartError(Error):
 
     def __init__(
             self,
-            message: str = "Agent start request failed.",
-            error_code: Optional[str] = None):
+            error_code: Optional[Union[str, dict]] = None):
 
-        error_message = message if not error_code else ERROR_CODES.get(
-            error_code, message)
+        if isinstance(error_code, dict):
+            error_message = error_code.get("error", "Unknown error. Please contact support.")
+            code = error_code.get("code")
+        else:
+            error_message = str(
+                error_code) if error_code else "Unknown error. Please contact support."
+            code = None
 
-        self.message = f"{error_message} (Error code: {error_code})"
-        self.error_code = error_code
+        self.message = f"{error_message} (Error code: {code})"
+        self.error_code = code
         super().__init__(self.message)
