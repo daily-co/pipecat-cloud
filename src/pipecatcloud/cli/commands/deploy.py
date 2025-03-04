@@ -195,7 +195,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
                 f"[dim]Start a session with your new agent by running:\n[/dim]"
                 f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
-                title_extra=f"{'Update'if existing_agent else 'Deployment'} complete :)"
+                title_extra=f"{'Update'if existing_agent else 'Deployment'} complete"
             )
         else:
             console.error(

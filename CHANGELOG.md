@@ -14,9 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Changed CLI command from `pipecat` to `pipecatcloud` or `pcc`
+- `agent delete` prompts the user for confirmation first
+- `agent start` now checks the target deployment first to ensure it exists and is in a healthy state
+- Changed the information order of `agent status` so the health badge is clearly visible in terminal
 - `agent deploy` now defaults to "Y" for the confirmation prompts
 
 ### Fixed
+- Fixed lint error with payload data in `agent start`
 - Fixed a bug where `pcc-deploy.toml` files were required to be present
 - `deploy` command now correctly passes the secret set to the deployment from the `pcc-deploy.toml` file
 

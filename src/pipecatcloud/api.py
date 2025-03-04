@@ -343,8 +343,7 @@ class _API():
     ) -> dict | None:
         url = f"{self.construct_api_url('start_path').format(service=agent_name)}"
 
-        # Create request payload, only including body when data is not None
-        payload = {"createDailyRoom": use_daily}
+        payload: dict = {"createDailyRoom": use_daily}
         if data is not None:
             payload["body"] = data
 
