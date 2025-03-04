@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `agent log` allows for optional severity level filtering
 
 ### Changed
+- `agent status` and `deploy` no longer show superfluous data
 - `session.py` now correctly handles errors when starting agents
 - `secrets set` no longer prompts twice for confirmation if the secret set does not exist
 

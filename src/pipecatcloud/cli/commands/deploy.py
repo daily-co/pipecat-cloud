@@ -106,7 +106,6 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         # 3. Poll status until healthy
         """
         attempts = 0
-        condition_table = None
         active_deployment_id = None
         has_failed = False
         is_ready = False
@@ -117,8 +116,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     Padding(
                         console.status(
                             f"[dim]Watching for deployment status (attempt: {attempts + 1})[dim]" if not active_deployment_id else f"Waiting for deployment to enter ready state [dim](attempt: {attempts + 1})[/dim]",
-                            spinner="bouncingBar"), (1, 0)),
-                    *([] if condition_table is None else [condition_table])
+                            spinner="bouncingBar"), (1, 0))
                 ),
                 title=f"[bold]{'Deploying' if not existing_agent else 'Updating'} agent[/bold]",
                 border_style="dim" if not active_deployment_id else "white",
@@ -140,34 +138,6 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     # Reset attempts when deployment is assigned an ID
                     attempts = 0
                     active_deployment_id = status["activeDeploymentId"]
-
-                # Update status display
-                conditions = status["conditions"]
-                table = Table(
-                    show_header=False,
-                    show_lines=True,
-                    border_style="dim",
-                    box=box.MINIMAL
-                )
-                table.add_column("Status")
-                table.add_column("Type")
-                table.add_column("Reason")
-
-                for condition in conditions:
-                    c_status = DEPLOY_STATUS_MAP.get(condition["status"], "[dim]Unknown[/dim]")
-                    if condition.get('reason') == "RevisionFailed":
-                        c_status = "[red]Failded[/red]"
-                        has_failed = condition
-                    if condition["type"] == "Ready":
-                        continue
-                    table.add_row(
-                        c_status,
-                        condition['type'],
-                        condition.get(
-                            'reason',
-                            'No reason'),
-                    )
-                condition_table = table
 
                 # Deployment is ready
                 if status["ready"]:

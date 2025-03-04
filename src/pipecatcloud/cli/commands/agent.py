@@ -4,6 +4,7 @@ import typer
 from loguru import logger
 from rich import box
 from rich.console import Group
+from rich.columns import Columns
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
@@ -105,29 +106,6 @@ async def status(
             console.error(f"No deployment data found for agent with name '{agent_name}'")
             return typer.Exit()
 
-        # Conditions
-        conditions = data["conditions"]
-        table = Table(
-            show_header=True,
-            show_lines=True,
-            border_style="dim",
-            box=box.SIMPLE
-        )
-        table.add_column("Status")
-        table.add_column("Type")
-        table.add_column("Message")
-        table.add_column("Reason")
-        table.add_column("Date")
-
-        for condition in conditions:
-            table.add_row(
-                DEPLOY_STATUS_MAP.get(condition["status"], "[dim]Unknown[/dim]"),
-                condition['type'],
-                condition.get('message', 'No message'),
-                condition.get('reason', 'No reason'),
-                condition['lastTransitionTime']
-            )
-
         # Deployment info
 
         deployment_table = Table(
@@ -138,12 +116,12 @@ async def status(
         deployment_table.add_column("Key")
         deployment_table.add_column("Value")
         deployment_table.add_row(
-            "[bold]Image:[/bold]",
-            str(data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("image", "N/A")),
-        )
-        deployment_table.add_row(
             "[bold]Active Session Count:[/bold]",
             str(data.get("activeSessionCount", "N/A")),
+        )
+        deployment_table.add_row(
+            "[bold]Image:[/bold]",
+            str(data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("image", "N/A")),
         )
         deployment_table.add_row(
             "[bold]Active Deployment ID:[/bold]",
@@ -161,24 +139,17 @@ async def status(
         # Autoscaling info
         autoscaling_data = data.get("autoScaling", None)
         if autoscaling_data:
-            autoscaling_table = Table(
-                show_header=False,
-                show_lines=False,
-                box=box.SIMPLE
-            )
-            autoscaling_table.add_column("Key")
-            autoscaling_table.add_column("Value")
-
-            autoscaling_table.add_row(
-                "[bold]Max instances:[/bold]",
-                str(autoscaling_data.get("maxReplicas", 0)),
-            )
-            autoscaling_table.add_row(
-                "[bold]Min instances:[/bold]",
-                str(autoscaling_data.get("minReplicas", 0)),
-            )
-            autoscaling_panel = Panel(
-                autoscaling_table,
+            scaling_renderables = [
+                Panel(
+                    f"[bold]Minimum Instances[/bold]\n{autoscaling_data.get('minReplicas', 0)}",
+                    expand=True),
+                Panel(
+                    f"[bold]Maximum Instances[/bold]\n{autoscaling_data.get('maxReplicas', 0)}",
+                    expand=True)]
+            scaling_panel = Panel(
+                Columns(
+                    scaling_renderables
+                ),
                 title="[bold]Scaling configuration:[/bold]",
                 title_align="left",
                 border_style="dim",
@@ -191,8 +162,7 @@ async def status(
             Panel(
                 Group(
                     deployment_table,
-                    autoscaling_panel if autoscaling_panel else "",
-                    table,
+                    scaling_panel if scaling_panel else "",
                     Panel(
                         f"[{color}]Health: {'Ready' if data['ready'] else 'Stopped'}[/]",
                         border_style="green" if data['ready'] else "yellow",
