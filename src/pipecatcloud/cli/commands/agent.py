@@ -3,12 +3,11 @@ import questionary
 import typer
 from loguru import logger
 from rich import box
-from rich.console import Console, Group
+from rich.console import Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
-from pipecatcloud._utils.agent_utils import handle_agent_start_error
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.10] - 2025-03-04
 
+### Added
+
+- `init` convenience command will now populate the working directory with files from the starter project
+
 ## [0.0.9] - 2025-02-27
 
 ### Added
