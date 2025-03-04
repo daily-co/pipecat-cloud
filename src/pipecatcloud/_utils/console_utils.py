@@ -69,7 +69,7 @@ class PipecatConsole(Console):
                 f"[red]{title}[/red]\n\n"
                 f"[dim]Error message:[/dim]\n{error_message}",
                 title=f"[bold red]{PANEL_TITLE_ERROR} - {error_code}[/bold red]",
-                subtitle=f"[dim]Docs: https://docs.pipecat.cloud/troubleshooting/#{error_code}[/dim]" if not hide_subtitle else None,
+                subtitle=f"[dim]Docs: https://docs.pipecat.daily.co/agents/error-codes#{error_code}[/dim]" if not hide_subtitle else None,
                 title_align="left",
                 subtitle_align="left",
                 border_style="red"))

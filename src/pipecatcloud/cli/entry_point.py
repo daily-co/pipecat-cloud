@@ -55,7 +55,7 @@ entrypoint_cli_typer = typer.Typer(
     rich_markup_mode="markdown",
     help="""
     ᓚᘏᗢ Pipecat Cloud CLI
-    See website at https://pipecat.cloud
+    See website at https://pipecat.daily.co
     """,
 )
 
