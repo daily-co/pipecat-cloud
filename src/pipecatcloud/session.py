@@ -1,20 +1,46 @@
-from dataclasses import dataclass
-from typing import Optional
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
 
-import aiohttp
+import json
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+
 from loguru import logger
 
-from pipecatcloud.api import _API as API
+from pipecatcloud.api import _API
 from pipecatcloud.exception import AgentStartError
 
 
 @dataclass
 class SessionParams:
-    data: Optional[dict] = None
+    """Parameters for configuring a Pipecat Cloud agent session.
+
+    Args:
+        data: Optional dictionary of data to pass to the agent.
+        use_daily: If True, creates a Daily WebRTC room for the session.
+    """
+
+    data: Optional[Dict[str, Any]] = None
     use_daily: Optional[bool] = False
 
 
 class Session:
+    """Client for starting and managing Pipecat Cloud agent sessions.
+
+    This class provides methods to start agent sessions and interact with running agents.
+
+    Args:
+        agent_name: Name of the deployed agent to interact with.
+        api_key: Public API key for authentication.
+        params: Optional SessionParams object to configure the session.
+
+    Raises:
+        ValueError: If agent_name is not provided.
+    """
+
     def __init__(
         self,
         agent_name: str,
@@ -29,40 +55,50 @@ class Session:
 
         self.params = params or SessionParams()
 
-    async def start(self) -> bool:
+    async def start(self):
+        """Start a new session with the specified agent.
+
+        Initiates a new agent session with the configuration provided during initialization.
+        If use_daily is True, creates a Daily room for WebRTC communication.
+
+        Returns:
+            dict: Response data containing session information. If use_daily is True,
+                  includes 'dailyRoom' URL and 'dailyToken' for room access.
+
+        Raises:
+            AgentStartError: If the session fails to start, including:
+                - Missing API key
+                - Agent not found
+                - Agent not ready
+                - Capacity limits reached
+        """
         if not self.api_key:
             raise AgentStartError({"code": "PCC-1002", "error": "No API key provided"})
 
         logger.debug(f"Starting agent {self.agent_name}")
 
-        start_error = None
+        # Create the API class instance
+        api = _API()
 
-        payload: dict = {"createDailyRoom": bool(self.params.use_daily)}
+        # Convert data dict to JSON string if it's a dictionary
+        data_param = None
         if self.params.data is not None:
-            payload["body"] = self.params.data
+            # Convert dictionary to JSON string
+            if isinstance(self.params.data, dict):
+                data_param = json.dumps(self.params.data)
+            else:
+                # If it's already a string or other type, use as is
+                data_param = self.params.data
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                response = await session.post(
-                    f"{API.construct_api_url('start_path').format(service=self.agent_name)}",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json=payload
-                )
+        # Call the method similar to how the CLI does it
+        result, error = await api.start_agent(
+            agent_name=self.agent_name,
+            api_key=self.api_key,
+            use_daily=bool(self.params.use_daily),
+            data=data_param,
+        )
 
-                if response.status != 200:
-                    # Attempt to parse the error code from the response
-                    try:
-                        error_data = await response.json()
-                        start_error = error_data
-                    except Exception:
-                        start_error = {"code": "PCC-1000",
-                                       "error": "Unknown error occurred. Please contact support."}
+        if error:
+            raise AgentStartError(error=error)
 
-                    response.raise_for_status()
-                else:
-                    logger.debug(f"Agent {self.agent_name} started successfully")
-        except Exception as e:
-            logger.error(f"Error starting agent {self.agent_name}: {e}")
-            raise AgentStartError(error=start_error)
-
-        return True
+        return result

@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
 import questionary
 import typer
 from loguru import logger
@@ -26,16 +32,12 @@ organization_cli.add_typer(keys_cli)
 @organization_cli.command(name="select", help="Select an organization to use.")
 @synchronizer.create_blocking
 @requires_login
-async def select(
-    organization: str = typer.Option(
-        None,
-        "--organization",
-        "-o"
-    )
-):
+async def select(organization: str = typer.Option(None, "--organization", "-o")):
     current_org = config.get("org")
 
-    with console.status("[dim]Retrieve user namespace / organization data...[/dim]", spinner="dots"):
+    with console.status(
+        "[dim]Retrieve user namespace / organization data...[/dim]", spinner="dots"
+    ):
         org_list, error = await API.organizations()
 
         if error:
@@ -47,8 +49,14 @@ async def select(
             # Prompt user to select organization
             value = await questionary.select(
                 "Select default namespace / organization",
-                choices=[{"name": f"{org['verboseName']} ({org['name']})", "value": (
-                    org["name"], org["verboseName"]), "checked": org["name"] == current_org} for org in org_list],
+                choices=[
+                    {
+                        "name": f"{org['verboseName']} ({org['name']})",
+                        "value": (org["name"], org["verboseName"]),
+                        "checked": org["name"] == current_org,
+                    }
+                    for org in org_list
+                ],
             ).ask_async()
 
             if not value:
@@ -74,7 +82,8 @@ async def select(
 
         console.success(
             f"Current organization set to [bold green]{selected_org[1]} [dim]({selected_org[0]})[/dim][/bold green]\n"
-            f"[dim]Default namespace updated in {user_config_path}[/dim]")
+            f"[dim]Default namespace updated in {user_config_path}[/dim]"
+        )
     except Exception:
         console.error("Unable to update user credentials. Please contact support.")
 
@@ -85,7 +94,9 @@ async def select(
 async def list():
     current_org = config.get("org")
 
-    with console.status("[dim]Retrieve user namespace / organization data...[/dim]", spinner="dots"):
+    with console.status(
+        "[dim]Retrieve user namespace / organization data...[/dim]", spinner="dots"
+    ):
         org_list, error = await API.organizations()
 
         if error:
@@ -94,20 +105,19 @@ async def list():
     if not org_list or not len(org_list):
         console.error(
             "No namespaces associated with user account. Please complete onboarding via the dashboard.",
-            subtitle=config.get('dashboard_host'))
+            subtitle=config.get("dashboard_host"),
+        )
         return typer.Exit(1)
 
-    table = Table(
-        border_style="dim",
-        box=box.SIMPLE,
-        show_edge=True,
-        show_lines=False)
+    table = Table(border_style="dim", box=box.SIMPLE, show_edge=True, show_lines=False)
     table.add_column("Organization", style="white")
     table.add_column("Name", style="white")
     for org in org_list:
         if current_org and org["name"] == current_org:
-            table.add_row(f"[cyan bold]{org['verboseName']}[/cyan bold]",
-                          f"[cyan bold]{org['name']} (active)[/cyan bold]")
+            table.add_row(
+                f"[cyan bold]{org['verboseName']}[/cyan bold]",
+                f"[cyan bold]{org['name']} (active)[/cyan bold]",
+            )
         else:
             table.add_row(org["verboseName"], org["name"])
 
@@ -115,6 +125,7 @@ async def list():
 
 
 # ---- API Token Commands ----
+
 
 @keys_cli.command(name="list", help="List API keys for an organization.")
 @synchronizer.create_blocking
@@ -129,7 +140,9 @@ async def keys(
 ):
     org = organization or config.get("org")
 
-    with console.status(f"[dim]Fetching API keys for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"):
+    with console.status(
+        f"[dim]Fetching API keys for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"
+    ):
         data, error = await API.api_keys(org)
 
         if error:
@@ -186,8 +199,8 @@ async def create_key(
         False,
         "--default",
         "-d",
-        help="Set the newly created key as the active / default key in local config"
-    )
+        help="Set the newly created key as the active / default key in local config",
+    ),
 ):
     org = organization or config.get("org")
 
@@ -202,25 +215,33 @@ async def create_key(
 
     data = None
 
-    with console.status(f"[dim]Creating API key with name: [bold]'{api_key_name}'[/bold][/dim]", spinner="dots"):
+    with console.status(
+        f"[dim]Creating API key with name: [bold]'{api_key_name}'[/bold][/dim]", spinner="dots"
+    ):
         data, error = await API.api_key_create(api_key_name, org)
         if error:
             return typer.Exit(1)
 
-    if not data or 'key' not in data:
+    if not data or "key" not in data:
         console.error("Invalid response from server. Please contact support.")
         return typer.Exit(1)
 
     # Determine as to whether we should make this key the active default
     make_active = default
     if not default:
-        make_active = await questionary.confirm("Would you like to make this key the default key in your local configuration?", default=False).ask_async()
+        make_active = await questionary.confirm(
+            "Would you like to make this key the default key in your local configuration?",
+            default=False,
+        ).ask_async()
 
     if make_active:
-        update_user_config(active_org=org, additional_data={
-            "default_public_key": data["key"],
-            "default_public_key_name": api_key_name
-        })
+        update_user_config(
+            active_org=org,
+            additional_data={
+                "default_public_key": data["key"],
+                "default_public_key_name": api_key_name,
+            },
+        )
     else:
         console.print("[dim]Bypassing using key as default")
 
@@ -236,7 +257,7 @@ async def create_key(
 
     table.add_row(
         api_key_name,
-        data['key'],
+        data["key"],
         org,
     )
 
@@ -256,7 +277,9 @@ async def delete_key(
 ):
     org = organization or config.get("org")
 
-    with console.status(f"[dim]Fetching API keys for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"):
+    with console.status(
+        f"[dim]Fetching API keys for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"
+    ):
         data, error = await API.api_keys(org)
 
         if error:
@@ -274,8 +297,10 @@ async def delete_key(
     # Prompt user to delete a key
     key = await questionary.select(
         "Select API key to delete",
-        choices=[{"name": key["metadata"]["name"], "value": (
-            key["id"], key["key"])} for key in data["public"]],
+        choices=[
+            {"name": key["metadata"]["name"], "value": (key["id"], key["key"])}
+            for key in data["public"]
+        ],
     ).ask_async()
 
     if not key:
@@ -291,10 +316,10 @@ async def delete_key(
         # Update config to remove default key
 
         try:
-            update_user_config(active_org=org, additional_data={
-                "default_public_key_name": None,
-                "default_public_key": None
-            })
+            update_user_config(
+                active_org=org,
+                additional_data={"default_public_key_name": None, "default_public_key": None},
+            )
         except Exception:
             console.error("Unable to remove default key from local user config")
             return typer.Exit(1)
@@ -321,7 +346,9 @@ async def use_key(
 ):
     org = organization or config.get("org")
 
-    with console.status(f"[dim]Fetching API keys for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"):
+    with console.status(
+        f"[dim]Fetching API keys for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"
+    ):
         data, error = await API.api_keys(org)
 
         if error:
@@ -339,7 +366,10 @@ async def use_key(
     # Prompt user to use a key
     key = await questionary.select(
         "Select API key to use",
-        choices=[{"name": key["metadata"]["name"], "value": (key["key"], key["metadata"]["name"])} for key in data["public"]],
+        choices=[
+            {"name": key["metadata"]["name"], "value": (key["key"], key["metadata"]["name"])}
+            for key in data["public"]
+        ],
     ).ask_async()
 
     if not key:
@@ -349,8 +379,8 @@ async def use_key(
     try:
         update_user_config(
             active_org=org,
-            additional_data={
-                "default_public_key": key[0], "default_public_key_name": key[1]})
+            additional_data={"default_public_key": key[0], "default_public_key_name": key[1]},
+        )
         console.success(f"API key with name: [bold]'{key[1]}'[/bold] set as default.")
     except Exception as e:
         logger.debug(e)

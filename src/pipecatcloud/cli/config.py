@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
 import os
 from typing import Optional
 
@@ -21,18 +27,20 @@ def _read_user_config():
     config_data = {}
     if os.path.exists(user_config_path):
         import toml
+
         try:
             with open(user_config_path) as f:
                 config_data = toml.load(f)
         except Exception as exc:
             config_problem = str(exc)
         else:
-            top_level_keys = {'token', 'org'}
+            top_level_keys = {"token", "org"}
             org_sections = {k: v for k, v in config_data.items() if k not in top_level_keys}
 
             if not all(isinstance(e, dict) for e in org_sections.values()):
                 raise ConfigError(
-                    "Pipecat Cloud config file is not valid TOML. Organization sections must be dictionaries. Please log out and log back in.")
+                    "Pipecat Cloud config file is not valid TOML. Organization sections must be dictionaries. Please log out and log back in."
+                )
             else:
                 config_problem = ""
         if config_problem:
@@ -56,9 +64,10 @@ def remove_user_config():
 
 
 def update_user_config(
-        token: Optional[str] = None,
-        active_org: Optional[str] = None,
-        additional_data: Optional[dict] = None):
+    token: Optional[str] = None,
+    active_org: Optional[str] = None,
+    additional_data: Optional[dict] = None,
+):
     # Load the existing toml (if it exists)
     existing_config = _read_user_config()
 

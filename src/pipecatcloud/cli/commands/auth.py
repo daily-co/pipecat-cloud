@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
 import asyncio
 import itertools
 import webbrowser
@@ -54,7 +60,7 @@ class _AuthFlow:
                         f"{config.get('api_host')}{config.get('login_status_path')}",
                         params={
                             "token_flow_id": self.token_flow_id,
-                            "wait_secret": self.wait_secret
+                            "wait_secret": self.wait_secret,
                         },
                         timeout=aiohttp.ClientTimeout(total=timeout + network_timeout),
                     ) as resp:
@@ -86,7 +92,8 @@ def _open_url(url: str) -> bool:
 
 
 async def _get_account_org(
-        token: str, active_org: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+    token: str, active_org: Optional[str] = None
+) -> Tuple[Optional[str], Optional[str]]:
     async with aiohttp.ClientSession() as session:
         async with session.get(
             f"{API.construct_api_url('organization_path')}",
@@ -110,6 +117,7 @@ async def _get_account_org(
             else:
                 raise Exception(f"Failed to retrieve account organization: {resp.status}")
 
+
 # ---- Login ----
 
 
@@ -126,10 +134,16 @@ async def login():
         async with auth_flow.start() as (token_flow_id, web_url):
             if web_url is None:
                 console.error(
-                    "Unable to connect to Pipecat Cloud API. Please check your network connection and try again.")
+                    "Unable to connect to Pipecat Cloud API. Please check your network connection and try again."
+                )
                 return
 
-            with Live(console.status("[dim]Waiting for authentication to complete...[/dim]", spinner="dots"), transient=True) as live:
+            with Live(
+                console.status(
+                    "[dim]Waiting for authentication to complete...[/dim]", spinner="dots"
+                ),
+                transient=True,
+            ) as live:
                 # Open the web url in the browser
                 if _open_url(web_url):
                     live.update(
@@ -137,13 +151,15 @@ async def login():
                             Panel(
                                 "The web browser should have opened for you to authenticate with Pipecat Cloud.\n"
                                 "If it didn't, please copy this URL into your web browser manually:\n\n"
-                                f"[blue][link={web_url}]{web_url}[/link][/blue]\n", )))
+                                f"[blue][link={web_url}]{web_url}[/link][/blue]\n",
+                            )
+                        )
+                    )
                 else:
                     # For headless use-cases, just print the URL
                     live.stop()
                     console.print("[dim]Unable to launch web browser[/dim]")
-                    console.print(
-                        "[bold]Please visit the following URL to confirm login[/bold]\n")
+                    console.print("[bold]Please visit the following URL to confirm login[/bold]\n")
                     console.print(web_url)
 
                 live.start()
@@ -153,27 +169,27 @@ async def login():
                     if result is not None:
                         break
                     live.update(
-                        console.status(f"[dim]Waiting for authentication to complete... (attempt {attempt + 1})[/dim]"))
+                        console.status(
+                            f"[dim]Waiting for authentication to complete... (attempt {attempt + 1})[/dim]"
+                        )
+                    )
                 if result is None:
                     live.stop()
                     console.error("Authentication failed")
                     return typer.Exit()
 
-                live.update(
-                    console.status(
-                        "[dim]Obtaining account data[/dim]",
-                        spinner="dots"))
+                live.update(console.status("[dim]Obtaining account data[/dim]", spinner="dots"))
                 try:
                     account_name, account_name_verbose = await _get_account_org(result, active_org)
                     live.stop()
-                    logger.debug(
-                        f"Setting namespace to {account_name_verbose} ({account_name})")
+                    logger.debug(f"Setting namespace to {account_name_verbose} ({account_name})")
                     if account_name is None:
                         raise
                 except Exception:
                     live.stop()
                     console.error(
-                        "Account has no associated namespace. Have you completed the onboarding process? Please first sign in via the web dashboard.")
+                        "Account has no associated namespace. Have you completed the onboarding process? Please first sign in via the web dashboard."
+                    )
                     return typer.Exit()
 
             console.success(
@@ -202,7 +218,8 @@ async def logout():
 
     console.success(
         "User credentials for Pipecat Cloud removed. Please sign out via dashboard to fully revoke session.",
-        subtitle=f"[dim]Please visit:[/dim] {config.get('dashboard_host')}/sign-out")
+        subtitle=f"[dim]Please visit:[/dim] {config.get('dashboard_host')}/sign-out",
+    )
 
 
 @auth_cli.command(name="whoami", help="Display data about the current user.")
@@ -212,14 +229,18 @@ async def whomai():
     org = config.get("org")
 
     try:
-        with Live(console.status("[dim]Requesting current user data...[/dim]", spinner="dots"), transient=True) as live:
+        with Live(
+            console.status("[dim]Requesting current user data...[/dim]", spinner="dots"),
+            transient=True,
+        ) as live:
             user_data, error = await API.whoami(live=live)
 
             if error:
                 return typer.Exit()
 
             live.update(
-                console.status("[dim]Requesting user namespace / organization data...[/dim]"))
+                console.status("[dim]Requesting user namespace / organization data...[/dim]")
+            )
 
             # Retrieve default user organization
             account, error = await API.organizations_current(org=org, live=live)
@@ -234,6 +255,7 @@ async def whomai():
 
             console.success(
                 f"[bold]User ID:[/bold] {user_data['user']['userId']}\n"
-                f"[bold]Active Organization:[/bold] {account['verbose_name']} [dim]({account['name']})[/dim]", )
+                f"[bold]Active Organization:[/bold] {account['verbose_name']} [dim]({account['name']})[/dim]",
+            )
     except Exception:
         console.error("Unable to obtain user data. Please contact support")
