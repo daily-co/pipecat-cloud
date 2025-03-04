@@ -339,13 +339,18 @@ class _API():
         return self.create_api_method(self._agents)
 
     async def _start_agent(
-            self,
-            agent_name: str,
-            api_key: str,
-            use_daily: bool,
-            data: str) -> dict | None:
+        self, agent_name: str, api_key: str, use_daily: bool, data: Optional[str] = None
+    ) -> dict | None:
         url = f"{self.construct_api_url('start_path').format(service=agent_name)}"
-        return await self._base_request("POST", url, override_token=api_key, json={"createDailyRoom": use_daily, "body": data}, not_found_is_empty=True)
+
+        # Create request payload, only including body when data is not None
+        payload = {"createDailyRoom": use_daily}
+        if data is not None:
+            payload["body"] = data
+
+        return await self._base_request(
+            "POST", url, override_token=api_key, json=payload, not_found_is_empty=True
+        )
 
     @property
     def start_agent(self):
