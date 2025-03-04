@@ -69,7 +69,10 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
     try:
         with open(deploy_config_path, "r") as f:
             config_data = toml.load(f)
+    except Exception as e:
+        return None
 
+    try:
         # Extract scaling parameters if present
         scaling_data = config_data.pop('scaling', {})
         scaling_params = ScalingParams(**scaling_data)

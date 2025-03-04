@@ -1,4 +1,4 @@
-PIPECAT_CLI_NAME = "pipecat"
+PIPECAT_CLI_NAME = "pcc"
 PIPECAT_CREDENTIALS_PATH = "~/.pipecatcloud.toml"
 PIPECAT_DEPLOY_CONFIG_PATH = "pcc-deploy.toml"
 

@@ -30,10 +30,12 @@ class PipecatConsole(Console):
     def error(
             self,
             message,
+            title: Optional[str] = None,
             title_extra: Optional[str] = None,
             subtitle: Optional[str] = None):
 
-        title = f"{PANEL_TITLE_ERROR}{f' - {title_extra}' if title_extra is not None else ''}"
+        if not title:
+            title = f"{PANEL_TITLE_ERROR}{f' - {title_extra}' if title_extra is not None else ''}"
 
         self.print(
             Panel(
@@ -67,7 +69,7 @@ class PipecatConsole(Console):
                 f"[red]{title}[/red]\n\n"
                 f"[dim]Error message:[/dim]\n{error_message}",
                 title=f"[bold red]{PANEL_TITLE_ERROR} - {error_code}[/bold red]",
-                subtitle=f"[dim]Docs: https://docs.pipecat.cloud/troubleshooting/#{error_code}[/dim]" if not hide_subtitle else None,
+                subtitle=f"[dim]Docs: https://docs.pipecat.daily.co/agents/error-codes#{error_code}[/dim]" if not hide_subtitle else None,
                 title_align="left",
                 subtitle_align="left",
                 border_style="red"))

@@ -55,13 +55,13 @@ entrypoint_cli_typer = typer.Typer(
     rich_markup_mode="markdown",
     help="""
     ᓚᘏᗢ Pipecat Cloud CLI
-    See website at https://pipecat.cloud
+    See website at https://pipecat.daily.co
     """,
 )
 
 
 @entrypoint_cli_typer.callback()
-def pipecat(
+def cli(
     ctx: typer.Context,
     _version: bool = typer.Option(None, "--version", callback=version_callback, help="CLI version"),
     _config: bool = typer.Option(None, "--config", callback=config_callback, help="CLI config"),

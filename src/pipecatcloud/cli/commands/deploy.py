@@ -45,7 +45,8 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             if not force:
                 live.stop()
                 if not typer.confirm(
-                        f"Deployment for agent '{params.agent_name}' exists. Do you want to update it? Note: this will not interrupt any active sessions", default=True):
+                    f"Deployment for agent '{params.agent_name}' exists. Do you want to update it? Note: this will not interrupt any active sessions",
+                        default=True):
                     console.cancel()
                     return typer.Exit()
 
@@ -194,7 +195,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
                 f"[dim]Start a session with your new agent by running:\n[/dim]"
                 f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
-                title_extra=f"{'Update'if existing_agent else 'Deployment'} complete :)"
+                title_extra=f"{'Update'if existing_agent else 'Deployment'} complete"
             )
         else:
             console.error(
@@ -208,7 +209,6 @@ def create_deploy_command(app: typer.Typer):
     @synchronizer.create_blocking
     @requires_login
     async def deploy(
-        ctx: typer.Context,
         agent_name: str = typer.Argument(
             None,
             help="Name of the agent to deploy e.g. 'my-agent'",
@@ -312,8 +312,8 @@ def create_deploy_command(app: typer.Typer):
             (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
             (f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"),
             (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
-            (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not secret_set else '[green] '+ secret_set + '[/green]'}"),
-            (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not credentials else '[green]' + credentials + '[/green]'}"),
+            (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
+            (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
             "\n[dim]Scaling configuration:[/dim]",
             table,
             *

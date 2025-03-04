@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 import aiohttp
 from loguru import logger
@@ -37,10 +37,10 @@ class _API():
 
         return f"{config.get('api_host', '')}{config.get(path, '')}"
 
-    def _configure_headers(self) -> dict:
-        if not self.token:
+    def _configure_headers(self, override_token: Optional[str] = None) -> dict:
+        if not self.token and not override_token:
             return {}
-        return {"Authorization": f"Bearer {self.token}"}
+        return {"Authorization": f"Bearer {override_token or self.token}"}
 
     async def _base_request(
         self,
@@ -48,13 +48,14 @@ class _API():
         url: str,
         params: Optional[dict] = None,
         json: Optional[dict] = None,
-        not_found_is_empty: bool = False
+        not_found_is_empty: bool = False,
+        override_token: Optional[str] = None
     ) -> Optional[dict]:
         async with aiohttp.ClientSession() as session:
             response = await session.request(
                 method=method,
                 url=url,
-                headers=self._configure_headers(),
+                headers=self._configure_headers(override_token),
                 params=params,
                 json=json
             )
@@ -323,3 +324,41 @@ class _API():
             org: Organization ID
         """
         return self.create_api_method(self._agent)
+
+    async def _agents(self, org: str) -> List[dict] | None:
+        url = f"{self.construct_api_url('services_path').format(org=org)}"
+        result = await self._base_request("GET", url) or {}
+
+        if "services" in result:
+            return result["services"]
+
+        return None
+
+    @property
+    def agents(self):
+        return self.create_api_method(self._agents)
+
+    async def _start_agent(
+        self, agent_name: str, api_key: str, use_daily: bool, data: Optional[str] = None
+    ) -> dict | None:
+        url = f"{self.construct_api_url('start_path').format(service=agent_name)}"
+
+        payload: dict = {"createDailyRoom": use_daily}
+        if data is not None:
+            payload["body"] = data
+
+        return await self._base_request(
+            "POST", url, override_token=api_key, json=payload, not_found_is_empty=True
+        )
+
+    @property
+    def start_agent(self):
+        return self.create_api_method(self._start_agent)
+
+    async def _agent_delete(self, agent_name: str, org: str) -> dict | None:
+        url = f"{self.construct_api_url('services_path').format(org=org)}/{agent_name}"
+        return await self._base_request("DELETE", url, not_found_is_empty=True)
+
+    @property
+    def agent_delete(self):
+        return self.create_api_method(self._agent_delete)

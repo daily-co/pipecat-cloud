@@ -1,30 +1,30 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pipecat-cloud"
-version = "0.0.1"
+name = "pipecatcloud"
+version = "0.0.9"
 requires-python = ">=3.10"
 description = "Cloud hosting for Pipecat AI applications"
 license = { text = "BSD 2-Clause License" }
 readme = "README.md"
 keywords = ["pipecat", "pipecat-ai", "voice", "ai", "llm"]
 dependencies = [
-    "aiohttp~=3.10.10",
-    "fastapi~=0.115.5",
-    "loguru~=0.7.2",
+    "aiohttp~=3.11.13,<4.0.0",
+    "fastapi~=0.115.6",
+    "loguru~=0.7.3",
     "python-dotenv~=1.0.1",
     "uvicorn~=0.32.0",
     "typer~=0.13.0",
     "synchronicity~=0.7.6",
     "toml~=0.10.2",
-    "questionary~=2.1.0",
+    "questionary~=2.1.0"
 ]
 
 [project.scripts]
 pcc = "pipecatcloud.__main__:main"
-pipecat = "pipecatcloud.__main__:main"
+pipecatcloud = "pipecatcloud.__main__:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

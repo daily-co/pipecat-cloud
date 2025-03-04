@@ -20,7 +20,7 @@ _SETTINGS = {
     "services_path": _Setting("/v1/organizations/{org}/services"),
     "services_logs_path": _Setting("/v1/organizations/{org}/services/{service}/logs"),
     "services_deployments_path": _Setting("/v1/organizations/{org}/services/{service}/deployments"),
-    "start_path": _Setting("/v1/public/{service}/proxy"),
+    "start_path": _Setting("/v1/public/{service}/start"),
     "api_keys_path": _Setting("/v1/organizations/{org}/apiKeys"),
     "secrets_path": _Setting("/v1/organizations/{org}/secrets")
 }

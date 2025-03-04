@@ -18,7 +18,7 @@ class AuthError(Error):
 
     def __init__(
             self,
-            message: str = "Unauthorized / token expired. Please run `pipecat auth login` to login again."):
+            message: str = "Unauthorized / token expired. Please run `pcc auth login` to login again."):
         self.message = message
         super().__init__(self.message)
 
