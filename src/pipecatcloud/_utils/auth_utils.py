@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
 import functools
 
 from pipecatcloud._utils.console_utils import console
@@ -16,4 +22,5 @@ def requires_login(func):
             )
             return
         return func(*args, **kwargs)
+
     return wrapper

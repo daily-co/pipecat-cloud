@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
 import os
 from typing import Optional
 
@@ -10,7 +16,7 @@ from pipecatcloud.exception import ConfigFileError
 DEPLOY_STATUS_MAP = {
     "Unknown": "[dim]Waiting[/dim]",
     "True": "[green]Ready[/green]",
-    "False": "[yellow]Creating[/yellow]"
+    "False": "[yellow]Creating[/yellow]",
 }
 
 
@@ -32,14 +38,11 @@ class ScalingParams:
                 raise ValueError("max_instances must be greater than or equal to min_instances")
 
     def to_dict(self):
-        return {
-            "min_instances": self.min_instances,
-            "max_instances": self.max_instances
-        }
+        return {"min_instances": self.min_instances, "max_instances": self.max_instances}
 
 
 @dataclass
-class DeployConfigParams():
+class DeployConfigParams:
     agent_name: Optional[str] = None
     image: Optional[str] = None
     image_credentials: Optional[str] = None
@@ -56,7 +59,7 @@ class DeployConfigParams():
             "image": self.image,
             "image_credentials": self.image_credentials,
             "secret_set": self.secret_set,
-            "scaling": self.scaling.to_dict() if self.scaling else None
+            "scaling": self.scaling.to_dict() if self.scaling else None,
         }
 
 
@@ -69,12 +72,12 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
     try:
         with open(deploy_config_path, "r") as f:
             config_data = toml.load(f)
-    except Exception as e:
+    except Exception:
         return None
 
     try:
         # Extract scaling parameters if present
-        scaling_data = config_data.pop('scaling', {})
+        scaling_data = config_data.pop("scaling", {})
         scaling_params = ScalingParams(**scaling_data)
 
         # Create DeployConfigParams with validated data
@@ -84,12 +87,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
         )
 
         # Check for unexpected keys
-        expected_keys = {
-            'agent_name',
-            'image',
-            'image_credentials',
-            'secret_set',
-            'scaling'}
+        expected_keys = {"agent_name", "image", "image_credentials", "secret_set", "scaling"}
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:
             raise ConfigFileError(f"Unexpected keys in config file: {unexpected_keys}")

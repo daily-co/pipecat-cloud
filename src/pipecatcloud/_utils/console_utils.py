@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
 from typing import Optional, Union
 
 from rich.console import Console
@@ -8,12 +14,12 @@ from pipecatcloud.cli import PANEL_TITLE_ERROR, PANEL_TITLE_SUCCESS, PIPECAT_CLI
 
 class PipecatConsole(Console):
     def success(
-            self,
-            message,
-            title: Optional[str] = None,
-            title_extra: Optional[str] = None,
-            subtitle: Optional[str] = None):
-
+        self,
+        message,
+        title: Optional[str] = None,
+        title_extra: Optional[str] = None,
+        subtitle: Optional[str] = None,
+    ):
         if not title:
             title = f"{PANEL_TITLE_SUCCESS}{f' - {title_extra}' if title_extra is not None else ''}"
 
@@ -24,15 +30,17 @@ class PipecatConsole(Console):
                 subtitle=subtitle,
                 title_align="left",
                 subtitle_align="left",
-                border_style="green"))
+                border_style="green",
+            )
+        )
 
     def error(
-            self,
-            message,
-            title: Optional[str] = None,
-            title_extra: Optional[str] = None,
-            subtitle: Optional[str] = None):
-
+        self,
+        message,
+        title: Optional[str] = None,
+        title_extra: Optional[str] = None,
+        subtitle: Optional[str] = None,
+    ):
         if not title:
             title = f"{PANEL_TITLE_ERROR}{f' - {title_extra}' if title_extra is not None else ''}"
 
@@ -43,7 +51,9 @@ class PipecatConsole(Console):
                 subtitle=subtitle,
                 title_align="left",
                 subtitle_align="left",
-                border_style="red"))
+                border_style="red",
+            )
+        )
 
     def cancel(self):
         self.print("[yellow]Cancelled by user[/yellow]")
@@ -56,13 +66,16 @@ class PipecatConsole(Console):
                 subtitle="",
                 title_align="left",
                 subtitle_align="left",
-                border_style="red"))
+                border_style="red",
+            )
+        )
 
     def api_error(
-            self,
-            error_code: Optional[Union[str, dict]] = None,
-            title: Optional[str] = "API Error",
-            hide_subtitle: bool = False):
+        self,
+        error_code: Optional[Union[str, dict]] = None,
+        title: Optional[str] = "API Error",
+        hide_subtitle: bool = False,
+    ):
         DEFAULT_ERROR_MESSAGE = "Unknown error. Please contact support."
 
         if isinstance(error_code, dict):
@@ -77,13 +90,16 @@ class PipecatConsole(Console):
 
         self.print(
             Panel(
-                f"[red]{title}[/red]\n\n"
-                f"[dim]Error message:[/dim]\n{error_message}",
+                f"[red]{title}[/red]\n\n" f"[dim]Error message:[/dim]\n{error_message}",
                 title=f"[bold red]{PANEL_TITLE_ERROR}{f' - {code}' if code else ''}[/bold red]",
-                subtitle=f"[dim]Docs: https://docs.pipecat.daily.co/agents/error-codes#{code}[/dim]" if not hide_subtitle and code else None,
+                subtitle=f"[dim]Docs: https://docs.pipecat.daily.co/agents/error-codes#{code}[/dim]"
+                if not hide_subtitle and code
+                else None,
                 title_align="left",
                 subtitle_align="left",
-                border_style="red"))
+                border_style="red",
+            )
+        )
 
 
 console = PipecatConsole()
@@ -113,10 +129,11 @@ def format_timestamp(timestamp: str) -> str:
         parts = timestamp.split(".")
         if len(parts) == 2 and parts[1].endswith("Z"):
             # Truncate microseconds to 6 digits
-            microseconds = parts[1][:-1][:6].ljust(6, '0')
+            microseconds = parts[1][:-1][:6].ljust(6, "0")
             normalized = f"{parts[0]}.{microseconds}Z"
-            return datetime.strptime(normalized,
-                                     "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d %H:%M:%S")
+            return datetime.strptime(normalized, "%Y-%m-%dT%H:%M:%S.%fZ").strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
     except (ValueError, IndexError):
         pass
 
