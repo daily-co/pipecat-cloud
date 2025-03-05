@@ -51,8 +51,7 @@ async def list(
         if not data or len(data) == 0:
             console.error(
                 f"[red]No agents found for namespace / organization '{org}'[/red]\n\n"
-                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]"
-            )
+                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]")
             return typer.Exit(1)
 
         else:
@@ -441,8 +440,7 @@ async def start(
                 title="Public API Key Required",
                 title_align="left",
                 border_style="yellow",
-            )
-        )
+            ))
 
         return typer.Exit(1)
 
@@ -457,8 +455,7 @@ async def start(
                 title=f"[bold]Start Request for agent: {agent_name}[/bold]",
                 title_align="left",
                 border_style="yellow",
-            )
-        )
+            ))
         if not await questionary.confirm(
             "Are you sure you want to start an active session for this agent?"
         ).ask_async():
@@ -504,15 +501,11 @@ async def start(
 
         live.stop()
 
-        message = f"Agent '{agent_name}' started successfully"
+        console.success(f"Agent '{agent_name}' started successfully")
         if use_daily and isinstance(data, dict):
             daily_room = data.get("dailyRoom")
             daily_token = data.get("dailyToken")
             if daily_room:
-                message += f"\n\nDaily room: [link={daily_room}?t={daily_token}]{daily_room}?t={daily_token}[/link]\n"
-            return console.success(
-                message,
-                subtitle=f"[white dim]Join the session:[/white dim] [link={daily_room}?t={daily_token}]click here[/link]",
-            )
-
-        console.success(message)
+                url = f"{daily_room}?t={daily_token}"
+                console.print("\nJoin your session by visiting the link below:")
+                console.print(f"[link='{url}']{url}[/link]")
