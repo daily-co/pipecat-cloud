@@ -9,6 +9,7 @@ from enum import Enum
 import aiohttp
 import questionary
 import typer
+import webbrowser
 from loguru import logger
 from rich import box
 from rich.columns import Columns
@@ -506,6 +507,10 @@ async def start(
             daily_room = data.get("dailyRoom")
             daily_token = data.get("dailyToken")
             if daily_room:
+                try:
+                    webbrowser.open(f"{daily_room}?t={daily_token}")
+                finally:
+                    pass
                 url = f"{daily_room}?t={daily_token}"
                 console.print("\nJoin your session by visiting the link below:")
                 console.print(f"[link='{url}']{url}[/link]")
