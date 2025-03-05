@@ -7,6 +7,8 @@
 import os
 from typing import Optional
 
+import toml
+
 from pipecatcloud.cli import PIPECAT_CREDENTIALS_PATH, PIPECAT_DEPLOY_CONFIG_PATH
 from pipecatcloud.config import _SETTINGS, Config, _Setting
 from pipecatcloud.exception import ConfigError
@@ -26,8 +28,6 @@ deploy_config_path: str = os.environ.get("PIPECAT_DEPLOY_CONFIG_PATH") or os.pat
 def _read_user_config():
     config_data = {}
     if os.path.exists(user_config_path):
-        import toml
-
         try:
             with open(user_config_path) as f:
                 config_data = toml.load(f)
@@ -53,7 +53,8 @@ user_config = _read_user_config()
 
 
 def _write_user_config(new_config):
-    import toml
+    dir_path = os.path.dirname(user_config_path)
+    os.makedirs(dir_path, exist_ok=True)
 
     with open(user_config_path, "w") as f:
         toml.dump(new_config, f)
