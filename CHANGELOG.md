@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0] - 2025-03-05
 
+- `pipecatcloud.toml` moved to `$HOME/.config/pipecatcloud/pipecatcloud.toml`
+
+### Added
+
+- `pcc auth whoami` now shows the namespace Daily API key for convenience
+
 ## [0.0.11] - 2025-03-04
 
 ### Changed
