@@ -247,7 +247,7 @@ async def set(
     action = "created" if not existing_set else "modified"
     message = f"Secret set [bold green]'{name}'[/bold green] {action} successfully"
     if action == "modified":
-        message += "\n[dim]You must re-deploy any agents using this secret set for changes to take effect[/dim]"
+        message += "\n[bold white]You must re-deploy any agents using this secret set for changes to take effect[/bold white]"
     else:
         message += f"\n[dim]Deploy your agent with {PIPECAT_CLI_NAME} deploy agent-name --secrets {name}[/dim]"
     console.success(message)
