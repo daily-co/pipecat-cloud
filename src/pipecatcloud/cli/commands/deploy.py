@@ -9,7 +9,6 @@ import asyncio
 import typer
 from rich.console import Group
 from rich.live import Live
-from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -26,7 +25,7 @@ from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
-MAX_ALIVE_CHECKS = 10
+MAX_ALIVE_CHECKS = 30
 ALIVE_CHECK_SLEEP = 5
 
 # ----- Command
@@ -124,84 +123,77 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             console.error("A problem occured during deployment. Please contact support.")
             return typer.Exit()
 
-        """
-        # 3. Poll status until healthy
-        """
-        attempts = 0
-        active_deployment_id = None
-        has_failed = False
-        is_ready = False
+        # Close the live display before starting the new polling phase
+        live.stop()
 
-        while attempts < MAX_ALIVE_CHECKS:
-            status_render_group = Panel.fit(
-                Group(
-                    Padding(
-                        console.status(
-                            f"[dim]Watching for deployment status (attempt: {attempts + 1})[dim]"
-                            if not active_deployment_id
-                            else f"Waiting for deployment to enter ready state [dim](attempt: {attempts + 1})[/dim]",
-                            spinner="bouncingBar",
-                        ),
-                        (1, 0),
-                    )
-                ),
-                title=f"[bold]{'Deploying' if not existing_agent else 'Updating'} agent[/bold]",
-                border_style="dim" if not active_deployment_id else "white",
-                subtitle=f"[dim]ID: {'Waiting...' if not active_deployment_id else active_deployment_id}[/dim]",
-            )
-            try:
-                await asyncio.sleep(ALIVE_CHECK_SLEEP)
+    # Print a message to indicate what we're doing
+    console.print(
+        f"[bold]{'Updating' if existing_agent else 'Deploying'} agent[/bold] '[green]{params.agent_name}[/green]'..."
+    )
 
-                live.update(status_render_group)
+    """
+    # 3. Poll status until healthy
+    """
+    active_deployment_id = None
+    has_failed = False
+    is_ready = False
+    checks_performed = 0
 
-                if has_failed:
-                    break
-
-                status, error = await API.agent(agent_name=params.agent_name, org=org, live=live)
+    # Create a simple spinner for the polling phase
+    with console.status(
+        "[dim]Waiting for deployment to become ready...[/dim]", spinner="dots"
+    ) as status:
+        try:
+            while checks_performed < MAX_ALIVE_CHECKS:
+                # Get deployment status
+                agent_status, error = await API.agent(
+                    agent_name=params.agent_name, org=org, live=None
+                )
 
                 if error:
+                    status.stop()
+                    console.error("Error checking deployment status")
                     return typer.Exit()
 
-                if not active_deployment_id and status["activeDeploymentId"]:
-                    # Reset attempts when deployment is assigned an ID
-                    attempts = 0
-                    active_deployment_id = status["activeDeploymentId"]
+                # Update deployment ID if received (silently)
+                if not active_deployment_id and agent_status.get("activeDeploymentId"):
+                    active_deployment_id = agent_status["activeDeploymentId"]
 
-                # Deployment is ready
-                if status["ready"]:
-                    live.update("")
+                # Check if deployment is ready
+                if agent_status.get("ready"):
                     is_ready = True
                     break
 
-            except KeyboardInterrupt:
-                live.stop()
-                console.print(
-                    "\n[yellow]Deployment monitoring interrupted. The deployment may still be in progress.[/yellow]"
-                )
-                return typer.Exit()
+                # Wait before checking again
+                await asyncio.sleep(ALIVE_CHECK_SLEEP)
+                checks_performed += 1
 
-            attempts += 1
-
-        live.stop()
-
-        if has_failed:
-            console.print(has_failed["message"])
-            console.error("Deployment failed with the above error")
+        except KeyboardInterrupt:
+            status.stop()
+            console.print(
+                "\n[yellow]Deployment monitoring interrupted. The deployment may still be in progress.[/yellow]"
+            )
             return typer.Exit()
 
-        if is_ready:
-            console.success(
-                f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
-                f"[dim]Start a session with your new agent by running:\n[/dim]"
-                f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
-                title_extra=f"{'Update'if existing_agent else 'Deployment'} complete",
-            )
-        else:
-            console.error(
-                f"Deployment did not enter ready state. Please check logs `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`"
-            )
-
+    # Final result handling
+    if has_failed:
+        console.print(has_failed["message"])
+        console.error("Deployment failed with the above error")
         return typer.Exit()
+
+    if is_ready:
+        console.success(
+            f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
+            f"[dim]Start a session with your new agent by running:\n[/dim]"
+            f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
+            title_extra=f"{'Update' if existing_agent else 'Deployment'} complete",
+        )
+    else:
+        console.error(
+            f"Deployment did not enter ready state within {MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP} seconds. "
+            f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`")
+
+    return typer.Exit()
 
 
 def create_deploy_command(app: typer.Typer):
@@ -312,24 +304,17 @@ def create_deploy_command(app: typer.Typer):
             (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
             (f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"),
             (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
-            (
-                f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"
-            ),
-            (
-                f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"
-            ),
+            (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
+            (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
             "\n[dim]Scaling configuration:[/dim]",
             table,
-            *(
-                []
-                if partial_config.scaling.min_instances
-                else [
+            *
+            (
+                [] if partial_config.scaling.min_instances else [
                     Text(
                         "Note: Deploying with 0 minimum instances may result in cold starts",
                         style="red",
-                    )
-                ]
-            ),
+                    )]),
         )
 
         console.print(
