@@ -26,7 +26,7 @@ from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
 MAX_ALIVE_CHECKS = 30
-ALIVE_CHECK_SLEEP = 1
+ALIVE_CHECK_SLEEP = 5
 
 # ----- Command
 
@@ -191,8 +191,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     else:
         console.error(
             f"Deployment did not enter ready state within {MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP} seconds. "
-            f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`"
-        )
+            f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`")
 
     return typer.Exit()
 
@@ -305,24 +304,17 @@ def create_deploy_command(app: typer.Typer):
             (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
             (f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"),
             (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
-            (
-                f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"
-            ),
-            (
-                f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"
-            ),
+            (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
+            (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
             "\n[dim]Scaling configuration:[/dim]",
             table,
-            *(
-                []
-                if partial_config.scaling.min_instances
-                else [
+            *
+            (
+                [] if partial_config.scaling.min_instances else [
                     Text(
                         "Note: Deploying with 0 minimum instances may result in cold starts",
                         style="red",
-                    )
-                ]
-            ),
+                    )]),
         )
 
         console.print(
