@@ -41,10 +41,9 @@ async def list(
 ):
     org = organization or config.get("org")
 
-    with console.status(f"Fetching agents for organization: [bold]'{org}'[/bold]", spinner="dots"):
+    with console.status(f"[dim]Fetching agents for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"):
         data, error = await API.agents(org=org)
 
-        print(data)
         if error:
             typer.Exit()
 
