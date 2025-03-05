@@ -468,7 +468,7 @@ async def start(
         if not health_data or not health_data["ready"]:
             live.stop()
             console.error(
-                f"Agent '{agent_name}' does not exist or is not in a health state. Please check the agent status with [bold cyan]{PIPECAT_CLI_NAME} agent status {agent_name}[/bold cyan]"
+                f"Agent '{agent_name}' does not exist or is not in a healthy state. Please check the agent status with [bold cyan]{PIPECAT_CLI_NAME} agent status {agent_name}[/bold cyan]"
             )
             return typer.Exit(1)
 
@@ -488,14 +488,6 @@ async def start(
         )
 
         if error:
-            return typer.Exit(1)
-
-        if not data:
-            live.stop()
-            console.error(
-                f"Agent '{agent_name}' not found. Have you deployed the agent?",
-                subtitle=f"[white dim]Deploy an agent with[/white dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]",
-            )
             return typer.Exit(1)
 
         live.stop()
