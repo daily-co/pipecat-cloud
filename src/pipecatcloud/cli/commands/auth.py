@@ -220,7 +220,7 @@ async def logout():
     )
 
 
-@auth_cli.command(name="whoami", help="Display data about the current user.")
+@auth_cli.command(name="whoami", help="Display data about the current user. Also show Daily API key.")
 @synchronizer.create_blocking
 @requires_login
 async def whomai():
