@@ -490,14 +490,6 @@ async def start(
         if error:
             return typer.Exit(1)
 
-        if not data:
-            live.stop()
-            console.error(
-                f"Agent '{agent_name}' not found. Have you deployed the agent?",
-                subtitle=f"[white dim]Deploy an agent with[/white dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]",
-            )
-            return typer.Exit(1)
-
         live.stop()
 
         console.success(f"Agent '{agent_name}' started successfully")
