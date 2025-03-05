@@ -24,7 +24,7 @@ FILES_TO_EXTRACT = {
     "pipecat-cloud-starter-main/requirements.txt",
     "pipecat-cloud-starter-main/pcc-deploy.toml",
     "pipecat-cloud-starter-main/README.md",
-    "pipecat-cloud-starter-main/pipecat-cloud-starter-main/.gitignore",
+    "pipecat-cloud-starter-main/.gitignore",
     "pipecat-cloud-starter-main/local_runner.py",
 }
 
