@@ -13,6 +13,7 @@ from typing import AsyncGenerator, Optional, Tuple
 import aiohttp
 import typer
 from loguru import logger
+from rich.columns import Columns
 from rich.live import Live
 from rich.panel import Panel
 
@@ -151,10 +152,7 @@ async def login():
                             Panel(
                                 "The web browser should have opened for you to authenticate with Pipecat Cloud.\n"
                                 "If it didn't, please copy this URL into your web browser manually:\n\n"
-                                f"[blue][link={web_url}]{web_url}[/link][/blue]\n",
-                            )
-                        )
-                    )
+                                f"[blue][link={web_url}]{web_url}[/link][/blue]\n", )))
                 else:
                     # For headless use-cases, just print the URL
                     live.stop()
@@ -222,7 +220,7 @@ async def logout():
     )
 
 
-@auth_cli.command(name="whoami", help="Display data about the current user.")
+@auth_cli.command(name="whoami", help="Display data about the current user. Also show Daily API key.")
 @synchronizer.create_blocking
 @requires_login
 async def whomai():
@@ -251,11 +249,26 @@ async def whomai():
             if not account["name"] or not account["verbose_name"]:
                 raise
 
-            live.stop()
+            # Retrieve user Daily API key
+            # Note: we don't raise an error if this fails, as it's not required for
+            # the CLI to function
+            live.update(console.status("[dim]Fetching Daily API key...[/dim]", spinner="dots"))
 
-            console.success(
-                f"[bold]User ID:[/bold] {user_data['user']['userId']}\n"
-                f"[bold]Active Organization:[/bold] {account['verbose_name']} [dim]({account['name']})[/dim]",
-            )
+            daily_api_key = None
+            try:
+                daily_api_key, error = await API.organizations_daily_key(org=org, live=live)
+            except Exception:
+                pass
+
+            live.stop()
+            message = Columns([
+                "[bold]User ID[/bold]\n"
+                "[bold]Active Organization[/bold]\n"
+                "[bold]Daily API Key[/bold]",
+                f"{user_data['user']['userId']}\n"
+                f"{account['verbose_name']} [dim]({account['name']})[/dim]\n"
+                f"{daily_api_key.get('apiKey', '[dim]N/A[/dim]') if daily_api_key else '[dim]N/A[/dim]'}",
+            ])
+            console.success(message)
     except Exception:
         console.error("Unable to obtain user data. Please contact support")

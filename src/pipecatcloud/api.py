@@ -168,6 +168,16 @@ class _API:
     def organizations(self):
         return self.create_api_method(self._organizations)
 
+    # Daily API Key
+
+    async def _organizations_daily_key(self, org) -> dict:
+        url = self.construct_api_url("daily_key_path").format(org=org)
+        return await self._base_request("GET", url) or {}
+
+    @property
+    def organizations_daily_key(self):
+        return self.create_api_method(self._organizations_daily_key)
+
     # API Keys
 
     async def _api_keys(self, org) -> dict:
