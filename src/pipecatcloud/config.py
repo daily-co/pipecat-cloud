@@ -26,6 +26,7 @@ _SETTINGS = {
     "login_status_path": _Setting("/auth/status"),
     "whoami_path": _Setting("/v1/users"),
     "organization_path": _Setting("/v1/organizations"),
+    "daily_key_path": _Setting("/v1/organizations/{org}/daily"),
     "services_path": _Setting("/v1/organizations/{org}/services"),
     "services_logs_path": _Setting("/v1/organizations/{org}/services/{service}/logs"),
     "services_deployments_path": _Setting("/v1/organizations/{org}/services/{service}/deployments"),
