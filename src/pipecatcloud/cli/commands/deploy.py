@@ -36,7 +36,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
 
     # Check for an existing deployment with this agent name
     with Live(
-        console.status("[dim]Checking for existing agent deployment...[/dim]", spinner="dots")
+        console.status("[dim]Checking for existing agent deployment...[/dim]", spinner="dots"), transient=True
     ) as live:
         data, error = await API.agent(agent_name=params.agent_name, org=org, live=live)
 
@@ -107,7 +107,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
 
         live.update(
             console.status(
-                f"[dim]{'Updating' if existing_agent else 'Pushing'} agent manifest...[/dim]"
+                f"[dim]{'Updating' if existing_agent else 'Pushing'} agent manifest for[/dim] [cyan]'{params.agent_name}'[/cyan]"
             )
         )
 
@@ -126,11 +126,6 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         # Close the live display before starting the new polling phase
         live.stop()
 
-    # Print a message to indicate what we're doing
-    console.print(
-        f"[bold]{'Updating' if existing_agent else 'Deploying'} agent[/bold] '[green]{params.agent_name}[/green]'..."
-    )
-
     """
     # 3. Poll status until healthy
     """
@@ -141,7 +136,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
 
     # Create a simple spinner for the polling phase
     with console.status(
-        "[dim]Waiting for deployment to become ready...[/dim]", spinner="dots"
+        "[dim]Waiting for deployment to become ready...[/dim]", spinner="bouncingBar"
     ) as status:
         try:
             while checks_performed < MAX_ALIVE_CHECKS:
