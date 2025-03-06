@@ -1,5 +1,5 @@
 <h1><div align="center">
- <img alt="pipecat cloud" width="500px" height="auto" src="./pipecat-cloud.png">
+ <img alt="pipecat cloud" width="500px" height="auto" src="https://raw.githubusercontent.com/daily-co/pipecat-cloud/main/pipecat-cloud.png">
 </div></h1>
 
 [![Docs](https://img.shields.io/badge/documentation-blue)](https://docs.pipecat.daily.co)
