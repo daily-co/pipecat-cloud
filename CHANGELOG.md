@@ -5,13 +5,19 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Improved error messaging for `ConfigError` to improve debugging.
+
 ## [0.1.0] - 2025-03-05
 
-- `pipecatcloud.toml` moved to `$HOME/.config/pipecatcloud/pipecatcloud.toml`
+- `pipecatcloud.toml` moved to `$HOME/.config/pipecatcloud/pipecatcloud.toml`.
 
 ### Added
 
-- `pcc auth whoami` now shows the namespace Daily API key for convenience
+- `pcc auth whoami` now shows the namespace Daily API key for convenience.
 
 ## [0.0.11] - 2025-03-04
 
