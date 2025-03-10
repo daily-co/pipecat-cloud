@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Change the of deploy checks from 30 to 18, reducing the overall time for a
+  deployment.
+
+- Added a `--format / -f` option for `agent logs`. Options are `TEXT` and
+  `JSON`.
+
 - Improved error messaging for `ConfigError` to improve debugging.
 
 ## [0.1.0] - 2025-03-05
