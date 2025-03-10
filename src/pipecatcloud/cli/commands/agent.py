@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import json
 from enum import Enum
 
 import aiohttp
@@ -220,6 +221,11 @@ async def scale():
     console.error("Not implemented")
 
 
+class LogFormat(str, Enum):
+    TEXT = "TEXT"
+    JSON = "JSON"
+
+
 class LogLevel(str, Enum):
     DEBUG = "DEBUG"
     INFO = "INFO"
@@ -229,8 +235,8 @@ class LogLevel(str, Enum):
 
 
 class LogLevelColors(str, Enum):
-    DEBUG = "dim white"
-    INFO = "white"
+    DEBUG = "blue"
+    INFO = "green"
     WARNING = "yellow"
     ERROR = "red"
     CRITICAL = "bold red"
@@ -245,6 +251,7 @@ async def logs(
         None, "--organization", "-o", help="Organization to get status of agent for"
     ),
     level: LogLevel = typer.Option(None, "--level", "-l", help="Level of logs to get"),
+    format: LogFormat = typer.Option(LogFormat.TEXT, "--format", "-f", help="Logs format"),
     limit: int = typer.Option(100, "--limit", "-n", help="Number of logs to get"),
 ):
     org = organization or config.get("org")
@@ -271,10 +278,14 @@ async def logs(
             # filter out any messages that do not match our log level
             if level and severity.value != level.value:
                 continue
-            color = getattr(LogLevelColors, severity, LogLevelColors.DEBUG).value
-            console.print(Text(timestamp, style="bold dim"))
-            console.print(Text(l.get("log", ""), style=color))
-            console.rule(style="dim")
+
+            if format == LogFormat.TEXT:
+                color = getattr(LogLevelColors, severity, LogLevelColors.DEBUG).value
+                console.print(Text(timestamp, style="bold dim"), end=" ")
+                console.print(Text(l.get("log", ""), style=color))
+            elif format == LogFormat.JSON:
+                line = {"timestamp": timestamp, "log": l.get("log", "")}
+                console.print(Text(json.dumps(line, ensure_ascii=False), style="gray"))
 
 
 @agent_cli.command(name="delete", help="Delete an agent.")
