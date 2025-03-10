@@ -27,22 +27,26 @@ deploy_config_path: str = os.environ.get("PIPECAT_DEPLOY_CONFIG_PATH") or os.pat
 
 def _read_user_config():
     config_data = {}
+    config_problem = ""
+
     if os.path.exists(user_config_path):
         try:
             with open(user_config_path) as f:
                 config_data = toml.load(f)
+        except toml.TomlDecodeError as exc:
+            config_problem = f"Invalid TOML syntax in config file: {exc}"
+        except PermissionError:
+            config_problem = f"Permission denied when reading config file: {user_config_path}"
+        except IOError as exc:
+            config_problem = f"I/O error when reading config file: {exc}"
         except Exception as exc:
-            config_problem = str(exc)
+            config_problem = f"Error reading config file: {exc}"
         else:
             top_level_keys = {"token", "org"}
             org_sections = {k: v for k, v in config_data.items() if k not in top_level_keys}
 
             if not all(isinstance(e, dict) for e in org_sections.values()):
-                raise ConfigError(
-                    "Pipecat Cloud config file is not valid TOML. Organization sections must be dictionaries. Please log out and log back in."
-                )
-            else:
-                config_problem = ""
+                config_problem = "Pipecat Cloud config file is not valid TOML. Organization sections must be dictionaries. Please log out and log back in."
         if config_problem:
             raise ConfigError(config_problem)
 
@@ -87,8 +91,14 @@ def update_user_config(
 
     try:
         _write_user_config(existing_config)
-    except Exception:
-        raise ConfigError
+    except PermissionError:
+        raise ConfigError(f"Permission denied when writing to {user_config_path}")
+    except FileNotFoundError:
+        raise ConfigError(f"Cannot create configuration directory for {user_config_path}")
+    except IOError as e:
+        raise ConfigError(f"IO error when writing configuration: {str(e)}")
+    except Exception as e:
+        raise ConfigError(f"Unexpected error updating configuration: {str(e)}")
 
 
 # --- Config
