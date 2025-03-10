@@ -57,7 +57,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     return typer.Exit()
 
     # Start the deployment process
-    with Live(console.status("[dim]Preparing deployment...", spinner="dots")) as live:
+    with Live(console.status("[dim]Preparing deployment...", spinner="dots"), transient=True) as live:
         """
         # 1. Check that provided secret set exists
         """
@@ -134,9 +134,13 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     is_ready = False
     checks_performed = 0
 
+    console.print(
+        f"[bold cyan]{'Updating' if existing_agent else 'Pushing'}[/bold cyan] deployment for agent '{params.agent_name}'")
+
     # Create a simple spinner for the polling phase
+    deployment_status_message = "[dim]Waiting for deployment to become ready...[/dim]"
     with console.status(
-        "[dim]Waiting for deployment to become ready...[/dim]", spinner="bouncingBar"
+        deployment_status_message, spinner="bouncingBar"
     ) as status:
         try:
             while checks_performed < MAX_ALIVE_CHECKS:
@@ -153,6 +157,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 # Update deployment ID if received (silently)
                 if not active_deployment_id and agent_status.get("activeDeploymentId"):
                     active_deployment_id = agent_status["activeDeploymentId"]
+                    deployment_status_message = f"[dim]Waiting for deployment to become ready (deployment ID: {active_deployment_id})...[/dim]"
 
                 # Check if deployment is ready
                 if agent_status.get("ready"):
