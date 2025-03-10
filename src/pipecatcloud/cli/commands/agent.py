@@ -235,8 +235,8 @@ class LogLevel(str, Enum):
 
 
 class LogLevelColors(str, Enum):
-    DEBUG = "dim white"
-    INFO = "white"
+    DEBUG = "blue"
+    INFO = "green"
     WARNING = "yellow"
     ERROR = "red"
     CRITICAL = "bold red"
