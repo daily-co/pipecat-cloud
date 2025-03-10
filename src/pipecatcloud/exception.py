@@ -37,6 +37,10 @@ class InvalidError(Error):
 class ConfigError(Error):
     """Raised when config is unable to be stored or updated"""
 
+    def __init__(self, message: str = "Failed to update configuration"):
+        self.message = message
+        super().__init__(self.message)
+
 
 class AgentNotHealthyError(Error):
     """Raised when agent is not healthy and cannot be started."""
