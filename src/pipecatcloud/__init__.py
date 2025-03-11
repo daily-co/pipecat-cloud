@@ -9,6 +9,7 @@ import sys
 
 from loguru import logger
 
+from .agent import DailySessionArguments, SessionArguments, WebSocketSessionArguments
 from .exception import (
     AgentNotHealthyError,
     AgentStartError,
@@ -25,6 +26,10 @@ logger.add(sys.stderr, level=str(os.getenv("PCC_LOG_LEVEL", "INFO")))
 
 
 __all__ = [
+    # Agent classes
+    "SessionArguments",
+    "DailySessionArguments",
+    "WebSocketSessionArguments",
     # Session classes
     "Session",
     "SessionParams",
