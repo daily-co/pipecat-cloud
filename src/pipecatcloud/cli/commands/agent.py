@@ -360,7 +360,6 @@ async def deployments(
                 response.raise_for_status()
 
             data = await response.json()
-            print(data)
 
             table = Table(
                 show_header=True,
