@@ -7,7 +7,7 @@
 from typing import Any, Optional, TypedDict
 
 from fastapi import WebSocket
-from loguru import Logger
+from loguru import logger
 
 
 class SessionArguments(TypedDict):
@@ -17,7 +17,7 @@ class SessionArguments(TypedDict):
     """
 
     session_id: Optional[str]
-    session_logger: Optional[Logger]
+    session_logger: Optional[logger]
 
 
 class DailySessionArguments(SessionArguments):

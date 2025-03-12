@@ -59,6 +59,8 @@ class _API:
         override_token: Optional[str] = None,
     ) -> Optional[dict]:
         async with aiohttp.ClientSession() as session:
+            logger.debug(f"Sending {method} request to {url} with payload: {json}")
+
             response = await session.request(
                 method=method,
                 url=url,
@@ -66,6 +68,8 @@ class _API:
                 params=params,
                 json=json,
             )
+            logger.debug(f"Received {response.status} response from {url}")
+
             if not response.ok:
                 if not_found_is_empty and response.status == 404:
                     return None
