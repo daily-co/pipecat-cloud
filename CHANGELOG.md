@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2025-03-12
+
+### Added
+
+- `agent.py` data classes for use in base images, providing guidance on params
+
+### Fixed
+
+- Lookup issue when passing an image pull secret to the `deploy` command
+
 ### Changed
 
 - Change the of deploy checks from 30 to 18, reducing the overall time for a
