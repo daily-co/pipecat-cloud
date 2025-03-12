@@ -182,13 +182,32 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         console.error("Deployment failed with the above error")
         return typer.Exit()
 
+    # check for org secret
+    default_public_api_key = config.get("default_public_key")
+
     if is_ready:
-        console.success(
-            f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
-            f"[dim]Start a session with your new agent by running:\n[/dim]"
-            f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
-            title_extra=f"{'Update' if existing_agent else 'Deployment'} complete",
-        )
+        if not default_public_api_key:
+            console.print(
+                Panel(
+                    f"No public API key provided. Please provide a public API key using the --api-key flag or set a default using [bold cyan]{PIPECAT_CLI_NAME} organizations keys use[/bold cyan].\n\n"
+                    f"If you have not yet created a public API key, you can do so by running [bold cyan]{PIPECAT_CLI_NAME} organizations keys create[/bold cyan].\n\n"
+                    f"Then...\n\n"
+                    f"[dim]Start a session with your new agent by running:\n[/dim]"
+                    f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
+                    title="Public API Key Required",
+                    title_align="left",
+                    border_style="yellow",
+                )
+            )
+
+            return typer.Exit(1)
+        else:
+            console.success(
+                f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
+                f"[dim]Start a session with your new agent by running:\n[/dim]"
+                f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
+                title_extra=f"{'Update' if existing_agent else 'Deployment'} complete",
+            )
     else:
         console.error(
             f"Deployment did not enter ready state within {MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP} seconds. "
