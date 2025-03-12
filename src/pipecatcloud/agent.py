@@ -4,22 +4,23 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-from typing import Any, Optional, TypedDict
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from fastapi import WebSocket
-from loguru import Logger
 
 
-class SessionArguments(TypedDict):
+@dataclass
+class SessionArguments:
     """Base class for common agent session arguments. The arguments are received
     by the bot() entry point.
 
     """
 
     session_id: Optional[str]
-    session_logger: Optional[Logger]
 
 
+@dataclass
 class DailySessionArguments(SessionArguments):
     """Daily based agent session arguments. The arguments are received by the
     bot() entry point.
@@ -31,6 +32,7 @@ class DailySessionArguments(SessionArguments):
     body: Any
 
 
+@dataclass
 class WebSocketSessionArguments(SessionArguments):
     """Websocket based agent session arguments. The arguments are received by
     the bot() entry point.
