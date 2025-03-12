@@ -15,8 +15,8 @@ jobs:
       name: pypi
       url: https://test.pypi.org/project/pipecat-cloud
     permissions:
-      id-token: write # IMPORTANT: this permission is needed for trusted publishing
-      contents: write # Needed for tagging
+      id-token: write 
+      contents: write
 
     steps:
       - name: Checkout code
@@ -45,15 +45,23 @@ jobs:
       - name: Build package
         run: python -m build
 
-      - name: Create release tag
+      - name: Check and create release tag if needed
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git tag -a "v${{ github.event.inputs.version }}" -m "Version ${{ github.event.inputs.version }}"
-          git push origin "v${{ github.event.inputs.version }}"
+          
+          # Check if tag already exists remotely
+          if git ls-remote --tags origin | grep -q "refs/tags/v${{ github.event.inputs.version }}"; then
+            echo "Tag v${{ github.event.inputs.version }} already exists, skipping tag creation"
+          else
+            echo "Creating new tag v${{ github.event.inputs.version }}"
+            git tag -a "v${{ github.event.inputs.version }}" -m "Version ${{ github.event.inputs.version }}"
+            git push origin "v${{ github.event.inputs.version }}"
+          fi
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          repository-url: https://test.pypi.org/legacy/
           verbose: true
           print-hash: true

@@ -94,7 +94,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             )
 
             if error:
-                if error == 400:
+                if error.get("code") == "400":
                     creds_exist = True
                 else:
                     API.print_error()
