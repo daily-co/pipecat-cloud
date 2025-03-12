@@ -21,6 +21,16 @@ class SessionArguments:
 
 
 @dataclass
+class PipecatSessionArguments(SessionArguments):
+    """Standard Pipecat Cloud agent session arguments. The arguments are
+    received by the bot() entry point.
+
+    """
+
+    body: Any
+
+
+@dataclass
 class DailySessionArguments(SessionArguments):
     """Daily based agent session arguments. The arguments are received by the
     bot() entry point.
