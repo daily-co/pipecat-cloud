@@ -7,15 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added an export for the `PipecatSessionArguments` class.
+
 ## [0.1.2] - 2025-03-12
 
 ### Added
 
-- `agent.py` data classes for use in base images, providing guidance on params
+- `agent.py` data classes for use in base images, providing guidance on params.
 
 ### Fixed
 
-- Lookup issue when passing an image pull secret to the `deploy` command
+- Lookup issue when passing an image pull secret to the `deploy` command.
 
 ### Changed
 
