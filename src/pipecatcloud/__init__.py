@@ -9,7 +9,12 @@ import sys
 
 from loguru import logger
 
-from pipecatcloud.agent import DailySessionArguments, SessionArguments, WebSocketSessionArguments
+from pipecatcloud.agent import (
+    DailySessionArguments,
+    PipecatSessionArguments,
+    SessionArguments,
+    WebSocketSessionArguments,
+)
 from pipecatcloud.exception import (
     AgentNotHealthyError,
     AgentStartError,
@@ -27,18 +32,19 @@ logger.add(sys.stderr, level=str(os.getenv("PCC_LOG_LEVEL", "INFO")))
 
 __all__ = [
     # Agent classes
-    "SessionArguments",
     "DailySessionArguments",
+    "PipecatSessionArguments",
+    "SessionArguments",
     "WebSocketSessionArguments",
     # Session classes
     "Session",
     "SessionParams",
     # Exception classes
-    "Error",
-    "ConfigFileError",
-    "AuthError",
-    "InvalidError",
-    "ConfigError",
     "AgentNotHealthyError",
     "AgentStartError",
+    "AuthError",
+    "ConfigError",
+    "ConfigFileError",
+    "Error",
+    "InvalidError",
 ]
