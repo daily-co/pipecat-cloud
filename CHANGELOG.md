@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added an export for the `PipecatSessionArguments` class.
 
+### Fixed
+
+- Fixed an issue where the link returned by `pcc agent start` was not clickable
+  in IDEs.
+
 ## [0.1.2] - 2025-03-12
 
 ### Added

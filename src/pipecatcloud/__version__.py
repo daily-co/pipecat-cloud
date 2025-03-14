@@ -4,9 +4,13 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-from pathlib import Path
-
-import toml
-
-pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
-version = toml.load(pyproject_path)["project"]["version"]
+try:
+    from importlib.metadata import version as get_version
+    version = get_version("pipecatcloud")
+except ImportError:
+    # For Python < 3.8
+    try:
+        from importlib_metadata import version as get_version
+        version = get_version("pipecatcloud")
+    except ImportError:
+        version = "Unknown"

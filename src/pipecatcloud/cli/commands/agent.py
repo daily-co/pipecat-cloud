@@ -509,4 +509,4 @@ async def start(
             if daily_room:
                 url = f"{daily_room}?t={daily_token}"
                 console.print("\nJoin your session by visiting the link below:")
-                console.print(f"[link='{url}']{url}[/link]")
+                console.print(f"[link={url}]{url}[/link]")
