@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `deploy` now correctly handles error states returned by the API
+
+- `deploy` checks revision status vs. general service ready status (when updating)
+
 ### Added
+
+- `agent logs` now accepts a `--deployment_id` / `-d` argument for filtering 
+by specific deployment ID
 
 - `agent start` now accepts `--daily-properties` / `-p` for customizing Daily
   room settings when used with `--use-daily`.
