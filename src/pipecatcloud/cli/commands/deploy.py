@@ -179,10 +179,10 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     status.update(deployment_status_message)
 
                 # If we have an active deployment ID, start tailing the log output
-                # @TODO
+                # @TODO - Implement this
 
                 # Check if deployment is ready
-                if agent_status.get("ready"):
+                if agent_status.get("activeDeploymentReady", False):
                     is_ready = True
                     break
 
