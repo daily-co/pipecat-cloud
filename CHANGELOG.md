@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix an issue where custom `data` resulted in an agent not starting.
+
 - Fixed an issue where the link returned by `pcc agent start` was not clickable
   in IDEs.
 
