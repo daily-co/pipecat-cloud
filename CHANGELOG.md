@@ -9,9 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `agent start` now accepts `--daily-properties` / `-p` for customizing Daily
+  room settings when used with `--use-daily`.
+
+- Added `daily_room_properties` to `SessionParams` in SDK for configuring Daily
+  rooms when creating sessions.
+
 - Added an export for the `PipecatSessionArguments` class.
 
 ### Fixed
+
+- Fix an issue where custom `data` resulted in an agent not starting.
 
 - Fixed an issue where the link returned by `pcc agent start` was not clickable
   in IDEs.
