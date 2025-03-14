@@ -46,7 +46,7 @@ async def list(
         data, error = await API.agents(org=org)
 
         if error:
-            typer.Exit()
+            return typer.Exit()
 
         if not data or len(data) == 0:
             console.error(
