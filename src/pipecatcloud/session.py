@@ -96,7 +96,7 @@ class Session:
 
         # Only process daily_room_properties if use_daily is True
         daily_properties_param = None
-        if self.params.use_daily and self.params.daily_room_properties is not None:
+        if self.params.use_daily and self.params.daily_room_properties:
             # Convert dictionary to JSON string
             if isinstance(self.params.daily_room_properties, dict):
                 daily_properties_param = json.dumps(self.params.daily_room_properties)

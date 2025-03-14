@@ -465,7 +465,7 @@ async def start(
         return typer.Exit(1)
 
     # Validate daily_properties JSON if provided
-    if use_daily and daily_properties is not None:
+    if use_daily and daily_properties:
         try:
             json.loads(daily_properties)
         except json.JSONDecodeError as e:

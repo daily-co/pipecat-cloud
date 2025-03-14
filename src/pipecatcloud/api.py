@@ -385,7 +385,7 @@ class _API:
             payload["body"] = json.loads(data)
 
         # Add Daily room properties only if use_daily is True
-        if use_daily and daily_properties is not None:
+        if use_daily and daily_properties:
             payload["dailyRoomProperties"] = json.loads(daily_properties)
 
         return await self._base_request(
