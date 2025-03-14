@@ -21,10 +21,14 @@ class SessionParams:
     Args:
         data: Optional dictionary of data to pass to the agent.
         use_daily: If True, creates a Daily WebRTC room for the session.
+        daily_room_properties: Optional dictionary of properties to configure the Daily room.
+            Only used when use_daily=True. See Daily.co API documentation for available properties:
+            https://docs.daily.co/reference/rest-api/rooms/config
     """
 
     data: Optional[Dict[str, Any]] = None
     use_daily: Optional[bool] = False
+    daily_room_properties: Optional[Dict[str, Any]] = None
 
 
 class Session:
@@ -90,12 +94,23 @@ class Session:
                 # If it's already a string or other type, use as is
                 data_param = self.params.data
 
+        # Only process daily_room_properties if use_daily is True
+        daily_properties_param = None
+        if self.params.use_daily and self.params.daily_room_properties:
+            # Convert dictionary to JSON string
+            if isinstance(self.params.daily_room_properties, dict):
+                daily_properties_param = json.dumps(self.params.daily_room_properties)
+            else:
+                # If it's already a string, use as is
+                daily_properties_param = self.params.daily_room_properties
+
         # Call the method similar to how the CLI does it
         result, error = await api.start_agent(
             agent_name=self.agent_name,
             api_key=self.api_key,
             use_daily=bool(self.params.use_daily),
             data=data_param,
+            daily_properties=daily_properties_param,
         )
 
         if error:
