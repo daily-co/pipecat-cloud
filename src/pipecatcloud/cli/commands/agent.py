@@ -42,7 +42,9 @@ async def list(
 ):
     org = organization or config.get("org")
 
-    with console.status(f"[dim]Fetching agents for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"):
+    with console.status(
+        f"[dim]Fetching agents for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"
+    ):
         data, error = await API.agents(org=org)
 
         if error:
@@ -51,7 +53,8 @@ async def list(
         if not data or len(data) == 0:
             console.error(
                 f"[red]No agents found for namespace / organization '{org}'[/red]\n\n"
-                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]")
+                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]"
+            )
             return typer.Exit(1)
 
         else:
@@ -427,6 +430,13 @@ async def start(
         help="Create a Daily WebRTC session for the agent",
         rich_help_panel="Start Configuration",
     ),
+    daily_properties: str = typer.Option(
+        None,
+        "--daily-properties",
+        "-p",
+        help="Daily room properties (stringified JSON)",
+        rich_help_panel="Start Configuration",
+    ),
     organization: str = typer.Option(
         None,
         "--organization",
@@ -449,22 +459,30 @@ async def start(
                 title="Public API Key Required",
                 title_align="left",
                 border_style="yellow",
-            ))
+            )
+        )
 
         return typer.Exit(1)
 
     # Confirm start request
     if not force:
+        daily_props_display = daily_properties or "None"
+        # Truncate display of daily properties if too long
+        if daily_properties and len(daily_properties) > 80:
+            daily_props_display = daily_properties[:77] + "..."
+
         console.print(
             Panel(
                 f"Agent Name: {agent_name}\n"
                 f"Public API Key: {default_public_api_key_name} [dim]{default_public_api_key}[/dim]\n"
                 f"Use Daily: {use_daily}\n"
+                f"Daily Properties: {daily_props_display}\n"
                 f"Data: {data}",
                 title=f"[bold]Start Request for agent: {agent_name}[/bold]",
                 title_align="left",
                 border_style="yellow",
-            ))
+            )
+        )
         if not await questionary.confirm(
             "Are you sure you want to start an active session for this agent?"
         ).ask_async():
@@ -494,6 +512,7 @@ async def start(
             api_key=default_public_api_key,
             use_daily=use_daily,
             data=data,
+            daily_properties=daily_properties,
             live=live,
         )
 

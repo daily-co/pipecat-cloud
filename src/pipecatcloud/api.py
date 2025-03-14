@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import json
 from functools import wraps
 from typing import Callable, List, Optional
 
@@ -368,13 +369,24 @@ class _API:
         return self.create_api_method(self._agents)
 
     async def _start_agent(
-        self, agent_name: str, api_key: str, use_daily: bool, data: Optional[str] = None
+        self,
+        agent_name: str,
+        api_key: str,
+        use_daily: bool,
+        data: Optional[str] = None,
+        daily_properties: Optional[str] = None,
     ) -> dict | None:
         url = f"{self.construct_api_url('start_path').format(service=agent_name)}"
 
         payload: dict = {"createDailyRoom": use_daily}
+
+        # Add data to payload if provided
         if data is not None:
             payload["body"] = data
+
+        # Add Daily room properties if provided
+        if daily_properties is not None and use_daily:
+            payload["dailyRoomProperties"] = json.loads(daily_properties)
 
         return await self._base_request(
             "POST", url, override_token=api_key, json=payload, not_found_is_empty=True
