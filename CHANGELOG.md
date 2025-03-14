@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `agent start` now accepts `--daily-properties` / `-p` for customizing Daily
   room settings when used with `--use-daily`.
 
+- Added `daily_room_properties` to `SessionParams` in SDK for configuring Daily
+  rooms when creating sessions.
+
 - Added an export for the `PipecatSessionArguments` class.
 
 ### Fixed
