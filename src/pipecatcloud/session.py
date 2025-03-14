@@ -14,21 +14,60 @@ from pipecatcloud.api import _API
 from pipecatcloud.exception import AgentStartError
 
 
+class TransportParams:
+    """Base class for transport parameters in Pipecat Cloud.
+
+    Transport parameters configure how communication is established with an agent.
+    This serves as the base class that specific transport types extend.
+    """
+
+    @property
+    def transport_type(self) -> str:
+        """Return the identifier for this transport type."""
+        raise NotImplementedError("Subclasses must implement transport_type")
+
+    @property
+    def create_room(self) -> bool:
+        """Whether to create a room for this transport."""
+        return False
+
+    @property
+    def room_properties(self) -> Optional[Dict[str, Any]]:
+        """Properties to configure the room, if applicable."""
+        return None
+
+
+@dataclass
+class DailyTransportParams(TransportParams):
+    """Parameters for Daily.co WebRTC transport configuration.
+
+    Args:
+        create_room: Whether to create a Daily room for this session.
+        room_properties: Optional dictionary of properties to configure the Daily room.
+            See Daily.co API documentation for available properties:
+            https://docs.daily.co/reference/rest-api/rooms/config
+    """
+
+    create_room: bool = False
+    room_properties: Optional[Dict[str, Any]] = None
+
+    @property
+    def transport_type(self) -> str:
+        return "daily"
+
+
 @dataclass
 class SessionParams:
     """Parameters for configuring a Pipecat Cloud agent session.
 
     Args:
         data: Optional dictionary of data to pass to the agent.
-        use_daily: If True, creates a Daily WebRTC room for the session.
-        daily_room_properties: Optional dictionary of properties to configure the Daily room.
-            Only used when use_daily=True. See Daily.co API documentation for available properties:
-            https://docs.daily.co/reference/rest-api/rooms/config
+        transport_params: Optional TransportParams for configuring communication.
+            Currently supports DailyTransportParams.
     """
 
     data: Optional[Dict[str, Any]] = None
-    use_daily: Optional[bool] = False
-    daily_room_properties: Optional[Dict[str, Any]] = None
+    transport_params: Optional[TransportParams] = None
 
 
 class Session:
@@ -66,8 +105,8 @@ class Session:
         If use_daily is True, creates a Daily room for WebRTC communication.
 
         Returns:
-            dict: Response data containing session information. If use_daily is True,
-                  includes 'dailyRoom' URL and 'dailyToken' for room access.
+            dict: Response data containing session information. If a transport is configured,
+                  includes transport-specific access details.
 
         Raises:
             AgentStartError: If the session fails to start, including:
@@ -75,6 +114,7 @@ class Session:
                 - Agent not found
                 - Agent not ready
                 - Capacity limits reached
+                - Transport configuration errors
         """
         if not self.api_key:
             raise AgentStartError({"code": "PCC-1002", "error": "No API key provided"})
@@ -94,23 +134,27 @@ class Session:
                 # If it's already a string or other type, use as is
                 data_param = self.params.data
 
-        # Only process daily_room_properties if use_daily is True
-        daily_properties_param = None
-        if self.params.use_daily and self.params.daily_room_properties:
-            # Convert dictionary to JSON string
-            if isinstance(self.params.daily_room_properties, dict):
-                daily_properties_param = json.dumps(self.params.daily_room_properties)
-            else:
-                # If it's already a string, use as is
-                daily_properties_param = self.params.daily_room_properties
+        # Initialize transport parameters in a generic way
+        transport_type = None
+        create_room = False
+        room_properties_param = None
 
-        # Call the method similar to how the CLI does it
+        # Extract transport configuration if available
+        if self.params.transport_params:
+            transport = self.params.transport_params
+            transport_type = transport.transport_type
+            create_room = transport.create_room
+
+            if create_room and transport.room_properties:
+                room_properties_param = json.dumps(transport.room_properties)
+
+        # Call the method to start the agent with the appropriate parameters
         result, error = await api.start_agent(
             agent_name=self.agent_name,
             api_key=self.api_key,
-            use_daily=bool(self.params.use_daily),
+            use_daily=create_room if transport_type == "daily" else False,
             data=data_param,
-            daily_properties=daily_properties_param,
+            daily_properties=room_properties_param if transport_type == "daily" else None,
         )
 
         if error:
