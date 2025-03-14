@@ -7,6 +7,7 @@
 import asyncio
 
 import typer
+from loguru import logger
 from rich.console import Group
 from rich.live import Live
 from rich.panel import Panel
@@ -131,7 +132,6 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     # 3. Poll status until healthy
     """
     active_deployment_id = None
-    has_failed = False
     is_ready = False
     checks_performed = 0
 
@@ -145,23 +145,44 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     ) as status:
         try:
             while checks_performed < MAX_ALIVE_CHECKS:
+                logger.debug("Polling for deployment status")
+
                 # Get deployment status
                 agent_status, error = await API.agent(
                     agent_name=params.agent_name, org=org, live=None
                 )
+
+                logger.debug(f"Deployment status: {agent_status}")
+
+                # Look for any error messages in the agent status
+                # Exit out of the polling loop if we find an error
+                status_errors = agent_status.get("errors", [])
+                if status_errors and len(status_errors) > 0:
+                    status.stop()
+                    # Pluck the first error message
+                    error_message = status_errors[0]
+                    if "code" in error_message and "message" in error_message:
+                        console.api_error(error_message, "Agent deployment failed")
+                    else:
+                        console.error(f"Deployment failed with an unknown error: {status_errors}")
+                    return typer.Exit()
 
                 if error:
                     status.stop()
                     console.error("Error checking deployment status")
                     return typer.Exit()
 
-                # Update deployment ID if received (silently)
+                # Update deployment ID if received
                 if not active_deployment_id and agent_status.get("activeDeploymentId"):
                     active_deployment_id = agent_status["activeDeploymentId"]
                     deployment_status_message = f"[dim]Waiting for deployment to become ready (deployment ID: {active_deployment_id})...[/dim]"
+                    status.update(deployment_status_message)
+
+                # If we have an active deployment ID, start tailing the log output
+                # @TODO - Implement this
 
                 # Check if deployment is ready
-                if agent_status.get("ready"):
+                if agent_status.get("activeDeploymentReady", False):
                     is_ready = True
                     break
 
@@ -176,43 +197,24 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             )
             return typer.Exit()
 
-    # Final result handling
-    if has_failed:
-        console.print(has_failed["message"])
-        console.error("Deployment failed with the above error")
-        return typer.Exit()
-
-    # check for org secret
-    default_public_api_key = config.get("default_public_key")
-
     if is_ready:
-        if not default_public_api_key:
-            console.print(
-                Panel(
-                    f"No public API key provided. Please provide a public API key using the --api-key flag or set a default using [bold cyan]{PIPECAT_CLI_NAME} organizations keys use[/bold cyan].\n\n"
-                    f"If you have not yet created a public API key, you can do so by running [bold cyan]{PIPECAT_CLI_NAME} organizations keys create[/bold cyan].\n\n"
-                    f"Then...\n\n"
-                    f"[dim]Start a session with your new agent by running:\n[/dim]"
-                    f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
-                    title="Public API Key Required",
-                    title_align="left",
-                    border_style="yellow",
-                )
-            )
+        public_api_key = config.get("default_public_key")
+        extra_message = ""
+        if not public_api_key:
+            extra_message = "\n\n[yellow]Note: if you have not already created a public API key (required to start a session), you can do so by running:\n[/yellow]"
+            extra_message += f"[bold yellow]`{PIPECAT_CLI_NAME} organizations keys create`[/bold yellow]"
 
-            return typer.Exit(1)
-        else:
-            console.success(
-                f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
-                f"[dim]Start a session with your new agent by running:\n[/dim]"
-                f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]",
-                title_extra=f"{'Update' if existing_agent else 'Deployment'} complete",
-            )
+        console.success(
+            f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
+            f"[white]Start a session with your new agent by running:\n[/white]"
+            f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]"
+            f"{extra_message}",
+            title_extra=f"{'Update' if existing_agent else 'Deployment'} complete",
+        )
     else:
         console.error(
             f"Deployment did not enter ready state within {MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP} seconds. "
-            f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`"
-        )
+            f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`")
 
     return typer.Exit()
 
@@ -325,24 +327,17 @@ def create_deploy_command(app: typer.Typer):
             (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
             (f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"),
             (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
-            (
-                f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"
-            ),
-            (
-                f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"
-            ),
+            (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
+            (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
             "\n[dim]Scaling configuration:[/dim]",
             table,
-            *(
-                []
-                if partial_config.scaling.min_instances
-                else [
+            *
+            (
+                [] if partial_config.scaling.min_instances else [
                     Text(
                         "Note: Deploying with 0 minimum instances may result in cold starts",
                         style="red",
-                    )
-                ]
-            ),
+                    )]),
         )
 
         console.print(

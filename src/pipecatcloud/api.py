@@ -6,7 +6,7 @@
 
 import json
 from functools import wraps
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Union
 
 import aiohttp
 from loguru import logger
@@ -404,9 +404,13 @@ class _API:
     def agent_delete(self):
         return self.create_api_method(self._agent_delete)
 
-    async def _agent_logs(self, agent_name: str, org: str, limit: int = 100) -> dict | None:
+    async def _agent_logs(self, agent_name: str, org: str, limit: int = 100,
+                          deployment_id: Optional[str] = None) -> dict | None:
         url = f"{self.construct_api_url('services_logs_path').format(org=org, service=agent_name)}"
-        return await self._base_request("GET", url, params={"limit": limit})
+        params: dict[str, Union[int, str]] = {"limit": limit}
+        if deployment_id:
+            params["deploymentId"] = deployment_id
+        return await self._base_request("GET", url, params=params)
 
     @property
     def agent_logs(self):
