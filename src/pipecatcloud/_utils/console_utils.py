@@ -67,8 +67,7 @@ class PipecatConsole(Console):
                 title_align="left",
                 subtitle_align="left",
                 border_style="red",
-            )
-        )
+            ))
 
     def api_error(
         self,
@@ -79,7 +78,9 @@ class PipecatConsole(Console):
         DEFAULT_ERROR_MESSAGE = "Unknown error. Please contact support."
 
         if isinstance(error_code, dict):
-            error_message = error_code.get("error", DEFAULT_ERROR_MESSAGE)
+            error_message = error_code.get(
+                "error", None) or error_code.get(
+                "message", None) or DEFAULT_ERROR_MESSAGE
             code = error_code.get("code")
         else:
             error_message = str(error_code) if error_code else DEFAULT_ERROR_MESSAGE
