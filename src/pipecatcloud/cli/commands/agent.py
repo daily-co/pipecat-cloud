@@ -268,30 +268,51 @@ class LogLevelColors(str, Enum):
 @synchronizer.create_blocking
 @requires_login
 async def logs(
-    agent_name: str,
-    organization: str = typer.Option(
-        None, "--organization", "-o", help="Organization to get status of agent for"
-    ),
-    level: LogLevel = typer.Option(None, "--level", "-l", help="Level of logs to get"),
-    format: LogFormat = typer.Option(LogFormat.TEXT, "--format", "-f", help="Logs format"),
-    limit: int = typer.Option(100, "--limit", "-n", help="Number of logs to get"),
+        agent_name: str,
+        organization: str = typer.Option(
+            None,
+            "--organization",
+            "-o",
+            help="Organization to get status of agent for"),
+        level: LogLevel = typer.Option(
+            None,
+            "--level",
+            "-l",
+            help="Level of logs to get"),
+        format: LogFormat = typer.Option(
+            LogFormat.TEXT,
+            "--format",
+            "-f",
+            help="Logs format"),
+        limit: int = typer.Option(
+            100,
+            "--limit",
+            "-n",
+            help="Number of logs to get"),
+        deployment_id: str = typer.Option(
+            None,
+            "--deployment",
+            "-d",
+            help="Filter logs by deployment ID"),
 ):
     org = organization or config.get("org")
 
+    status_text = "agent" if not deployment_id else f"deployment ({deployment_id})"
+
     with console.status(
-        f"[dim]Fetching logs for agent: [bold]'{agent_name}'[/bold] with severity: [bold cyan]{level.value if level else 'ALL'}[/bold cyan][/dim]",
+        f"[dim]Fetching logs for {status_text}: [bold]'{agent_name}'[/bold] with severity: [bold cyan]{level.value if level else 'ALL'}[/bold cyan][/dim]",
         spinner="dots",
     ):
-        data, error = await API.agent_logs(agent_name=agent_name, org=org, limit=limit)
+        data, error = await API.agent_logs(agent_name=agent_name, org=org, limit=limit, deployment_id=deployment_id)
 
         if not data or not data.get("logs"):
             console.print("[dim]No logs found for agent[/dim]")
             return typer.Exit(1)
 
-    for l in data["logs"]:
-        log_data = l.get("log", "")
+    for log in data["logs"]:
+        log_data = log.get("log", "")
         if log_data:
-            timestamp = format_timestamp(l.get("timestamp", ""))
+            timestamp = format_timestamp(log.get("timestamp", ""))
             severity = LogLevel.INFO
             for log_severity in LogLevel:
                 if log_severity.value in log_data.upper():
@@ -304,9 +325,9 @@ async def logs(
             if format == LogFormat.TEXT:
                 color = getattr(LogLevelColors, severity, LogLevelColors.DEBUG).value
                 console.print(Text(timestamp, style="bold dim"), end=" ")
-                console.print(Text(l.get("log", ""), style=color))
+                console.print(Text(log_data, style=color))
             elif format == LogFormat.JSON:
-                line = {"timestamp": timestamp, "log": l.get("log", "")}
+                line = {"timestamp": timestamp, "log": log_data}
                 console.print(Text(json.dumps(line, ensure_ascii=False), style="gray"))
 
 
