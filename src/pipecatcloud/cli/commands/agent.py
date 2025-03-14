@@ -92,6 +92,8 @@ async def status(
     ) as live:
         data, error = await API.agent(agent_name=agent_name, org=org, live=live)
 
+        logger.debug(f"Agent status: {data}")
+
         live.stop()
 
         if error:
@@ -147,6 +149,25 @@ async def status(
                 border_style="dim",
             )
 
+        # Error status
+        error_panel = None
+        errors = data.get("errors", [])
+        if errors and len(errors) > 0:
+            error_table = Table(show_header=False, show_lines=False, box=box.SIMPLE)
+            error_table.add_column("Code")
+            error_table.add_column("Message")
+            for error in errors:
+                error_table.add_row(
+                    f"[bold red]{error['code']}[/bold red]",
+                    f"[red]{error.get('message', None) or error.get('error', 'Unknown error')}[/red]",
+                )
+            error_panel = Panel(
+                error_table,
+                title="[bold red]Agent errors:[/bold red]",
+                title_align="left",
+                border_style="red",
+            )
+
         color = "bold green" if data["ready"] else "bold yellow"
         subtitle = (
             f"[dim]Start a new active session with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]"
@@ -163,6 +184,7 @@ async def status(
                         border_style="green" if data["ready"] else "yellow",
                         expand=False,
                     ),
+                    error_panel if error_panel else "",
                 ),
                 title=f"Status for agent [bold]{agent_name}[/bold]",
                 title_align="left",

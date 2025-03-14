@@ -26,7 +26,7 @@ from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
-MAX_ALIVE_CHECKS = 1
+MAX_ALIVE_CHECKS = 18
 ALIVE_CHECK_SLEEP = 5
 
 # ----- Command
