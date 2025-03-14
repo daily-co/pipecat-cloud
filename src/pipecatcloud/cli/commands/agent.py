@@ -464,6 +464,15 @@ async def start(
 
         return typer.Exit(1)
 
+    # Validate daily_properties JSON if provided
+    if use_daily and daily_properties is not None:
+        try:
+            json.loads(daily_properties)
+        except json.JSONDecodeError as e:
+            console.error(f"Invalid JSON format for Daily room properties: {daily_properties}")
+            console.print(f"[dim]JSON error: {str(e)}[/dim]")
+            return typer.Exit(1)
+
     # Confirm start request
     if not force:
         daily_props_display = daily_properties or "None"
@@ -517,6 +526,8 @@ async def start(
         )
 
         if error:
+            live.stop()
+            # Error is displayed from start_agent create_api_method wrapper
             return typer.Exit(1)
 
         live.stop()
