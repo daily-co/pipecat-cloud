@@ -132,7 +132,14 @@ async def _get_account_org(
 
 @auth_cli.command(name="login", help="Login to Pipecat Cloud and get a new token")
 @synchronizer.create_blocking
-async def login():
+async def login(
+    headless: bool = typer.Option(
+        False,
+        "--headless",
+        "-h",
+        help="Skip opening a browser window for authentication and print the URL instead",
+    ),
+):
     active_org = config.get("org")
     auth_flow = _AuthFlow()
 
@@ -154,7 +161,7 @@ async def login():
                 transient=True,
             ) as live:
                 # Open the web url in the browser
-                if _open_url(web_url):
+                if not headless and _open_url(web_url):
                     live.update(
                         console.status(
                             Panel(
