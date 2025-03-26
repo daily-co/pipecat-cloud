@@ -7,6 +7,7 @@
 import asyncio
 import itertools
 import webbrowser
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional, Tuple
 
@@ -83,12 +84,19 @@ AuthFlow = synchronize_api(_AuthFlow)
 
 def _open_url(url: str) -> bool:
     try:
-        browser = webbrowser.get()
-        if isinstance(browser, webbrowser.GenericBrowser) and browser.name != "open":
+        is_wsl = 'WSL_DISTRO_NAME' in os.environ or 'WSL_INTEROP' in os.environ
+        has_display = bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
+
+        if is_wsl and not has_display:
             return False
-        else:
-            return browser.open_new_tab(url)
-    except webbrowser.Error:
+
+        browser = webbrowser.get()
+        if (isinstance(browser, webbrowser.GenericBrowser) and
+                browser.name not in ['open', 'x-www-browser', 'xdg-open']):
+            return False
+
+        return browser.open_new_tab(url)
+    except (webbrowser.Error, ImportError, AttributeError):
         return False
 
 
@@ -220,7 +228,8 @@ async def logout():
     )
 
 
-@auth_cli.command(name="whoami", help="Display data about the current user. Also show Daily API key.")
+@auth_cli.command(name="whoami",
+                  help="Display data about the current user. Also show Daily API key.")
 @synchronizer.create_blocking
 @requires_login
 async def whomai():
