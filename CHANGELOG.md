@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `auth login` now accepts a `--headless` / `-h` flag to skip automatic browser opening during authentication. This is particularly useful for:
+  - Systems running in headless environments
+  - WSL installations where browser context may not match the terminal
+  - CI/CD pipelines
+  - Users who prefer to manually copy and paste the authentication URL
+
+## [0.1.3] - 2025-03-13
+
+### Fixed
+
 - `deploy` now correctly handles error states returned by the API
 
 - `deploy` checks revision status vs. general service ready status (when updating)
