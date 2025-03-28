@@ -7,6 +7,7 @@
 import asyncio
 import itertools
 import webbrowser
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional, Tuple
 
@@ -83,12 +84,19 @@ AuthFlow = synchronize_api(_AuthFlow)
 
 def _open_url(url: str) -> bool:
     try:
-        browser = webbrowser.get()
-        if isinstance(browser, webbrowser.GenericBrowser) and browser.name != "open":
+        is_wsl = 'WSL_DISTRO_NAME' in os.environ or 'WSL_INTEROP' in os.environ
+        has_display = bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
+
+        if is_wsl and not has_display:
             return False
-        else:
-            return browser.open_new_tab(url)
-    except webbrowser.Error:
+
+        browser = webbrowser.get()
+        if (isinstance(browser, webbrowser.GenericBrowser) and
+                browser.name not in ['open', 'x-www-browser', 'xdg-open']):
+            return False
+
+        return browser.open_new_tab(url)
+    except (webbrowser.Error, ImportError, AttributeError):
         return False
 
 
@@ -124,7 +132,14 @@ async def _get_account_org(
 
 @auth_cli.command(name="login", help="Login to Pipecat Cloud and get a new token")
 @synchronizer.create_blocking
-async def login():
+async def login(
+    headless: bool = typer.Option(
+        False,
+        "--headless",
+        "-h",
+        help="Skip opening a browser window for authentication and print the URL instead",
+    ),
+):
     active_org = config.get("org")
     auth_flow = _AuthFlow()
 
@@ -146,7 +161,7 @@ async def login():
                 transient=True,
             ) as live:
                 # Open the web url in the browser
-                if _open_url(web_url):
+                if not headless and _open_url(web_url):
                     live.update(
                         console.status(
                             Panel(
@@ -220,7 +235,8 @@ async def logout():
     )
 
 
-@auth_cli.command(name="whoami", help="Display data about the current user. Also show Daily API key.")
+@auth_cli.command(name="whoami",
+                  help="Display data about the current user. Also show Daily API key.")
 @synchronizer.create_blocking
 @requires_login
 async def whomai():
