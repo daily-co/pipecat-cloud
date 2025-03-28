@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2025-03-28
+
+### Changed
+
+- `deploy` now shows a confirmation when `min-instances` is greater than 0 to assert usage will be billed.
+
 ### Fixed
 
 - `auth login` now accepts a `--headless` / `-h` flag to skip automatic browser opening during authentication. This is particularly useful for:
