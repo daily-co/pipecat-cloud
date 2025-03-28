@@ -336,7 +336,7 @@ def create_deploy_command(app: typer.Typer):
                 [
                     Text(
                         f"Note: Usage costs will apply for {partial_config.scaling.min_instances} reserved instance(s). Please see: https://www.daily.co/pricing/pipecat-cloud/",
-                        style="bold red",
+                        style="red",
                     )] if partial_config.scaling.min_instances else [
                     Text(
                         "Note: Deploying with 0 minimum instances may result in cold starts",
