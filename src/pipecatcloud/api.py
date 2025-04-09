@@ -308,6 +308,7 @@ class _API:
                 "minReplicas": deploy_config.scaling.min_instances,
                 "maxReplicas": deploy_config.scaling.max_instances,
             },
+            "enableKrisp": deploy_config.enable_krisp,
         }
 
         # Remove None values recursively

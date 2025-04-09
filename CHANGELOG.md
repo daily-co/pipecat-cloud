@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2025-04-09
+
+- `deploy` command now accepts a `--enable-krisp / -krisp` which enables Krisp integration for your pipeline.
+
 ## [0.1.4] - 2025-03-28
 
 ### Changed
