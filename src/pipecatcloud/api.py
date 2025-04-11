@@ -13,6 +13,7 @@ from loguru import logger
 
 from pipecatcloud._utils.deploy_utils import DeployConfigParams
 from pipecatcloud.config import config
+from pipecatcloud.exception import AgentStartError
 
 
 def api_method(func):
@@ -30,10 +31,11 @@ def api_method(func):
 
 
 class _API:
-    def __init__(self, token: Optional[str] = None):
+    def __init__(self, token: Optional[str] = None, is_cli: bool = False):
         self.token = token
         self.error = None
         self.bubble_next = False
+        self.is_cli = is_cli
 
     @staticmethod
     def construct_api_url(path: str) -> str:
@@ -60,6 +62,8 @@ class _API:
         override_token: Optional[str] = None,
     ) -> Optional[dict]:
         async with aiohttp.ClientSession() as session:
+            logger.debug(f"Request: {method} {url} {params} {json}")
+
             response = await session.request(
                 method=method,
                 url=url,
@@ -71,7 +75,6 @@ class _API:
             if not response.ok:
                 if not_found_is_empty and response.status == 404:
                     return None
-
                 # Extract PCC error code, where applicable
                 try:
                     # Try to parse the error as JSON
@@ -100,6 +103,12 @@ class _API:
             except Exception as e:
                 if live and not self.bubble_next:
                     live.stop()
+
+                if not self.is_cli and self.error and not self.bubble_next:
+                    if isinstance(self.error, dict) and self.error.get("status", "429"):
+                        raise AgentStartError(self.error)
+                    else:
+                        raise e
 
                 if self.error and not self.bubble_next:
                     logger.debug(e)

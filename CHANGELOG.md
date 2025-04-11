@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `start` command now takes agent name from `pcc-deploy.toml` where applicable 
 - API error handling now checks `response.ok` and properly checks for error codes for all non-ok responses
 
+# Fixed
+
+- REST and cURL requests now render errors correctly
+
+
 ## [0.1.4] - 2025-03-28
 
 ### Changed
