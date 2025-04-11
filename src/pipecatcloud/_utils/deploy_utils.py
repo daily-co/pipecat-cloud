@@ -48,6 +48,7 @@ class DeployConfigParams:
     image_credentials: Optional[str] = None
     secret_set: Optional[str] = None
     scaling: ScalingParams = ScalingParams()
+    enable_krisp: bool = False
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:
@@ -60,6 +61,7 @@ class DeployConfigParams:
             "image_credentials": self.image_credentials,
             "secret_set": self.secret_set,
             "scaling": self.scaling.to_dict() if self.scaling else None,
+            "enable_krisp": self.enable_krisp,
         }
 
 
@@ -87,7 +89,13 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
         )
 
         # Check for unexpected keys
-        expected_keys = {"agent_name", "image", "image_credentials", "secret_set", "scaling"}
+        expected_keys = {
+            "agent_name",
+            "image",
+            "image_credentials",
+            "secret_set",
+            "scaling",
+            "enable_krisp"}
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:
             raise ConfigFileError(f"Unexpected keys in config file: {unexpected_keys}")

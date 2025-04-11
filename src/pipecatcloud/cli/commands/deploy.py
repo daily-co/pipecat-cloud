@@ -268,6 +268,13 @@ def create_deploy_command(app: typer.Typer):
             help="Image pull secret to use for deployment",
             rich_help_panel="Deployment Configuration",
         ),
+        krisp: bool = typer.Option(
+            False,
+            "--enable-krisp",
+            "-krisp",
+            help="Enable Krisp integration for this deployment",
+            rich_help_panel="Deployment Configuration",
+        ),
         skip_confirm: bool = typer.Option(
             False,
             "--force",
@@ -306,6 +313,7 @@ def create_deploy_command(app: typer.Typer):
             if max_instances is not None
             else partial_config.scaling.max_instances,
         )
+        partial_config.enable_krisp = krisp or partial_config.enable_krisp
 
         # Assert agent name and image are provided
         if not partial_config.agent_name:
@@ -329,6 +337,7 @@ def create_deploy_command(app: typer.Typer):
             (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
             (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
             (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
+            (f"[bold white]Krisp:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}"),
             "\n[dim]Scaling configuration:[/dim]",
             table,
             *

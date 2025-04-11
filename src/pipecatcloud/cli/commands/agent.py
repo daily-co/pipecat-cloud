@@ -25,6 +25,7 @@ from pipecatcloud._utils.console_utils import console, format_timestamp
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
+from pipecatcloud._utils.deploy_utils import load_deploy_config_file, DeployConfigParams
 
 agent_cli = typer.Typer(name="agent", help="Agent management", no_args_is_help=True)
 
@@ -53,8 +54,7 @@ async def list(
         if not data or len(data) == 0:
             console.error(
                 f"[red]No agents found for namespace / organization '{org}'[/red]\n\n"
-                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]"
-            )
+                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]")
             return typer.Exit(1)
 
         else:
@@ -444,7 +444,7 @@ async def deployments(
 @synchronizer.create_blocking
 @requires_login
 async def start(
-    agent_name: str = typer.Argument(help="Name of the agent to start e.g. 'my-agent'"),
+    agent_name: str = typer.Argument(None, help="Name of the agent to start e.g. 'my-agent'"),
     force: bool = typer.Option(
         False,
         "--force",
@@ -494,6 +494,25 @@ async def start(
         "CLI provided" if api_key else config.get("default_public_key_name")
     )
 
+    # Load values from deployment config file (if one exists)
+    partial_config = DeployConfigParams()
+    try:
+        if deploy_config := load_deploy_config_file():
+            partial_config = deploy_config
+    except Exception as e:
+        console.error(str(e))
+        return typer.Exit()
+
+    # Get agent name from pcc-deploy.toml if not provided
+    if not agent_name:
+        default_agent_name = partial_config.agent_name
+
+        if not default_agent_name:
+            console.error("No agent name provided and no default agent name found in pcc-deploy.toml")
+            return typer.Exit(1)
+
+        agent_name = default_agent_name
+
     if not default_public_api_key:
         console.print(
             Panel(
@@ -502,8 +521,7 @@ async def start(
                 title="Public API Key Required",
                 title_align="left",
                 border_style="yellow",
-            )
-        )
+            ))
 
         return typer.Exit(1)
 
@@ -533,8 +551,7 @@ async def start(
                 title=f"[bold]Start Request for agent: {agent_name}[/bold]",
                 title_align="left",
                 border_style="yellow",
-            )
-        )
+            ))
         if not await questionary.confirm(
             "Are you sure you want to start an active session for this agent?"
         ).ask_async():
