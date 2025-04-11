@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.5] - 2025-04-09
 
+# Added
+
 - `deploy` command now accepts a `--enable-krisp / -krisp` which enables Krisp integration for your pipeline.
+
+# Changed
+
+- `start` command now takes agent name from `pcc-deploy.toml` where applicable 
+- API error handling now checks `response.ok` and properly checks for error codes for all non-ok responses
 
 ## [0.1.4] - 2025-03-28
 

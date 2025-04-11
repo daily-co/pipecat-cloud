@@ -72,16 +72,17 @@ class _API:
                     return None
 
                 # Extract PCC error code, where applicable
-                if response.status == 400:
+                if not response.ok:
                     try:
+                        # Try to parse the error as JSON
                         error_data = await response.json()
                         self.error = error_data
                     except Exception:
                         # Fallback structure matching API format
-                        self.error = {"error": "Bad Request", "code": str(response.status)}
-                else:
-                    # Match API error format for non-400 errors
-                    self.error = {"error": response.reason, "code": str(response.status)}
+                        self.error = {
+                            "error": response.reason or "Bad Request",
+                            "code": str(
+                                response.status)}
                 response.raise_for_status()
 
             return await response.json()
