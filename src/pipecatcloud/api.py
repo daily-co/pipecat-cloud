@@ -13,6 +13,7 @@ from loguru import logger
 
 from pipecatcloud._utils.deploy_utils import DeployConfigParams
 from pipecatcloud.config import config
+from pipecatcloud.exception import AgentStartError
 
 
 def api_method(func):
@@ -30,10 +31,11 @@ def api_method(func):
 
 
 class _API:
-    def __init__(self, token: Optional[str] = None):
+    def __init__(self, token: Optional[str] = None, is_cli: bool = False):
         self.token = token
         self.error = None
         self.bubble_next = False
+        self.is_cli = is_cli
 
     @staticmethod
     def construct_api_url(path: str) -> str:
@@ -60,6 +62,8 @@ class _API:
         override_token: Optional[str] = None,
     ) -> Optional[dict]:
         async with aiohttp.ClientSession() as session:
+            logger.debug(f"Request: {method} {url} {params} {json}")
+
             response = await session.request(
                 method=method,
                 url=url,
@@ -67,21 +71,23 @@ class _API:
                 params=params,
                 json=json,
             )
+
             if not response.ok:
-                if not_found_is_empty and response.status == 404:
+                logger.debug(f"Response not ok: {response.status} {response.reason}")
+                if self.is_cli and not_found_is_empty and response.status == 404:
                     return None
 
                 # Extract PCC error code, where applicable
-                if response.status == 400:
-                    try:
-                        error_data = await response.json()
-                        self.error = error_data
-                    except Exception:
-                        # Fallback structure matching API format
-                        self.error = {"error": "Bad Request", "code": str(response.status)}
-                else:
-                    # Match API error format for non-400 errors
-                    self.error = {"error": response.reason, "code": str(response.status)}
+                try:
+                    # Try to parse the error as JSON
+                    error_data = await response.json()
+                    self.error = error_data
+                except Exception:
+                    # Fallback structure matching API format
+                    self.error = {
+                        "error": response.reason or "Bad Request",
+                        "code": str(
+                            response.status)}
                 response.raise_for_status()
 
             return await response.json()
@@ -99,6 +105,12 @@ class _API:
             except Exception as e:
                 if live and not self.bubble_next:
                     live.stop()
+
+                if not self.is_cli and self.error and not self.bubble_next:
+                    if isinstance(self.error, dict) and self.error.get("status", "429"):
+                        raise AgentStartError(self.error)
+                    else:
+                        raise e
 
                 if self.error and not self.bubble_next:
                     logger.debug(e)
@@ -308,6 +320,7 @@ class _API:
                 "minReplicas": deploy_config.scaling.min_instances,
                 "maxReplicas": deploy_config.scaling.max_instances,
             },
+            "enableKrisp": deploy_config.enable_krisp,
         }
 
         # Remove None values recursively
