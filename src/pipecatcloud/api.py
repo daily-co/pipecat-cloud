@@ -73,8 +73,10 @@ class _API:
             )
 
             if not response.ok:
-                if not_found_is_empty and response.status == 404:
+                logger.debug(f"Response not ok: {response.status} {response.reason}")
+                if self.is_cli and not_found_is_empty and response.status == 404:
                     return None
+
                 # Extract PCC error code, where applicable
                 try:
                     # Try to parse the error as JSON
