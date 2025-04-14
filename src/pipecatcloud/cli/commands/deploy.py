@@ -310,8 +310,6 @@ def create_deploy_command(app: typer.Typer):
             if min_instances is not None
             else partial_config.scaling.min_instances,
             max_instances=max_instances
-            if max_instances is not None
-            else partial_config.scaling.max_instances,
         )
         partial_config.enable_krisp = krisp or partial_config.enable_krisp
 
@@ -329,7 +327,10 @@ def create_deploy_command(app: typer.Typer):
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
         table.add_row("Min instances", str(partial_config.scaling.min_instances))
-        table.add_row("Max instances", str(partial_config.scaling.max_instances))
+        if partial_config.scaling.max_instances:
+            table.add_row("Max instances", str(partial_config.scaling.max_instances))
+        else:
+            table.add_row("Max instances", "[dim]Use existing or default[/dim]")
 
         content = Group(
             (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
