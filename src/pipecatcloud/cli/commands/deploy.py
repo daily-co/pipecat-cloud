@@ -310,6 +310,8 @@ def create_deploy_command(app: typer.Typer):
             if min_instances is not None
             else partial_config.scaling.min_instances,
             max_instances=max_instances
+            if max_instances is not None
+            else partial_config.scaling.max_instances,
         )
         partial_config.enable_krisp = krisp or partial_config.enable_krisp
 
