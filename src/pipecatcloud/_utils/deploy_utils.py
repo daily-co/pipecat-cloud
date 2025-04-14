@@ -23,7 +23,7 @@ DEPLOY_STATUS_MAP = {
 @dataclass
 class ScalingParams:
     min_instances: Optional[int] = 0
-    max_instances: Optional[int] = 10
+    max_instances: Optional[int] = None
 
     def __attrs_post_init__(self):
         if self.min_instances is not None:
