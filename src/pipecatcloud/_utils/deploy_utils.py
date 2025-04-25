@@ -8,7 +8,7 @@ import os
 from typing import Optional
 
 import toml
-from attr import dataclass
+from attr import dataclass, field
 from loguru import logger
 
 from pipecatcloud.exception import ConfigFileError
@@ -22,23 +22,37 @@ DEPLOY_STATUS_MAP = {
 
 @dataclass
 class ScalingParams:
-    min_instances: Optional[int] = 0
-    max_instances: Optional[int] = None
+    min_agents: Optional[int] = 0
+    max_agents: Optional[int] = None
+    # @deprecated
+    min_instances: Optional[int] = field(default=None, metadata={"deprecated": True})
+    # @deprecated
+    max_instances: Optional[int] = field(default=None, metadata={"deprecated": True})
 
     def __attrs_post_init__(self):
+        # Handle deprecated fields
         if self.min_instances is not None:
-            if self.min_instances < 0:
-                raise ValueError("min_instances must be greater than or equal to 0")
+            logger.warning("min_instances is deprecated, use min_agents instead")
+            self.min_agents = self.min_instances
 
         if self.max_instances is not None:
-            if self.max_instances < 1:
-                raise ValueError("max_instances must be greater than 0")
+            logger.warning("max_instances is deprecated, use max_agents instead")
+            self.max_agents = self.max_instances
 
-            if self.min_instances is not None and self.max_instances < self.min_instances:
-                raise ValueError("max_instances must be greater than or equal to min_instances")
+        # Validation
+        if self.min_agents is not None:
+            if self.min_agents < 0:
+                raise ValueError("min_agents must be greater than or equal to 0")
+
+        if self.max_agents is not None:
+            if self.max_agents < 1:
+                raise ValueError("max_agents must be greater than 0")
+
+            if self.min_agents is not None and self.max_agents < self.min_agents:
+                raise ValueError("max_agents must be greater than or equal to min_agents")
 
     def to_dict(self):
-        return {"min_instances": self.min_instances, "max_instances": self.max_instances}
+        return {"min_agents": self.min_agents, "max_agents": self.max_agents}
 
 
 @dataclass
@@ -95,7 +109,8 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "image_credentials",
             "secret_set",
             "scaling",
-            "enable_krisp"}
+            "enable_krisp",
+        }
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:
             raise ConfigFileError(f"Unexpected keys in config file: {unexpected_keys}")

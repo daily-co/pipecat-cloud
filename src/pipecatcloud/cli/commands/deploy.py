@@ -230,19 +230,19 @@ def create_deploy_command(app: typer.Typer):
         image: str = typer.Argument(
             None, help="Docker image location e.g. 'my-image:latest'", show_default=False
         ),
-        min_instances: int = typer.Option(
+        min_agents: int = typer.Option(
             None,
-            "--min-instances",
+            "--min-agents",
             "-min",
-            help="Minimum number of instances to keep warm",
+            help="Minimum number of agents to keep warm",
             rich_help_panel="Deployment Configuration",
             min=0,
         ),
-        max_instances: int = typer.Option(
+        max_agents: int = typer.Option(
             None,
-            "--max-instances",
+            "--max-agents",
             "-max",
-            help="Maximum number of allowed instances",
+            help="Maximum number of allowed agents",
             rich_help_panel="Deployment Configuration",
             min=1,
             max=50,
@@ -281,7 +281,33 @@ def create_deploy_command(app: typer.Typer):
             "-f",
             help="Force deployment / skip confirmation",
         ),
+        # @deprecated
+        min_instances: int = typer.Option(
+            None,
+            "--min-instances",
+            help="[Deprecated] Use --min-agents instead",
+            hidden=True,
+            min=0,
+        ),
+        # @deprecated
+        max_instances: int = typer.Option(
+            None,
+            "--max-instances",
+            help="[Deprecated] Use --max-agents instead",
+            hidden=True,
+            min=1,
+            max=50,
+        ),
     ):
+        # Handle @deprecated options
+        if min_instances is not None:
+            logger.warning("min_instances is deprecated, use min_agents instead")
+            min_agents = min_instances
+
+        if max_instances is not None:
+            logger.warning("max_instances is deprecated, use max_agents instead")
+            max_agents = max_instances
+
         org = organization or config.get("org")
 
         # Compose deployment config from CLI options and config file (if provided)
@@ -306,10 +332,10 @@ def create_deploy_command(app: typer.Typer):
         partial_config.image_credentials = credentials or partial_config.image_credentials
         partial_config.secret_set = secret_set or partial_config.secret_set
         partial_config.scaling = ScalingParams(
-            min_instances=min_instances
-            if min_instances is not None
-            else partial_config.scaling.min_instances,
-            max_instances=max_instances
+            min_agents=min_agents
+            if min_agents is not None
+            else partial_config.scaling.min_agents,
+            max_agents=max_agents
         )
         partial_config.enable_krisp = krisp or partial_config.enable_krisp
 
@@ -326,11 +352,11 @@ def create_deploy_command(app: typer.Typer):
         table = Table(show_header=False, border_style="dim", show_edge=True, show_lines=True)
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
-        table.add_row("Min instances", str(partial_config.scaling.min_instances))
-        if partial_config.scaling.max_instances:
-            table.add_row("Max instances", str(partial_config.scaling.max_instances))
+        table.add_row("Min agents", str(partial_config.scaling.min_agents))
+        if partial_config.scaling.max_agents:
+            table.add_row("Max agents", str(partial_config.scaling.max_agents))
         else:
-            table.add_row("Max instances", "[dim]Use existing or default[/dim]")
+            table.add_row("Max agents", "[dim]Use existing or default[/dim]")
 
         content = Group(
             (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
@@ -345,11 +371,11 @@ def create_deploy_command(app: typer.Typer):
             (
                 [
                     Text(
-                        f"Note: Usage costs will apply for {partial_config.scaling.min_instances} reserved instance(s). Please see: https://www.daily.co/pricing/pipecat-cloud/",
+                        f"Note: Usage costs will apply for {partial_config.scaling.min_agents} reserved agent(s). Please see: https://www.daily.co/pricing/pipecat-cloud/",
                         style="red",
-                    )] if partial_config.scaling.min_instances else [
+                    )] if partial_config.scaling.min_agents else [
                     Text(
-                        "Note: Deploying with 0 minimum instances may result in cold starts",
+                        "Note: Deploying with 0 minimum agents may result in cold starts",
                         style="red",
                     )]),
         )
