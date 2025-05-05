@@ -5,7 +5,8 @@
 #
 
 import os
-from typing import Optional
+import functools
+from typing import Optional, Callable, Any
 
 import toml
 from attr import dataclass, field
@@ -120,3 +121,20 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
     except Exception as e:
         logger.debug(e)
         raise ConfigFileError(str(e))
+
+
+def with_deploy_config(func: Callable) -> Callable:
+    """
+    Decorator that loads the deploy config file and injects it into the function.
+    If the config file exists, it will be loaded and passed to the function as `deploy_config`.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            deploy_config = load_deploy_config_file()
+            kwargs['deploy_config'] = deploy_config
+        except Exception as e:
+            logger.error(f"Error loading deploy config: {e}")
+            raise ConfigFileError(str(e))
+        return func(*args, **kwargs)
+    return wrapper

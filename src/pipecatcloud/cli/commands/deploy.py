@@ -5,6 +5,7 @@
 #
 
 import asyncio
+from typing import Optional
 
 import typer
 from loguru import logger
@@ -20,7 +21,7 @@ from pipecatcloud._utils.console_utils import console
 from pipecatcloud._utils.deploy_utils import (
     DeployConfigParams,
     ScalingParams,
-    load_deploy_config_file,
+    with_deploy_config,
 )
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
@@ -223,7 +224,9 @@ def create_deploy_command(app: typer.Typer):
     @app.command(name="deploy", help="Deploy agent to Pipecat Cloud")
     @synchronizer.create_blocking
     @requires_login
+    @with_deploy_config
     async def deploy(
+        deploy_config=typer.Option(None, hidden=True),
         agent_name: str = typer.Argument(
             None, help="Name of the agent to deploy e.g. 'my-agent'", show_default=False
         ),
@@ -299,6 +302,7 @@ def create_deploy_command(app: typer.Typer):
             max=50,
         ),
     ):
+
         # Handle @deprecated options
         if min_instances is not None:
             logger.warning("min_instances is deprecated, use min_agents instead")
@@ -316,15 +320,7 @@ def create_deploy_command(app: typer.Typer):
         #   2. Values from the config toml file
         #   3. CLI command defaults
 
-        partial_config = DeployConfigParams()
-
-        # Load values from deployment config file (if one exists)
-        try:
-            if deploy_config := load_deploy_config_file():
-                partial_config = deploy_config
-        except Exception as e:
-            console.error(str(e))
-            return typer.Exit()
+        partial_config = deploy_config or DeployConfigParams()
 
         # Override any local config values from passed CLI arguments
         partial_config.agent_name = agent_name or partial_config.agent_name
@@ -336,6 +332,8 @@ def create_deploy_command(app: typer.Typer):
             if min_agents is not None
             else partial_config.scaling.min_agents,
             max_agents=max_agents
+            if max_agents is not None
+            else partial_config.scaling.max_agents,
         )
         partial_config.enable_krisp = krisp or partial_config.enable_krisp
 
