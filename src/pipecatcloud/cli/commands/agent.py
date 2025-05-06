@@ -25,7 +25,7 @@ from pipecatcloud._utils.console_utils import console, format_timestamp
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
-from pipecatcloud._utils.deploy_utils import load_deploy_config_file, DeployConfigParams
+from pipecatcloud._utils.deploy_utils import with_deploy_config, DeployConfigParams
 
 agent_cli = typer.Typer(name="agent", help="Agent management", no_args_is_help=True)
 
@@ -137,11 +137,11 @@ async def status(
         if autoscaling_data:
             scaling_renderables = [
                 Panel(
-                    f"[bold]Minimum Instances[/bold]\n{autoscaling_data.get('minReplicas', 0)}",
+                    f"[bold]Minimum Agents[/bold]\n{autoscaling_data.get('minAgents', 0)}",
                     expand=True,
                 ),
                 Panel(
-                    f"[bold]Maximum Instances[/bold]\n{autoscaling_data.get('maxReplicas', 0)}",
+                    f"[bold]Maximum Agents[/bold]\n{autoscaling_data.get('maxAgents', 0)}",
                     expand=True,
                 ),
             ]
@@ -443,7 +443,9 @@ async def deployments(
 @agent_cli.command(name="start", help="Start an agent instance")
 @synchronizer.create_blocking
 @requires_login
+@with_deploy_config
 async def start(
+    deploy_config=typer.Option(None, hidden=True),
     agent_name: str = typer.Argument(None, help="Name of the agent to start e.g. 'my-agent'"),
     force: bool = typer.Option(
         False,
@@ -495,20 +497,14 @@ async def start(
     )
 
     # Load values from deployment config file (if one exists)
-    partial_config = DeployConfigParams()
-    try:
-        if deploy_config := load_deploy_config_file():
-            partial_config = deploy_config
-    except Exception as e:
-        console.error(str(e))
-        return typer.Exit()
+    partial_config = deploy_config or DeployConfigParams()
 
     # Get agent name from pcc-deploy.toml if not provided
     if not agent_name:
         default_agent_name = partial_config.agent_name
 
         if not default_agent_name:
-            console.error("No agent name provided and no default agent name found in pcc-deploy.toml")
+            console.error("No target agent name provided")
             return typer.Exit(1)
 
         agent_name = default_agent_name

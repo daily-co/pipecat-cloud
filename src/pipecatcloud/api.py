@@ -317,8 +317,8 @@ class _API:
             "imagePullSecretSet": deploy_config.image_credentials,
             "secretSet": deploy_config.secret_set,
             "autoScaling": {
-                "minReplicas": deploy_config.scaling.min_instances,
-                "maxReplicas": deploy_config.scaling.max_instances,
+                "minAgents": deploy_config.scaling.min_agents,
+                "maxAgents": deploy_config.scaling.max_agents,
             },
             "enableKrisp": deploy_config.enable_krisp,
         }

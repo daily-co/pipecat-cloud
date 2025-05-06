@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2025-04-25
+
+# Changed
+
+- `min-instances` and `max-instances` has been changed to reflect API terminology changes.
+
 ## [0.1.5] - 2025-04-09
 
 # Added
