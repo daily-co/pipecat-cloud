@@ -5,6 +5,8 @@
 #
 
 from typing import Optional, Union
+from datetime import datetime
+import statistics
 
 from rich.console import Console
 from rich.panel import Panel
@@ -140,3 +142,64 @@ def format_timestamp(timestamp: str) -> str:
 
     # Return original if parsing fails
     return timestamp
+
+
+def format_duration(created_at_str: str, ended_at_str: str) -> str | None:
+    """Calculate and format session duration as HH:MM:SS"""
+    if not ended_at_str:
+        return None
+
+    try:
+        created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+        ended_at = datetime.fromisoformat(ended_at_str.replace('Z', '+00:00'))
+        duration = ended_at - created_at
+
+        # Convert to total seconds
+        total_seconds = int(duration.total_seconds())
+
+        # Calculate hours, minutes, seconds
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    except Exception:
+        return None
+
+
+def calculate_percentiles(data: list[float]) -> tuple[float, float, float] | None:
+    """
+    Calculate average, 5th percentile, and 95th percentile for a list of numeric data.
+
+    Args:
+        data: List of float values to analyze
+
+    Returns:
+        Tuple of (average, p5, p95) if data is provided, None if empty list.
+        For single values, p5 and p95 will equal the single value.
+    """
+    if not data:
+        return None
+
+    avg = statistics.mean(data)
+
+    if len(data) == 1:
+        return avg, data[0], data[0]
+
+    sorted_data = sorted(data)
+
+    def percentile(data_list, p):
+        if not data_list:
+            return 0
+        k = (len(data_list) - 1) * p / 100
+        f = int(k)
+        c = k - f
+        if f + 1 < len(data_list):
+            return data_list[f] * (1 - c) + data_list[f + 1] * c
+        else:
+            return data_list[f]
+
+    p5 = percentile(sorted_data, 5)
+    p95 = percentile(sorted_data, 95)
+
+    return avg, p5, p95

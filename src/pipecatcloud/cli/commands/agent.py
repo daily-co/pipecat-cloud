@@ -5,6 +5,7 @@
 #
 
 import json
+import statistics
 from enum import Enum
 
 import aiohttp
@@ -21,7 +22,7 @@ from rich.text import Text
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
-from pipecatcloud._utils.console_utils import console, format_timestamp
+from pipecatcloud._utils.console_utils import console, format_duration, format_timestamp, calculate_percentiles
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -200,18 +201,31 @@ async def status(
 @agent_cli.command(name="sessions", help="List active sessions for an agent")
 @synchronizer.create_blocking
 @requires_login
+@with_deploy_config
 async def sessions(
-    agent_name: str,
+    deploy_config=typer.Option(None, hidden=True),
+    agent_name: str = typer.Argument(
+        None,
+        help="Name of the agent to list sessions for e.g. 'my-agent'",
+        show_default=False
+    ),
+    session_id: str = typer.Option(
+        None,
+        "--id",
+        "-i",
+        help="Session ID to filter by",
+    ),
     organization: str = typer.Option(
         None, "--organization", "-o", help="Organization to list sessions for"
     ),
 ):
     org = organization or config.get("org")
+    agent_name = agent_name or deploy_config.agent_name
 
     with Live(
         console.status(f"[dim]Looking up agent with name '{agent_name}'[/dim]", spinner="dots")
     ) as live:
-        data, error = await API.agent(agent_name=agent_name, org=org, live=live)
+        data, error = await API.agent_sessions(agent_name=agent_name, org=org, live=live)
 
         live.stop()
 
@@ -219,24 +233,104 @@ async def sessions(
             return typer.Exit()
 
         if not data:
-            console.error(f"No deployment data found for agent with name '{agent_name}'")
+            console.error(f"No session data found for agent with name '{agent_name}'")
             return typer.Exit()
 
-        console.print(
-            "[yellow]Please note: this method is currently work in progress and will be updated in the future with more information[/yellow]"
-        )
+        sessions_list = data.get("sessions", [])
+        total_sessions = len(sessions_list)
 
-        if data.get("activeSessionCount", 0) > 0:
-            console.success(
-                f"{data.get('activeSessionCount', 0)}",
-                title=f"Active session count for agent {agent_name} [dim]({org})[/dim]",
-            )
-        else:
-            console.error(
-                f"No active sessions found for agent {agent_name}",
-                title=f"Active session count for agent {agent_name} [dim]({org})[/dim]",
-                subtitle=f"[white dim]Start a new session with[/white dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]",
-            )
+        completed_sessions = [s for s in sessions_list if s.get("endedAt")]
+
+        durations = []
+        for session in completed_sessions:
+            try:
+                from datetime import datetime
+                created_at = datetime.fromisoformat(session["createdAt"].replace('Z', '+00:00'))
+                ended_at = datetime.fromisoformat(session["endedAt"].replace('Z', '+00:00'))
+                duration_seconds = (ended_at - created_at).total_seconds()
+                durations.append(duration_seconds)
+            except BaseException:
+                continue
+
+        bot_start_times = [s["botStartSeconds"]
+                           for s in sessions_list if s.get("botStartSeconds") is not None]
+        bot_start_metrics = calculate_percentiles(bot_start_times)
+        duration_metrics = calculate_percentiles(durations)
+        cold_starts_count = sum(1 for s in sessions_list if s.get("coldStart") is True)
+        cold_start_percent = cold_starts_count / total_sessions * 100
+
+        if duration_metrics and bot_start_metrics and total_sessions > 0:
+            metric_renderables = [
+                Panel(
+                    f"[bold]Total Sessions:[/bold]\n{total_sessions}\n ",
+                    expand=True,
+                ),
+                Panel(
+                    f"[bold]Average Duration:[/bold]\n{duration_metrics[0]:.1f}s\n[dim](p5: {duration_metrics[1]:.1f}s, p95: {duration_metrics[2]:.1f}s)[/dim]",
+                    expand=True,
+                ),
+                Panel(
+                    f"[bold]Bot Start Time:[/bold]\n{bot_start_metrics[0]:.1f}s\n[dim](p5: {bot_start_metrics[1]:.1f}s, p95: {bot_start_metrics[2]:.1f}s)[/dim]",
+                    expand=True,
+                ),
+                Panel(
+                    f"[bold]Cold Starts:[/bold]\n{cold_starts_count}/{total_sessions}\n[dim]({cold_start_percent:.1f}%)[/dim]",
+                    expand=True,
+                ),
+            ]
+
+        table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
+        table.add_column("Session ID")
+        table.add_column("Created At")
+        table.add_column("Ended At")
+        table.add_column("Duration")
+        table.add_column("Status")
+        table.add_column("Bot Start Time")
+        table.add_column("Cold Start")
+
+        for session in data.get("sessions", []):
+            if session_id and session["sessionId"] != session_id:
+                continue
+
+            session_duration = format_duration(
+                session["createdAt"], session["endedAt"]) or "[dim]N/A[/dim]"
+            status = session.get("completionStatus", "")
+            if session["endedAt"]:
+                if status == "500":
+                    status_display = "[red]Error (500)[/red]"
+                else:
+                    status_display = "Complete"
+            else:
+                status_display = "[yellow]Active[/yellow]"
+
+            is_cold_start = session["coldStart"] is True
+            row_style = "on red" if is_cold_start else ""
+
+            row_data = [
+                session["sessionId"],
+                format_timestamp(
+                    session["createdAt"]),
+                format_timestamp(
+                    session["endedAt"]) if session["endedAt"] else "[dim]N/A[/dim]",
+                session_duration,
+                status_display,
+                f"{session['botStartSeconds']}s" if session["botStartSeconds"] is not None else "[dim]N/A[/dim]",
+                "[red]Yes[/red]" if session["coldStart"] is True else "No" if session["coldStart"] is False else "[dim]N/A[/dim]",
+            ]
+
+            if is_cold_start:
+                row_data = [f"[{row_style}]{cell}[/]" for cell in row_data]
+
+            table.add_row(*row_data)
+
+        console.success(
+            Group(
+                Columns(
+                    metric_renderables,
+                    equal=True) if metric_renderables and not session_id else "",
+                table),
+            title=f"Session data for agent {agent_name} [dim]({org})[/dim]",
+        )
 
 
 @agent_cli.command(name="scale", help="Modify agent runtime configuration")
