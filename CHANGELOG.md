@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2025-06-12
+
+# Added
+
+- `agent sessions` command lists session history and various statistics (avg. start times, cold starts etc.)
+
+# Fixed
+
+- `typer` bumped to `0.15` which was causing errors on some setups
+
 ## [0.1.6] - 2025-04-25
 
 # Changed
