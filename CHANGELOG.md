@@ -7,37 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add py.typed marker for static type checking support.
+
 ## [0.1.7] - 2025-06-12
 
-# Added
+### Added
 
 - `agent sessions` command lists session history and various statistics (avg. start times, cold starts etc.)
 
-# Fixed
+### Fixed
 
 - Bumped `typer` dependency to `0.15` to fix errors when using `--help` flag.
 
 ## [0.1.6] - 2025-04-25
 
-# Changed
+### Changed
 
 - `min-instances` and `max-instances` has been changed to reflect API terminology changes.
 
 ## [0.1.5] - 2025-04-09
 
-# Added
+### Added
 
 - `deploy` command now accepts a `--enable-krisp / -krisp` which enables Krisp integration for your pipeline.
 
-# Changed
+### Changed
 
-- `start` command now takes agent name from `pcc-deploy.toml` where applicable 
+- `start` command now takes agent name from `pcc-deploy.toml` where applicable
 - API error handling now checks `response.ok` and properly checks for error codes for all non-ok responses
 
-# Fixed
+### Fixed
 
 - REST and cURL requests now render errors correctly
-
 
 ## [0.1.4] - 2025-03-28
 
@@ -63,8 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `agent logs` now accepts a `--deployment_id` / `-d` argument for filtering 
-by specific deployment ID
+- `agent logs` now accepts a `--deployment_id` / `-d` argument for filtering
+  by specific deployment ID
 
 - `agent start` now accepts `--daily-properties` / `-p` for customizing Daily
   room settings when used with `--use-daily`.
