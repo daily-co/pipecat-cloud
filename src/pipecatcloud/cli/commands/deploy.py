@@ -232,6 +232,14 @@ def create_deploy_command(app: typer.Typer):
         image: str = typer.Argument(
             None, help="Docker image location e.g. 'my-image:latest'", show_default=False
         ),
+        credentials: str = typer.Option(
+            None,
+            "--credentials",
+            "-c",
+            help="Image pull secret to use for deployment",
+            rich_help_panel="Deployment Configuration",
+            show_default=False,
+        ),
         min_agents: int = typer.Option(
             None,
             "--min-agents",
@@ -263,13 +271,7 @@ def create_deploy_command(app: typer.Typer):
             help="Organization to deploy to",
             rich_help_panel="Deployment Configuration",
         ),
-        credentials: str = typer.Option(
-            None,
-            "--credentials",
-            "-c",
-            help="Image pull secret to use for deployment",
-            rich_help_panel="Deployment Configuration",
-        ),
+
         krisp: bool = typer.Option(
             False,
             "--enable-krisp",
@@ -282,6 +284,14 @@ def create_deploy_command(app: typer.Typer):
             "--force",
             "-f",
             help="Force deployment / skip confirmation",
+            rich_help_panel="Additional Options",
+        ),
+        no_credentials: bool = typer.Option(
+            False,
+            "--no-credentials",
+            "-nc",
+            help="Deployment will not require an image pull secret",
+            rich_help_panel="Additional Options",
         ),
         # @deprecated
         min_instances: int = typer.Option(
@@ -343,6 +353,16 @@ def create_deploy_command(app: typer.Typer):
 
         if not partial_config.image:
             console.error("Image / repository URL is required")
+            return typer.Exit()
+
+        # Assert credentials are provided if not using --no-credentials / force flag
+        if not no_credentials and not partial_config.image_credentials and not skip_confirm:
+            console.error(
+                "Deployments require an image pull secret [bold](--credentials)[/bold] to securely pull images from private repositories."
+                "\nPlease provide an image pull secret name or use [bold][--no-credentials][/bold] to deploy without one.",
+                subtitle="https://docs.pipecat.daily.co/agents/secrets#image-pull-secrets",
+                title_extra="Attempt to deploy without repository credentials",
+            )
             return typer.Exit()
 
         # Create and display table
