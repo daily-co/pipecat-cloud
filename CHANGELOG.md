@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2025-07-09
+
+### Changed
+
+- `deploy` command now shows a warning when image pull credentials are not provided.
+
 ### Added
 
 - Add py.typed marker for static type checking support.
