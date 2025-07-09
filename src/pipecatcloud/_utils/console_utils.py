@@ -4,9 +4,9 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-from typing import Optional, Union
-from datetime import datetime
 import statistics
+from datetime import datetime
+from typing import Optional, Union
 
 from rich.console import Console
 from rich.panel import Panel
@@ -203,3 +203,34 @@ def calculate_percentiles(data: list[float]) -> tuple[float, float, float] | Non
     p95 = percentile(sorted_data, 95)
 
     return avg, p5, p95
+
+
+async def cli_updates_available() -> str | None:
+    """
+    Check if there are updates available for the CLI from PyPI.
+    """
+    import aiohttp
+
+    try:
+        from importlib.metadata import version as get_version
+        current_version = get_version("pipecatcloud")
+    except ImportError:
+        return None
+
+    pypi_url = "https://pypi.org/pypi/pipecatcloud/json"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            response = await session.get(pypi_url)
+            if not response.ok:
+                return None
+
+            data = await response.json()
+            latest_version = data["info"]["version"]
+
+            if latest_version > current_version:
+                return latest_version
+            return None
+
+    except Exception:
+        return None
