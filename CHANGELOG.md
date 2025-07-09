@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2025-07-09
-
-### Changed
-
-- `deploy` command now requires valid image pull credentials (`--credentials`). Most repositories and use-cases require authorized image pulls, so this change aims to guide correct usage.
-  - Deploying without credentials can be achieved with the `--no-credentials` / `-nc` or `--force` flags.
-  - It is always recommend to provide a an image pull secret as part of your deployment.
-
 ## [0.1.8] - 2025-07-09
 
 ### Changed
