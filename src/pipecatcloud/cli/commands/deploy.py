@@ -286,6 +286,13 @@ def create_deploy_command(app: typer.Typer):
             help="Force deployment / skip confirmation",
             rich_help_panel="Additional Options",
         ),
+        no_credentials: bool = typer.Option(
+            False,
+            "--no-credentials",
+            "-nc",
+            help="Deployment will not require an image pull secret",
+            rich_help_panel="Additional Options",
+        ),
         # @deprecated
         min_instances: int = typer.Option(
             None,
@@ -348,24 +355,15 @@ def create_deploy_command(app: typer.Typer):
             console.error("Image / repository URL is required")
             return typer.Exit()
 
-        # Show a warning if no credentials are provided
-        if not partial_config.image_credentials and not skip_confirm:
-            console.print(
-                Panel(
-                    "[yellow]You are attempting to deploy an agent image without an image pull secret."
-                    "\n\nUse [bold][--credentials][/bold] to provide a image pull secret."
-                    "\n\nPlease be aware that future versions of the Pipecat Cloud CLI will require credentials for all deployments (unless forced manually).",
-                    title="[bold yellow]Warning: Deploying without credentials[/bold yellow]",
-                    title_align="left",
-                    subtitle_align="left",
-                    subtitle="[dim]Learn more: https://docs.pipecat.daily.co/agents/secrets#image-pull-secrets[/dim]",
-                    border_style="yellow",
-                ))
-            if not typer.confirm(
-                "Are you sure you want to deploy without an image pull secret?",
-                default=False,
-            ):
-                return typer.Exit()
+        # Assert credentials are provided if not using --no-credentials / force flag
+        if not no_credentials and not partial_config.image_credentials and not skip_confirm:
+            console.error(
+                "Deployments require an image pull secret [bold](--credentials)[/bold] to securely pull images from private repositories."
+                "\nPlease provide an image pull secret name or use [bold][--no-credentials][/bold] to deploy without one.",
+                subtitle="Learn more:https://docs.pipecat.daily.co/agents/secrets#image-pull-secrets",
+                title_extra="Attempt to deploy without repository credentials",
+            )
+            return typer.Exit()
 
         # Create and display table
         table = Table(show_header=False, border_style="dim", show_edge=True, show_lines=True)
