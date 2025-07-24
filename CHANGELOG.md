@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Modified the `aiohttp` minimum version to `3.11.12` and expanded `fastapi` to
+  `>=0.115.6,<0.117.0` in order to align with `pipecat-ai`.
+
 ## [0.2.0] - 2025-07-09
 
 ### Changed
