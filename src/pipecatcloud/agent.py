@@ -50,3 +50,13 @@ class WebSocketSessionArguments(SessionArguments):
     """
 
     websocket: WebSocket
+
+
+@dataclass
+class SmallWebRTCSessionArguments(SessionArguments):
+    """SmallWebRTCTransport based agent session arguments. The arguments are
+    received by the bot() entry point.
+
+    """
+
+    webrtc_connection: Any  # SmallWebRTCConnection

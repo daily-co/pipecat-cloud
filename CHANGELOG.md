@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a `SmallWebRTCSessionArguments` dataclass, which will be used with the
+  upcoming support of `SmallWebRTCTransport` with Pipecat Cloud.
+
 ### Changed
 
 - Modified the `aiohttp` minimum version to `3.11.12` and expanded `fastapi` to
