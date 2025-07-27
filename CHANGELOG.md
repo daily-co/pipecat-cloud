@@ -21,15 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `deploy` command now requires valid image pull credentials (`--credentials`). Most repositories and use-cases require authorized image pulls, so this change aims to guide correct usage.
-  - Deploying without credentials can be achieved with the `--no-credentials` / `-nc` or `--force` flags.
-  - It is always recommend to provide a an image pull secret as part of your deployment.
+- `deploy` command now requires valid image pull credentials (`--credentials`).
+  Most repositories and use-cases require authorized image pulls, so this
+  change aims to guide correct usage.
+  - Deploying without credentials can be achieved with the `--no-credentials` /
+    `-nc` or `--force` flags.
+  - It is always recommend to provide a an image pull secret as part of your
+    deployment.
 
 ## [0.1.8] - 2025-07-09
 
 ### Changed
 
-- `deploy` command now shows a warning when image pull credentials are not provided.
+- `deploy` command now shows a warning when image pull credentials are not
+  provided.
 
 ### Added
 
@@ -39,7 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `agent sessions` command lists session history and various statistics (avg. start times, cold starts etc.)
+- `agent sessions` command lists session history and various statistics (avg.
+  start times, cold starts etc.)
 
 ### Fixed
 
@@ -49,18 +55,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `min-instances` and `max-instances` has been changed to reflect API terminology changes.
+- `min-instances` and `max-instances` has been changed to reflect API
+  terminology changes.
 
 ## [0.1.5] - 2025-04-09
 
 ### Added
 
-- `deploy` command now accepts a `--enable-krisp / -krisp` which enables Krisp integration for your pipeline.
+- `deploy` command now accepts a `--enable-krisp / -krisp` which enables Krisp
+  integration for your pipeline.
 
 ### Changed
 
 - `start` command now takes agent name from `pcc-deploy.toml` where applicable
-- API error handling now checks `response.ok` and properly checks for error codes for all non-ok responses
+- API error handling now checks `response.ok` and properly checks for error
+  codes for all non-ok responses
 
 ### Fixed
 
@@ -70,11 +79,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `deploy` now shows a confirmation when `min-instances` is greater than 0 to assert usage will be billed.
+- `deploy` now shows a confirmation when `min-instances` is greater than 0 to
+  assert usage will be billed.
 
 ### Fixed
 
-- `auth login` now accepts a `--headless` / `-h` flag to skip automatic browser opening during authentication. This is particularly useful for:
+- `auth login` now accepts a `--headless` / `-h` flag to skip automatic browser
+  opening during authentication. This is particularly useful for:
   - Systems running in headless environments
   - WSL installations where browser context may not match the terminal
   - CI/CD pipelines
@@ -86,7 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `deploy` now correctly handles error states returned by the API
 
-- `deploy` checks revision status vs. general service ready status (when updating)
+- `deploy` checks revision status vs. general service ready status (when
+  updating)
 
 ### Added
 
