@@ -471,8 +471,14 @@ async def image_pull_secret(
         return typer.Exit(1)
 
     if not credentials:
+        console.print(
+            "[cyan]For more information about image pull secrets, see: "
+            "https://docs.pipecat.daily.co/agents/secrets#image-pull-secrets[/cyan]\n"
+        )
         username = await questionary.text(f"Username for image repository '{host}'").ask_async()
-        password = await questionary.password(f"Password for image repository '{host}'").ask_async()
+        password = await questionary.password(
+            f"Access token for image repository '{host}'"
+        ).ask_async()
         if not username or not password:
             console.print("[bold red]Image pull secret creation cancelled[/bold red]")
             return typer.Exit(1)
