@@ -22,6 +22,9 @@ dependencies = [
     "questionary~=2.1.0"
 ]
 
+[project.optional-dependencies]
+pipecat = ["pipecat-ai>=0.0.77"]
+
 [project.scripts]
 pcc = "pipecatcloud.__main__:main"
 pipecatcloud = "pipecatcloud.__main__:main"

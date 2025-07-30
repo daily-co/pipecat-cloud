@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New optional dependency `[pipecat]` for compatibility with pipecat-ai runner
+  types. Install with `pip install pipecatcloud[pipecat]` when using session
+  arguments with the pipecat-ai development runner.
+
 ### Changed
+
+- Session argument types (`DailySessionArguments`, `WebSocketSessionArguments`,
+  `SmallWebRTCSessionArguments`) now inherit from pipecat-ai runner types for
+  improved compatibility between pipecatcloud and pipecat-ai runner.
 
 - Add clarifying information to the `pcc secrets image-pull-secret` setup.
 
