@@ -9,20 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- New optional dependency `[pipecat]` for compatibility with pipecat-ai runner
-  types. Install with `pip install pipecatcloud[pipecat]` when using session
-  arguments with the pipecat-ai development runner.
+- Added a `pipecatcloud[pipecat]` extra for installing `pipecat-ai` dependency.
 
 ### Changed
 
-- Session argument types (`DailySessionArguments`, `WebSocketSessionArguments`,
-  `SmallWebRTCSessionArguments`) now inherit from pipecat-ai runner types for
-  improved compatibility between pipecatcloud and pipecat-ai runner.
+- Session argument types now inherit from pipecat-ai runner types when available.
+  `DailySessionArguments` and `WebSocketSessionArguments` now inherit from
+  `pipecat.runner.types` when `pipecat-ai>=0.0.77` is installed to provide
+  compatibility with the pipecat-ai development runner.
 
 - Add clarifying information to the `pcc secrets image-pull-secret` setup.
 
 - Modified the `aiohttp` minimum version to `3.11.12` and expanded `fastapi` to
   `>=0.115.6,<0.117.0` in order to align with `pipecat-ai`.
+
+### Deprecated
+
+- When `pipecat-ai` is not installed, session arguments fall back to standalone
+  implementations. This fallback behavior is deprecated and will be removed in
+  a future version. Install with `pip install pipecatcloud[pipecat]` for the
+  preferred implementation.
 
 ## [0.2.0] - 2025-07-09
 
