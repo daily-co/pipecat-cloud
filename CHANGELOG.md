@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+##  [0.2.1] - 2025-08-02
+
 ### Added
 
 - Added a `pipecatcloud[pipecat]` extra for installing `pipecat-ai` dependency.
