@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
 
-##  [0.2.1] - 2025-08-02
+- Relaxed the package requirements for `python-dotenv` and `uvicorn` to make it
+  easier to work with Pipecat Cloud. The new supported versions are:
+  - `"python-dotenv>=1.0.1,<2.0.0"`
+  - `"uvicorn>=0.32.0,<1.0.0"`
+
+## [0.2.1] - 2025-08-02
 
 ### Added
 
