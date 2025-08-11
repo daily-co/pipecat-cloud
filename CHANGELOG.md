@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `RunnerArguments` as a fallback type in the event that the Pipecat
+  development runner is not imported.
+
 ### Changed
 
 - Updated the `typer` dependency to support a range of versions in order to
@@ -15,16 +20,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Relaxed the package requirements for `python-dotenv` and `uvicorn` to make it
   easier to work with Pipecat Cloud. The new supported versions are:
+
   - `"python-dotenv>=1.0.1,<2.0.0"`
   - `"uvicorn>=0.32.0,<1.0.0"`
 
+- Updated all types to inherit from `RunnerArguments` to align the types with
+  the Pipecat development runner types. This adds types:
+
+  - `handle_sigint`
+  - `handle_sigterm`
+  - `pipeline_idle_timeout_secs`
+
 ### Fixed
 
-- Fixed `ZeroDivisionError` in `agent sessions` command when calculating metrics for agents with zero sessions.
+- Fixed `ZeroDivisionError` in `agent sessions` command when calculating
+  metrics for agents with zero sessions.
 
-- Fixed `UnboundLocalError` in `agent sessions` command where `metric_renderables` was referenced before assignment due to earlier logic failures.
+- Fixed `UnboundLocalError` in `agent sessions` command where
+  `metric_renderables` was referenced before assignment due to earlier logic
+  failures.
 
-- `agent sessions` command previously threw `AttributeError` when no agent name was provided via command line or `pcc-deploy.toml`, it now exits gracefully with a clear error message.
+- `agent sessions` command previously threw `AttributeError` when no agent name
+  was provided via command line or `pcc-deploy.toml`, it now exits gracefully
+  with a clear error message.
 
 ## [0.2.1] - 2025-08-02
 
