@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
 
-##  [0.2.1] - 2025-08-02
+- Added `RunnerArguments` as a fallback type in the event that the Pipecat
+  development runner is not imported.
+
+### Changed
+
+- Updated all types to inherit from `RunnerArguments` to align the types with
+  the Pipecat development runner types. This adds types:
+
+  - `handle_sigint`
+  - `handle_sigterm`
+  - `pipeline_idle_timeout_secs`
+
+## [0.2.1] - 2025-08-02
 
 ### Added
 

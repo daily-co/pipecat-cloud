@@ -14,6 +14,7 @@ from fastapi import WebSocket
 try:
     from pipecat.runner.types import (
         DailyRunnerArguments,
+        RunnerArguments,
         WebSocketRunnerArguments,
     )
 
@@ -23,7 +24,25 @@ except ImportError:
 
     # Fallback definitions
     @dataclass
-    class DailyRunnerArguments:
+    class RunnerArguments:
+        """Base class for runner session arguments.
+
+        .. deprecated:: 0.2.2
+            Install pipecatcloud[pipecat] for better compatibility. This class
+            will be removed in a future release.
+        """
+
+        handle_sigint: bool
+        handle_sigterm: bool
+        pipeline_idle_timeout_secs: int
+
+        def __post_init__(self):
+            self.handle_sigint = False
+            self.handle_sigterm = False
+            self.pipeline_idle_timeout_secs = 300
+
+    @dataclass
+    class DailyRunnerArguments(RunnerArguments):
         """Fallback Daily runner arguments when pipecat-ai not available.
 
         .. deprecated:: 0.2.1
@@ -35,7 +54,7 @@ except ImportError:
         body: Any
 
     @dataclass
-    class WebSocketRunnerArguments:
+    class WebSocketRunnerArguments(RunnerArguments):
         """Fallback WebSocket runner arguments when pipecat-ai not available.
 
         .. deprecated:: 0.2.1
@@ -72,13 +91,13 @@ class SessionArguments:
 
 
 @dataclass
-class PipecatSessionArguments(SessionArguments):
+class PipecatSessionArguments(RunnerArguments, SessionArguments):
     """Standard Pipecat Cloud agent session arguments.
 
-    The arguments are received by the bot() entry point.
+    Inherits from RunnerArguments for compatibility with pipecat-ai runner.
+    When pipecat-ai is not installed, uses a fallback implementation (deprecated).
 
-    Parameters:
-        body (Any): The body of the request.
+    For best compatibility, install: pip install pipecatcloud[pipecat]
     """
 
     body: Any
@@ -95,6 +114,7 @@ class DailySessionArguments(DailyRunnerArguments, SessionArguments):
     """
 
     def __post_init__(self):
+        DailyRunnerArguments.__post_init__(self)
         _warn_standalone_usage()
 
 
@@ -109,4 +129,5 @@ class WebSocketSessionArguments(WebSocketRunnerArguments, SessionArguments):
     """
 
     def __post_init__(self):
+        WebSocketRunnerArguments.__post_init__(self)
         _warn_standalone_usage()
