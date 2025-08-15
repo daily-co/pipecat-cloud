@@ -220,7 +220,14 @@ async def sessions(
     ),
 ):
     org = organization or config.get("org")
-    agent_name = agent_name or deploy_config.agent_name
+    
+    # Get agent name from argument or deploy config
+    if not agent_name:
+        if deploy_config and deploy_config.agent_name:
+            agent_name = deploy_config.agent_name
+        else:
+            console.error("No target agent name provided")
+            return typer.Exit(1)
 
     with Live(
         console.status(f"[dim]Looking up agent with name '{agent_name}'[/dim]", spinner="dots")
@@ -290,6 +297,11 @@ async def sessions(
         table.add_column("Cold Start")
 
         for session in data.get("sessions", []):
+            # Note: session["sessionId"] is accessed without defensive checks.
+            # If the API returns malformed data missing sessionId, the CLI will crash with
+            # a KeyError rather than silently skip sessions. This ensures smoke tests and
+            # API verification catch breaking changes immediately. We could instead use
+            # console.error() and skip the session but its unclear if thats better..
             if session_id and session["sessionId"] != session_id:
                 continue
 
