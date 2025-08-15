@@ -257,9 +257,10 @@ async def sessions(
         bot_start_metrics = calculate_percentiles(bot_start_times)
         duration_metrics = calculate_percentiles(durations)
         cold_starts_count = sum(1 for s in sessions_list if s.get("coldStart") is True)
-        cold_start_percent = cold_starts_count / total_sessions * 100
+        metric_renderables = []  # Initialize to empty list for type consistency
 
         if duration_metrics and bot_start_metrics and total_sessions > 0:
+            cold_start_percent = cold_starts_count / total_sessions * 100
             metric_renderables = [
                 Panel(
                     f"[bold]Total Sessions:[/bold]\n{total_sessions}\n ",
