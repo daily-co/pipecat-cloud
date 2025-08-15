@@ -220,7 +220,14 @@ async def sessions(
     ),
 ):
     org = organization or config.get("org")
-    agent_name = agent_name or deploy_config.agent_name
+    
+    # Get agent name from argument or deploy config
+    if not agent_name:
+        if deploy_config and deploy_config.agent_name:
+            agent_name = deploy_config.agent_name
+        else:
+            console.error("No target agent name provided")
+            return typer.Exit(1)
 
     with Live(
         console.status(f"[dim]Looking up agent with name '{agent_name}'[/dim]", spinner="dots")
@@ -257,9 +264,10 @@ async def sessions(
         bot_start_metrics = calculate_percentiles(bot_start_times)
         duration_metrics = calculate_percentiles(durations)
         cold_starts_count = sum(1 for s in sessions_list if s.get("coldStart") is True)
-        cold_start_percent = cold_starts_count / total_sessions * 100
+        metric_renderables = []  # Initialize to empty list for type consistency
 
         if duration_metrics and bot_start_metrics and total_sessions > 0:
+            cold_start_percent = cold_starts_count / total_sessions * 100
             metric_renderables = [
                 Panel(
                     f"[bold]Total Sessions:[/bold]\n{total_sessions}\n ",
@@ -289,6 +297,11 @@ async def sessions(
         table.add_column("Cold Start")
 
         for session in data.get("sessions", []):
+            # Note: session["sessionId"] is accessed without defensive checks.
+            # If the API returns malformed data missing sessionId, the CLI will crash with
+            # a KeyError rather than silently skip sessions. This ensures smoke tests and
+            # API verification catch breaking changes immediately. We could instead use
+            # console.error() and skip the session but its unclear if thats better..
             if session_id and session["sessionId"] != session_id:
                 continue
 
