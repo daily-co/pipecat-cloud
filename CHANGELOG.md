@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolve conflicts with other packages. The new range supported is:
   `"typer>=0.15.3,<0.17.0"`.
 
+- Relaxed the package requirements for `python-dotenv` and `uvicorn` to make it
+  easier to work with Pipecat Cloud. The new supported versions are:
+  - `"python-dotenv>=1.0.1,<2.0.0"`
+  - `"uvicorn>=0.32.0,<1.0.0"`
+
 ### Fixed
 
 - Fixed `ZeroDivisionError` in `agent sessions` command when calculating metrics for agents with zero sessions.
