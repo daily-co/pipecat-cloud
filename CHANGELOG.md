@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the `typer` dependency to support a range of versions in order to
+  resolve conflicts with other packages. The new range supported is:
+  `"typer>=0.15.3,<0.17.0"`.
+
 ### Fixed
 
 - Fixed `ZeroDivisionError` in `agent sessions` command when calculating metrics for agents with zero sessions.
@@ -15,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `agent sessions` command previously threw `AttributeError` when no agent name was provided via command line or `pcc-deploy.toml`, it now exits gracefully with a clear error message.
 
-##  [0.2.1] - 2025-08-02
+## [0.2.1] - 2025-08-02
 
 ### Added
 
