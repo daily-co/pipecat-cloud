@@ -5,7 +5,7 @@
 #
 
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from fastapi import WebSocket
@@ -32,9 +32,9 @@ except ImportError:
             will be removed in a future release.
         """
 
-        handle_sigint: bool
-        handle_sigterm: bool
-        pipeline_idle_timeout_secs: int
+        handle_sigint: bool = field(init=False)
+        handle_sigterm: bool = field(init=False)
+        pipeline_idle_timeout_secs: int = field(init=False)
 
         def __post_init__(self):
             self.handle_sigint = False
