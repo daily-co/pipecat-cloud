@@ -5,6 +5,7 @@
 #
 
 import asyncio
+from typing import Optional
 
 import typer
 from loguru import logger
@@ -231,6 +232,14 @@ def create_deploy_command(app: typer.Typer):
         ),
         image: str = typer.Argument(
             None, help="Docker image location e.g. 'my-image:latest'", show_default=False
+        ),
+        config_file: Optional[str] = typer.Option(
+            None,
+            "--config",
+            "-C",
+            help="Path to deploy configuration file (default: pcc-deploy.toml)",
+            rich_help_panel="Deployment Configuration",
+            show_default=False,
         ),
         credentials: str = typer.Option(
             None,

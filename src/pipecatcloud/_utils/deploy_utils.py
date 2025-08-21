@@ -80,14 +80,15 @@ class DeployConfigParams:
         }
 
 
-def load_deploy_config_file() -> Optional[DeployConfigParams]:
+def load_deploy_config_file(custom_path: Optional[str] = None) -> Optional[DeployConfigParams]:
     from pipecatcloud.cli.config import deploy_config_path
 
-    logger.debug(f"Deploy config path: {deploy_config_path}")
-    logger.debug(f"Deploy config path exists: {os.path.exists(deploy_config_path)}")
+    config_path = custom_path or deploy_config_path
+    logger.debug(f"Deploy config path: {config_path}")
+    logger.debug(f"Deploy config path exists: {os.path.exists(config_path)}")
 
     try:
-        with open(deploy_config_path, "r") as f:
+        with open(config_path, "r") as f:
             config_data = toml.load(f)
     except Exception:
         return None
@@ -127,11 +128,16 @@ def with_deploy_config(func: Callable) -> Callable:
     """
     Decorator that loads the deploy config file and injects it into the function.
     If the config file exists, it will be loaded and passed to the function as `deploy_config`.
+    The function can accept a 'config_file' parameter to specify a custom config path.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
-            deploy_config = load_deploy_config_file()
+            # Check if custom config path is provided in function arguments
+            custom_config_path = kwargs.get('config_file', None)
+            if custom_config_path:
+                logger.debug(f"Loading custom deploy config from: {custom_config_path}")
+            deploy_config = load_deploy_config_file(custom_config_path)
             kwargs['deploy_config'] = deploy_config
         except Exception as e:
             logger.error(f"Error loading deploy config: {e}")
