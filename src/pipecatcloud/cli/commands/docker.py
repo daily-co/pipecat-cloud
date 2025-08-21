@@ -25,7 +25,34 @@ class RegistryType(str, Enum):
     CUSTOM = "custom"
 
 
-def run_docker_command(command: list[str], description: str, stream_output: bool = True) -> bool:
+def _provide_error_hints(stderr: str, command: list[str], registry_info: dict = None):
+    """Provide helpful error hints only when Docker's message isn't clear enough."""
+    stderr_lower = stderr.lower()
+
+    # Only add hints for authentication errors where the solution isn't obvious
+    if _is_auth_error(stderr_lower) and "push" in " ".join(command):
+        _suggest_docker_login(registry_info)
+
+
+def _is_auth_error(stderr_lower: str) -> bool:
+    """Check if the error is authentication related."""
+    auth_keywords = ["unauthorized", "access denied", "denied"]
+    return any(keyword in stderr_lower for keyword in auth_keywords)
+
+
+def _suggest_docker_login(registry_info: dict = None):
+    """Suggest the appropriate docker login command."""
+    console.print("\n[yellow]💡 You need to authenticate with the registry[/yellow]")
+
+    if registry_info and registry_info.get("type") == "custom" and registry_info.get("url"):
+        console.print(f"[yellow]   docker login {registry_info['url']}[/yellow]")
+    else:
+        console.print("[yellow]   docker login[/yellow]")
+
+
+def run_docker_command(
+    command: list[str], description: str, stream_output: bool = True, registry_info: dict = None
+) -> bool:
     """Run a docker command and handle output/errors."""
     try:
         console.print(f"[dim]{description}...[/dim]")
@@ -63,27 +90,14 @@ def run_docker_command(command: list[str], description: str, stream_output: bool
             console.print(f"[red]stderr: {e.stderr}[/red]")
 
             # Provide helpful hints for common errors
-            stderr_lower = e.stderr.lower()
-            if "unauthorized" in stderr_lower or "access denied" in stderr_lower:
-                console.print(
-                    "\n[yellow]💡 Hint: You may need to authenticate with the registry:[/yellow]"
-                )
-                console.print("[yellow]   docker login[/yellow]")
-            elif "no such file or directory" in stderr_lower and "dockerfile" in stderr_lower:
-                console.print(
-                    "\n[yellow]💡 Hint: Make sure you have a Dockerfile in the current directory[/yellow]"
-                )
-            elif "denied" in stderr_lower and "push" in " ".join(command):
-                console.print(
-                    "\n[yellow]💡 Hint: Check your registry permissions and authentication[/yellow]"
-                )
+            _provide_error_hints(e.stderr, command, registry_info)
         return False
     except FileNotFoundError:
         console.error("Docker not found. Please ensure Docker is installed and in your PATH.")
         return False
 
 
-def build_image_name(
+def _build_image_name(
     registry_type: RegistryType, username: str, agent_name: str, registry_url: Optional[str] = None
 ) -> str:
     """Build the full image name based on registry type."""
@@ -222,7 +236,7 @@ async def build_push(
         base_image_name = final_agent_name
     else:
         try:
-            base_image_name = build_image_name(
+            base_image_name = _build_image_name(
                 RegistryType(final_registry), final_username, final_agent_name, final_registry_url
             )
         except ValueError as e:
@@ -278,16 +292,28 @@ async def build_push(
     if not no_push:
         console.print(f"\n[bold cyan]Pushing to {final_registry}...[/bold cyan]")
 
+        # Prepare registry info for better error messages
+        registry_info = {
+            "type": final_registry,
+            "url": final_registry_url if final_registry == "custom" else None,
+        }
+
         # Push version tag
         if not run_docker_command(
-            ["docker", "push", version_tag], f"Pushing {version_tag}", stream_output=False
+            ["docker", "push", version_tag],
+            f"Pushing {version_tag}",
+            stream_output=False,
+            registry_info=registry_info,
         ):
             return typer.Exit(1)
 
         # Push latest tag if created
         if not final_no_latest:
             if not run_docker_command(
-                ["docker", "push", latest_tag], f"Pushing {latest_tag}", stream_output=False
+                ["docker", "push", latest_tag],
+                f"Pushing {latest_tag}",
+                stream_output=False,
+                registry_info=registry_info,
             ):
                 return typer.Exit(1)
 
