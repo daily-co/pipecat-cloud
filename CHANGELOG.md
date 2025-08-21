@@ -5,6 +5,15 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added `docker build-push` command for building, tagging, and pushing Docker
+  images. Automatically parses registry information from the `image` field in
+  `pcc-deploy.toml` and supports both Docker Hub and custom registries. Includes
+  real-time build output and helpful authentication error hints.
+
 ## [0.2.3] - 2025-08-19
 
 ### Fixed
