@@ -4,9 +4,9 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-import os
 import functools
-from typing import Optional, Callable, Any
+import os
+from typing import Callable, Optional
 
 import toml
 from attr import dataclass, field
@@ -64,6 +64,7 @@ class DeployConfigParams:
     secret_set: Optional[str] = None
     scaling: ScalingParams = ScalingParams()
     enable_krisp: bool = False
+    docker_config: dict = field(factory=dict)
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:
@@ -77,6 +78,7 @@ class DeployConfigParams:
             "secret_set": self.secret_set,
             "scaling": self.scaling.to_dict() if self.scaling else None,
             "enable_krisp": self.enable_krisp,
+            "docker_config": self.docker_config,
         }
 
 
@@ -97,10 +99,14 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
         scaling_data = config_data.pop("scaling", {})
         scaling_params = ScalingParams(**scaling_data)
 
+        # Extract docker configuration if present
+        docker_data = config_data.pop("docker", {})
+
         # Create DeployConfigParams with validated data
         validated_config = DeployConfigParams(
             **config_data,
             scaling=scaling_params,
+            docker_config=docker_data,
         )
 
         # Check for unexpected keys
@@ -111,6 +117,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "secret_set",
             "scaling",
             "enable_krisp",
+            "docker",
         }
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:
@@ -128,13 +135,15 @@ def with_deploy_config(func: Callable) -> Callable:
     Decorator that loads the deploy config file and injects it into the function.
     If the config file exists, it will be loaded and passed to the function as `deploy_config`.
     """
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
             deploy_config = load_deploy_config_file()
-            kwargs['deploy_config'] = deploy_config
+            kwargs["deploy_config"] = deploy_config
         except Exception as e:
             logger.error(f"Error loading deploy config: {e}")
             raise ConfigFileError(str(e))
         return func(*args, **kwargs)
+
     return wrapper
