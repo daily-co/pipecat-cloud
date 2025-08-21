@@ -25,13 +25,35 @@ class RegistryType(str, Enum):
     CUSTOM = "custom"
 
 
-def run_docker_command(command: list[str], description: str) -> bool:
+def run_docker_command(command: list[str], description: str, stream_output: bool = True) -> bool:
     """Run a docker command and handle output/errors."""
     try:
         console.print(f"[dim]{description}...[/dim]")
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        if result.stdout.strip():
-            console.print(f"[dim]{result.stdout.strip()}[/dim]")
+
+        if stream_output:
+            # Stream output in real-time for build commands
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+            )
+
+            # Stream output line by line
+            for line in process.stdout:
+                console.print(f"[dim]{line.rstrip()}[/dim]")
+
+            process.wait()
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(process.returncode, command)
+        else:
+            # Capture output for push commands (less verbose)
+            result = subprocess.run(command, capture_output=True, text=True, check=True)
+            if result.stdout.strip():
+                console.print(f"[dim]{result.stdout.strip()}[/dim]")
+
         return True
     except subprocess.CalledProcessError as e:
         console.error(f"Docker command failed: {' '.join(command)}")
@@ -247,7 +269,7 @@ async def build_push(
 
     # Execute build
     console.print("\n[bold cyan]Building Docker image...[/bold cyan]")
-    if not run_docker_command(build_command, f"Building {final_agent_name}"):
+    if not run_docker_command(build_command, f"Building {final_agent_name}", stream_output=True):
         return typer.Exit(1)
 
     console.success(f"Successfully built image(s): {', '.join(tags_display)}")
@@ -257,12 +279,16 @@ async def build_push(
         console.print(f"\n[bold cyan]Pushing to {final_registry}...[/bold cyan]")
 
         # Push version tag
-        if not run_docker_command(["docker", "push", version_tag], f"Pushing {version_tag}"):
+        if not run_docker_command(
+            ["docker", "push", version_tag], f"Pushing {version_tag}", stream_output=False
+        ):
             return typer.Exit(1)
 
         # Push latest tag if created
         if not final_no_latest:
-            if not run_docker_command(["docker", "push", latest_tag], f"Pushing {latest_tag}"):
+            if not run_docker_command(
+                ["docker", "push", latest_tag], f"Pushing {latest_tag}", stream_output=False
+            ):
                 return typer.Exit(1)
 
         pushed_tags = [version_tag]
