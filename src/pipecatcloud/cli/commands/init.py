@@ -19,14 +19,14 @@ from pipecatcloud.config import config
 # ----- Init
 
 FILES_TO_EXTRACT = {
-    "pipecat-cloud-starter-main/bot.py",
-    "pipecat-cloud-starter-main/Dockerfile",
-    "pipecat-cloud-starter-main/requirements.txt",
-    "pipecat-cloud-starter-main/pcc-deploy.toml",
-    "pipecat-cloud-starter-main/README.md",
-    "pipecat-cloud-starter-main/.gitignore",
-    "pipecat-cloud-starter-main/env.example",
-    "pipecat-cloud-starter-main/local_runner.py",
+    "pipecat-quickstart-main/bot.py",
+    "pipecat-quickstart-main/Dockerfile",
+    "pipecat-quickstart-main/pcc-deploy.toml",
+    "pipecat-quickstart-main/README.md",
+    "pipecat-quickstart-main/.gitignore",
+    "pipecat-quickstart-main/env.example",
+    "pipecat-quickstart-main/pyproject.toml",
+    "pipecat-quickstart-main/uv.lock",
 }
 
 
