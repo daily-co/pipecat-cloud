@@ -19,7 +19,7 @@ _SETTINGS = {
     "api_host": _Setting("https://api.pipecat.daily.co"),
     "dashboard_host": _Setting("https://pipecat.daily.co"),
     "init_zip_url": _Setting(
-        "https://github.com/daily-co/pipecat-cloud-starter/archive/refs/heads/main.zip"
+        "https://github.com/pipecat-ai/pipecat-quickstart/archive/refs/heads/main.zip"
     ),
     "onboarding_path": _Setting("/v1/onboarding"),
     "login_path": _Setting("/auth/login"),
