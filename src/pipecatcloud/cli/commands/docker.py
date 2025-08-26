@@ -254,8 +254,10 @@ async def build_push(
 
     build_command = [
         "docker",
+        "buildx",
         "build",
         "--platform=linux/arm64",
+        "--load",
         *build_tags,
         ".",
     ]
