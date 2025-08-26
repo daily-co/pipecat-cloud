@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `docker build-push` command for building, tagging, and pushing Docker
+  images. Automatically parses registry information from the `image` field in
+  `pcc-deploy.toml` and supports both Docker Hub and custom registries. Includes
+  real-time build output and helpful authentication error hints.
+
 ### Changed
 
 - `pcc init` now points to https://github.com/pipecat-ai/pipecat-quickstart.

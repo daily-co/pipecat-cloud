@@ -25,6 +25,19 @@ dependencies = [
 [project.optional-dependencies]
 pipecat = ["pipecat-ai>=0.0.79"]
 
+[dependency-groups]
+dev = [
+    "build~=1.2.2",
+    "grpcio-tools~=1.67.1",
+    "pre-commit~=4.2.0",
+    "pyright~=1.1.402",
+    "pytest~=8.4.1",
+    "pytest-asyncio~=1.0.0",
+    "ruff~=0.12.1",
+    "setuptools~=78.1.1",
+    "setuptools_scm~=8.3.1",
+]
+
 [project.scripts]
 pcc = "pipecatcloud.__main__:main"
 pipecatcloud = "pipecatcloud.__main__:main"
