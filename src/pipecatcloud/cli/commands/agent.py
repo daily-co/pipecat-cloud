@@ -5,7 +5,6 @@
 #
 
 import json
-import statistics
 from enum import Enum
 
 import aiohttp
@@ -131,6 +130,18 @@ async def status(
         deployment_table.add_row(
             "[bold]Updated At:[/bold]",
             str(data.get("updatedAt", "N/A")),
+        )
+        
+        # Check for Integrated Keys status
+        integrated_keys = data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("integratedKeys", {})
+        if isinstance(integrated_keys, dict):
+            integrated_keys_enabled = integrated_keys.get("enabled", False)
+        else:
+            integrated_keys_enabled = bool(integrated_keys)
+        
+        deployment_table.add_row(
+            "[bold]Integrated Keys:[/bold]",
+            "[green]Enabled[/green]" if integrated_keys_enabled else "[dim]Disabled[/dim]",
         )
 
         # Autoscaling info
