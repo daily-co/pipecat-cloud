@@ -279,6 +279,12 @@ def create_deploy_command(app: typer.Typer):
             help="Enable Krisp integration for this deployment",
             rich_help_panel="Deployment Configuration",
         ),
+        integrated_keys: bool = typer.Option(
+            False,
+            "--enable-integrated-keys",
+            help="Enable Integrated Keys for this deployment",
+            rich_help_panel="Deployment Configuration",
+        ),
         skip_confirm: bool = typer.Option(
             False,
             "--force",
@@ -345,6 +351,7 @@ def create_deploy_command(app: typer.Typer):
             else partial_config.scaling.max_agents,
         )
         partial_config.enable_krisp = krisp or partial_config.enable_krisp
+        partial_config.enable_integrated_keys = integrated_keys or partial_config.enable_integrated_keys
 
         # Assert agent name and image are provided
         if not partial_config.agent_name:
@@ -382,6 +389,7 @@ def create_deploy_command(app: typer.Typer):
             (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
             (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
             (f"[bold white]Krisp:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}"),
+            (f"[bold white]Integrated Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_integrated_keys else '[green]Enabled[/green]'}"),
             "\n[dim]Scaling configuration:[/dim]",
             table,
             *
