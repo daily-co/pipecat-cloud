@@ -192,8 +192,8 @@ class TestAPIIntegration:
             # Assert
             mock_request.assert_called_once()
             payload = mock_request.call_args[1]["json"]
-            assert "enableIntegratedKeys" in payload
-            assert payload["enableIntegratedKeys"] is True
+            assert "enableIntegratedKeysProxy" in payload
+            assert payload["enableIntegratedKeysProxy"] is True
 
     @pytest.mark.asyncio
     async def test_update_payload_includes_keys_proxy(self, api_client):
@@ -214,8 +214,8 @@ class TestAPIIntegration:
             # Assert
             mock_request.assert_called_once()
             payload = mock_request.call_args[1]["json"]
-            assert "enableIntegratedKeys" in payload
-            assert payload["enableIntegratedKeys"] is True
+            assert "enableIntegratedKeysProxy" in payload
+            assert payload["enableIntegratedKeysProxy"] is True
 
     @pytest.mark.asyncio
     async def test_disabled_keys_proxy_sends_false(self, api_client):
@@ -236,8 +236,8 @@ class TestAPIIntegration:
             # Assert
             mock_request.assert_called_once()
             payload = mock_request.call_args[1]["json"]
-            assert "enableIntegratedKeys" in payload
-            assert payload["enableIntegratedKeys"] is False
+            assert "enableIntegratedKeysProxy" in payload
+            assert payload["enableIntegratedKeysProxy"] is False
 
 
 class TestAgentStatusDisplay:
@@ -259,7 +259,7 @@ class TestAgentStatusDisplay:
             "deployment": {
                 "manifest": {
                     "spec": {
-                        "integratedKeys": {
+                        "integratedKeysProxy": {
                             "enabled": True
                         }
                     }
@@ -309,7 +309,7 @@ class TestAgentStatusDisplay:
             "deployment": {
                 "manifest": {
                     "spec": {
-                        "integratedKeys": True
+                        "integratedKeysProxy": True
                     }
                 }
             },
@@ -359,7 +359,7 @@ class TestBackwardCompatibility:
         }
         
         # Act - simulate the logic from agent.py
-        integrated_keys = data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("integratedKeys", {})
+        integrated_keys = data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("integratedKeysProxy", {})
         if isinstance(integrated_keys, dict):
             keys_proxy_enabled = integrated_keys.get("enabled", False)
         else:

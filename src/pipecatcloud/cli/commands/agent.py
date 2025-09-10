@@ -133,7 +133,8 @@ async def status(
         )
         
         # Check for Integrated Keys status
-        integrated_keys = data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("integratedKeys", {})
+        # API returns integratedKeysProxy but we display as "Integrated Keys"
+        integrated_keys = data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("integratedKeysProxy", {})
         if isinstance(integrated_keys, dict):
             integrated_keys_enabled = integrated_keys.get("enabled", False)
         else:

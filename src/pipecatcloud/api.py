@@ -321,7 +321,7 @@ class _API:
                 "maxAgents": deploy_config.scaling.max_agents,
             },
             "enableKrisp": deploy_config.enable_krisp,
-            "enableIntegratedKeys": deploy_config.enable_integrated_keys,
+            "enableIntegratedKeysProxy": deploy_config.enable_integrated_keys,  # API expects this field name
         }
 
         # Remove None values recursively
