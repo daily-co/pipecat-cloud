@@ -62,6 +62,7 @@ except ImportError:
         """
 
         websocket: WebSocket
+        body: Any
 
 
 def _warn_standalone_usage():
