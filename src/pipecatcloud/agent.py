@@ -142,3 +142,17 @@ class WebSocketSessionArguments(WebSocketRunnerArguments, SessionArguments):
     def __post_init__(self):
         WebSocketRunnerArguments.__post_init__(self)
         _warn_standalone_usage()
+
+@dataclass
+class SmallWebRTCSessionArguments(SmallWebRTCRunnerArguments, SessionArguments):
+    """SmallWebRTCTransport based agent session arguments.
+
+    Inherits from SmallWebRTCRunnerArguments for compatibility with pipecat-ai runner.
+    When pipecat-ai is not installed, uses a fallback implementation (deprecated).
+
+    For best compatibility, install: pip install pipecatcloud[pipecat]
+    """
+
+    def __post_init__(self):
+        SmallWebRTCRunnerArguments.__post_init__(self)
+        _warn_standalone_usage()
