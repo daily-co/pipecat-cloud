@@ -16,6 +16,7 @@ try:
         DailyRunnerArguments,
         RunnerArguments,
         WebSocketRunnerArguments,
+        SmallWebRTCRunnerArguments,
     )
 
     _PIPECAT_RUNNER_TYPES_AVAILABLE = True
@@ -62,6 +63,16 @@ except ImportError:
         """
 
         websocket: WebSocket
+
+    @dataclass
+    class SmallWebRTCRunnerArguments(RunnerArguments):
+        """Fallback Small WebRTC transport session arguments for the runner.
+
+        Parameters:
+            webrtc_connection: Pre-configured WebRTC peer connection
+        """
+
+        webrtc_connection: Any
 
 
 def _warn_standalone_usage():
