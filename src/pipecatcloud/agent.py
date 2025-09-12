@@ -63,6 +63,7 @@ except ImportError:
         """
 
         websocket: WebSocket
+        body: Any
 
     @dataclass
     class SmallWebRTCRunnerArguments(RunnerArguments):
