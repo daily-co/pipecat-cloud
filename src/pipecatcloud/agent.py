@@ -16,6 +16,7 @@ try:
         DailyRunnerArguments,
         RunnerArguments,
         WebSocketRunnerArguments,
+        SmallWebRTCRunnerArguments,
     )
 
     _PIPECAT_RUNNER_TYPES_AVAILABLE = True
@@ -62,6 +63,16 @@ except ImportError:
         """
 
         websocket: WebSocket
+
+    @dataclass
+    class SmallWebRTCRunnerArguments(RunnerArguments):
+        """Fallback Small WebRTC transport session arguments for the runner.
+
+        Parameters:
+            webrtc_connection: Pre-configured WebRTC peer connection
+        """
+
+        webrtc_connection: Any
 
 
 def _warn_standalone_usage():
@@ -130,4 +141,18 @@ class WebSocketSessionArguments(WebSocketRunnerArguments, SessionArguments):
 
     def __post_init__(self):
         WebSocketRunnerArguments.__post_init__(self)
+        _warn_standalone_usage()
+
+@dataclass
+class SmallWebRTCSessionArguments(SmallWebRTCRunnerArguments, SessionArguments):
+    """SmallWebRTCTransport based agent session arguments.
+
+    Inherits from SmallWebRTCRunnerArguments for compatibility with pipecat-ai runner.
+    When pipecat-ai is not installed, uses a fallback implementation (deprecated).
+
+    For best compatibility, install: pip install pipecatcloud[pipecat]
+    """
+
+    def __post_init__(self):
+        SmallWebRTCRunnerArguments.__post_init__(self)
         _warn_standalone_usage()
