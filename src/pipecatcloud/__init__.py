@@ -26,6 +26,7 @@ from pipecatcloud.exception import (
     InvalidError,
 )
 from pipecatcloud.session import Session, SessionParams
+from pipecatcloud.smallwebrtc.session_manager import SmallWebRTCSessionManager
 
 logger.remove()
 logger.add(sys.stderr, level=str(os.getenv("PCC_LOG_LEVEL", "INFO")))
@@ -41,6 +42,7 @@ __all__ = [
     # Session classes
     "Session",
     "SessionParams",
+    "SmallWebRTCSessionManager",
     # Exception classes
     "AgentNotHealthyError",
     "AgentStartError",
