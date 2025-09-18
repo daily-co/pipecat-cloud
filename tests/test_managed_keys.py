@@ -1,5 +1,5 @@
 """
-Unit tests for integrated keys feature.
+Unit tests for managed keys feature.
 
 Tests follow AAA pattern and focus on behaviors/outcomes rather than implementation details.
 Covers data model, TOML parsing, CLI commands, and API integration.
@@ -19,47 +19,47 @@ from src.pipecatcloud.exception import ConfigFileError
 
 
 class TestDeployConfigDataModel:
-    """Test the DeployConfigParams data model with integrated keys support."""
+    """Test the DeployConfigParams data model with managed keys support."""
 
     def test_default_keys_is_disabled(self):
-        """When not specified, integrated keys should default to disabled."""
+        """When not specified, managed keys should default to disabled."""
         # Arrange & Act
         config = DeployConfigParams()
         
         # Assert
-        assert config.enable_integrated_keys is False
+        assert config.enable_managed_keys is False
 
     def test_can_enable_keys(self):
         """Integrated keys can be explicitly enabled."""
         # Arrange & Act
-        config = DeployConfigParams(enable_integrated_keys=True)
+        config = DeployConfigParams(enable_managed_keys=True)
         
         # Assert
-        assert config.enable_integrated_keys is True
+        assert config.enable_managed_keys is True
 
     def test_keys_included_in_dict_representation(self):
-        """Dictionary representation should include integrated keys setting."""
+        """Dictionary representation should include managed keys setting."""
         # Arrange
         config = DeployConfigParams(
             agent_name="test-agent",
-            enable_integrated_keys=True
+            enable_managed_keys=True
         )
         
         # Act
         result = config.to_dict()
         
         # Assert
-        assert "enable_integrated_keys" in result
-        assert result["enable_integrated_keys"] is True
+        assert "enable_managed_keys" in result
+        assert result["enable_managed_keys"] is True
 
     def test_keys_preserves_other_settings(self):
-        """Adding integrated keys should not affect other configuration settings."""
+        """Adding managed keys should not affect other configuration settings."""
         # Arrange
         config = DeployConfigParams(
             agent_name="test-agent",
             image="test:latest",
             enable_krisp=True,
-            enable_integrated_keys=True
+            enable_managed_keys=True
         )
         
         # Act
@@ -69,11 +69,11 @@ class TestDeployConfigDataModel:
         assert result["agent_name"] == "test-agent"
         assert result["image"] == "test:latest"
         assert result["enable_krisp"] is True
-        assert result["enable_integrated_keys"] is True
+        assert result["enable_managed_keys"] is True
 
 
 class TestTOMLConfiguration:
-    """Test TOML configuration file parsing with integrated keys."""
+    """Test TOML configuration file parsing with managed keys."""
 
     @pytest.fixture
     def temp_config_file(self, tmp_path):
@@ -82,12 +82,12 @@ class TestTOMLConfiguration:
         return config_path
 
     def test_loads_keys_proxy_from_toml_when_enabled(self, temp_config_file):
-        """TOML file with integrated keys enabled should be parsed correctly."""
+        """TOML file with managed keys enabled should be parsed correctly."""
         # Arrange
         config_content = """
         agent_name = "test-agent"
         image = "test:latest"
-        enable_integrated_keys = true
+        enable_managed_keys = true
         """
         temp_config_file.write_text(config_content)
         
@@ -97,15 +97,15 @@ class TestTOMLConfiguration:
         
         # Assert
         assert config is not None
-        assert config.enable_integrated_keys is True
+        assert config.enable_managed_keys is True
 
     def test_loads_keys_proxy_from_toml_when_disabled(self, temp_config_file):
-        """TOML file with integrated keys explicitly disabled should be parsed correctly."""
+        """TOML file with managed keys explicitly disabled should be parsed correctly."""
         # Arrange
         config_content = """
         agent_name = "test-agent"
         image = "test:latest"
-        enable_integrated_keys = false
+        enable_managed_keys = false
         """
         temp_config_file.write_text(config_content)
         
@@ -115,10 +115,10 @@ class TestTOMLConfiguration:
         
         # Assert
         assert config is not None
-        assert config.enable_integrated_keys is False
+        assert config.enable_managed_keys is False
 
     def test_defaults_keys_proxy_when_not_in_toml(self, temp_config_file):
-        """TOML file without integrated keys setting should default to disabled."""
+        """TOML file without managed keys setting should default to disabled."""
         # Arrange
         config_content = """
         agent_name = "test-agent"
@@ -132,7 +132,7 @@ class TestTOMLConfiguration:
         
         # Assert
         assert config is not None
-        assert config.enable_integrated_keys is False
+        assert config.enable_managed_keys is False
 
     def test_preserves_other_settings_with_keys_proxy(self, temp_config_file):
         """Keys proxy setting should not interfere with other TOML settings."""
@@ -141,7 +141,7 @@ class TestTOMLConfiguration:
         agent_name = "test-agent"
         image = "test:latest"
         enable_krisp = true
-        enable_integrated_keys = true
+        enable_managed_keys = true
         secret_set = "my-secrets"
         
         [scaling]
@@ -158,7 +158,7 @@ class TestTOMLConfiguration:
         assert config.agent_name == "test-agent"
         assert config.image == "test:latest"
         assert config.enable_krisp is True
-        assert config.enable_integrated_keys is True
+        assert config.enable_managed_keys is True
         assert config.secret_set == "my-secrets"
         assert config.scaling.min_agents == 2
         assert config.scaling.max_agents == 10
@@ -166,7 +166,7 @@ class TestTOMLConfiguration:
 
 
 class TestAPIIntegration:
-    """Test API client integration with integrated keys."""
+    """Test API client integration with managed keys."""
 
     @pytest.fixture
     def api_client(self):
@@ -180,7 +180,7 @@ class TestAPIIntegration:
         config = DeployConfigParams(
             agent_name="test-agent",
             image="test:latest",
-            enable_integrated_keys=True
+            enable_managed_keys=True
         )
         
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
@@ -202,7 +202,7 @@ class TestAPIIntegration:
         config = DeployConfigParams(
             agent_name="test-agent",
             image="test:latest",
-            enable_integrated_keys=True
+            enable_managed_keys=True
         )
         
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
@@ -219,12 +219,12 @@ class TestAPIIntegration:
 
     @pytest.mark.asyncio
     async def test_disabled_keys_proxy_sends_false(self, api_client):
-        """When integrated keys is disabled, API should send false value."""
+        """When managed keys is disabled, API should send false value."""
         # Arrange
         config = DeployConfigParams(
             agent_name="test-agent",
             image="test:latest",
-            enable_integrated_keys=False
+            enable_managed_keys=False
         )
         
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
@@ -241,7 +241,7 @@ class TestAPIIntegration:
 
 
 class TestAgentStatusDisplay:
-    """Test agent status command displays integrated keys status."""
+    """Test agent status command displays managed keys status."""
 
     @pytest.fixture
     def mock_api(self):
@@ -250,7 +250,7 @@ class TestAgentStatusDisplay:
             yield mock_api
 
     def test_displays_enabled_keys_proxy(self, mock_api, capsys):
-        """Agent status should display when integrated keys is enabled."""
+        """Agent status should display when managed keys is enabled."""
         # Arrange
         from src.pipecatcloud.cli.commands.agent import status
         
@@ -273,11 +273,11 @@ class TestAgentStatusDisplay:
         
         # Assert
         captured = capsys.readouterr()
-        assert "Integrated Keys" in captured.out
+        assert "Managed Keys" in captured.out
         assert "Enabled" in captured.out
 
     def test_displays_disabled_keys_proxy(self, mock_api, capsys):
-        """Agent status should display when integrated keys is disabled."""
+        """Agent status should display when managed keys is disabled."""
         # Arrange
         from src.pipecatcloud.cli.commands.agent import status
         
@@ -296,7 +296,7 @@ class TestAgentStatusDisplay:
         
         # Assert
         captured = capsys.readouterr()
-        assert "Integrated Keys" in captured.out
+        assert "Managed Keys" in captured.out
         assert "Disabled" in captured.out
 
     def test_handles_boolean_keys_proxy_value(self, mock_api, capsys):
@@ -321,7 +321,7 @@ class TestAgentStatusDisplay:
         
         # Assert
         captured = capsys.readouterr()
-        assert "Integrated Keys" in captured.out
+        assert "Managed Keys" in captured.out
         assert "Enabled" in captured.out
 
 
@@ -329,7 +329,7 @@ class TestBackwardCompatibility:
     """Test backward compatibility with existing deployments."""
 
     def test_existing_config_without_keys_proxy_works(self):
-        """Existing configs without integrated keys field should work unchanged."""
+        """Existing configs without managed keys field should work unchanged."""
         # Arrange
         config = DeployConfigParams(
             agent_name="test-agent",
@@ -342,10 +342,10 @@ class TestBackwardCompatibility:
         
         # Assert
         assert result["enable_krisp"] is True
-        assert result["enable_integrated_keys"] is False
+        assert result["enable_managed_keys"] is False
 
     def test_api_response_without_keys_proxy_doesnt_crash(self):
-        """Agent status should handle API responses without integrated keys field."""
+        """Agent status should handle API responses without managed keys field."""
         # Arrange
         data = {
             "ready": True,
@@ -370,7 +370,7 @@ class TestBackwardCompatibility:
 
     @pytest.fixture
     def temp_legacy_config(self, tmp_path):
-        """Create a legacy TOML config without integrated keys."""
+        """Create a legacy TOML config without managed keys."""
         config_path = tmp_path / "pcc-deploy.toml"
         config_content = """
         agent_name = "legacy-agent"
@@ -385,7 +385,7 @@ class TestBackwardCompatibility:
         return config_path
 
     def test_legacy_toml_loads_with_defaults(self, temp_legacy_config):
-        """Legacy TOML files should load with integrated keys defaulting to disabled."""
+        """Legacy TOML files should load with managed keys defaulting to disabled."""
         # Arrange & Act
         with patch("pipecatcloud.cli.config.deploy_config_path", str(temp_legacy_config)):
             config = load_deploy_config_file()
@@ -394,7 +394,7 @@ class TestBackwardCompatibility:
         assert config is not None
         assert config.agent_name == "legacy-agent"
         assert config.enable_krisp is True
-        assert config.enable_integrated_keys is False
+        assert config.enable_managed_keys is False
         assert config.scaling.min_agents == 1  # Converted from min_instances
 
 
@@ -409,7 +409,7 @@ class TestErrorHandling:
         config = DeployConfigParams(
             agent_name="test-agent",
             image="test:latest",
-            enable_integrated_keys=True
+            enable_managed_keys=True
         )
         
         with patch.object(api, "_base_request", new_callable=AsyncMock) as mock_request:
@@ -426,7 +426,7 @@ class TestErrorHandling:
             agent_name="test-agent",
             image="test:latest",
             enable_krisp=True,
-            enable_integrated_keys=True
+            enable_managed_keys=True
         )
         
         # Act
@@ -434,4 +434,4 @@ class TestErrorHandling:
         
         # Assert
         assert result["enable_krisp"] is True
-        assert result["enable_integrated_keys"] is True
+        assert result["enable_managed_keys"] is True

@@ -11,12 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added a `SmallWebRTCSessionArguments` dataclass.
 
-- `deploy` command now accepts a `--enable-integrated-keys` flag which enables
+- `deploy` command now accepts a `--enable-managed-keys` flag which enables
   properly configured agents to use Daily's API keys for supported upstream
   services. This can also be enabled via `pcc-deploy.toml` by adding the
-  `enable_integrated_keys` attribute and a boolean value.
+  `enable_managed_keys` attribute and a boolean value.
 
-- `agent status` now reflects the state of the integrated keys feature.
+- `agent status` now reflects the state of the managed keys feature.
 
 ## [0.2.4] - 2025-08-26
 

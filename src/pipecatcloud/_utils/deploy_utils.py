@@ -64,7 +64,7 @@ class DeployConfigParams:
     secret_set: Optional[str] = None
     scaling: ScalingParams = ScalingParams()
     enable_krisp: bool = False
-    enable_integrated_keys: bool = False
+    enable_managed_keys: bool = False
     docker_config: dict = field(factory=dict)
 
     def __attrs_post_init__(self):
@@ -79,7 +79,7 @@ class DeployConfigParams:
             "secret_set": self.secret_set,
             "scaling": self.scaling.to_dict() if self.scaling else None,
             "enable_krisp": self.enable_krisp,
-            "enable_integrated_keys": self.enable_integrated_keys,
+            "enable_managed_keys": self.enable_managed_keys,
             "docker_config": self.docker_config,
         }
 
@@ -119,7 +119,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "secret_set",
             "scaling",
             "enable_krisp",
-            "enable_integrated_keys",
+            "enable_managed_keys",
             "docker",
         }
         unexpected_keys = set(config_data.keys()) - expected_keys
