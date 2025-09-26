@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `SmallWebRTCSessionManager`, a Session Manager to simplify bot creation
+  in Pipecat Cloud using `SmallWebRTCTransport`.
 - Added a `SmallWebRTCSessionArguments` dataclass.
 
 - `deploy` command now accepts a `--enable-managed-keys` flag which enables
