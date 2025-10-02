@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pipecatcloud"
-version = "0.2.4"
+dynamic = ["version"]
 requires-python = ">=3.10"
 description = "Cloud hosting for Pipecat AI applications"
 license = { text = "BSD 2-Clause License" }
@@ -58,3 +58,7 @@ line-length = 100
 
 [project.urls]
 Website = "https://docs.pipecat.daily.co/"
+
+[tool.setuptools_scm]
+local_scheme = "no-local-version"
+fallback_version = "0.0.0-dev"
