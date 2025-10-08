@@ -5,6 +5,14 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added an optional `--profile` option to the `deploy` command which selects between
+  `agent-1x`, with 0.5 vCPUs / 1 GB RAM, and `agent-2x`, with 1 vCPU / 2 GB RAM.  The
+  default profile is `agent-1x`
+
 ## [0.2.5] - 2025-10-02
 
 ### Added
