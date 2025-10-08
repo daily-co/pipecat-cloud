@@ -119,6 +119,15 @@ async def status(
             "[bold]Image:[/bold]",
             str(data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("image", "N/A")),
         )
+
+        # Display agent profile if available
+        agent_profile = data.get("agentProfile")
+        if agent_profile:
+            deployment_table.add_row(
+                "[bold]Agent Profile:[/bold]",
+                str(agent_profile),
+            )
+
         deployment_table.add_row(
             "[bold]Active Deployment ID:[/bold]",
             str(data.get("activeDeploymentId", "N/A")),
@@ -539,12 +548,13 @@ async def deployments(
             table.add_column("Updated At")
 
             for deployment in data["deployments"]:
+                spec = deployment.get("manifest", {}).get("spec", {})
                 table.add_row(
-                    deployment["id"],
-                    deployment["manifest"]["spec"]["dailyNodeType"],
-                    deployment["manifest"]["spec"]["image"],
-                    deployment["createdAt"],
-                    deployment["updatedAt"],
+                    deployment.get("id", "N/A"),
+                    spec.get("dailyNodeType", "N/A"),
+                    spec.get("image", "N/A"),
+                    deployment.get("createdAt", "N/A"),
+                    deployment.get("updatedAt", "N/A"),
                 )
 
             console.print(
