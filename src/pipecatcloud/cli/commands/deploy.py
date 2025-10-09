@@ -285,6 +285,13 @@ def create_deploy_command(app: typer.Typer):
             help="Enable Managed Keys for this deployment",
             rich_help_panel="Deployment Configuration",
         ),
+        profile: str = typer.Option(
+            None,
+            "--profile",
+            "-p",
+            help="Agent profile to use for deployment",
+            rich_help_panel="Deployment Configuration",
+        ),
         skip_confirm: bool = typer.Option(
             False,
             "--force",
@@ -352,6 +359,7 @@ def create_deploy_command(app: typer.Typer):
         )
         partial_config.enable_krisp = krisp or partial_config.enable_krisp
         partial_config.enable_managed_keys = managed_keys or partial_config.enable_managed_keys
+        partial_config.agent_profile = profile or partial_config.agent_profile
 
         # Assert agent name and image are provided
         if not partial_config.agent_name:
@@ -388,6 +396,7 @@ def create_deploy_command(app: typer.Typer):
             (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
             (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
             (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
+            (f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}"),
             (f"[bold white]Krisp:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}"),
             (f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}"),
             "\n[dim]Scaling configuration:[/dim]",

@@ -66,6 +66,7 @@ class DeployConfigParams:
     enable_krisp: bool = False
     enable_managed_keys: bool = False
     docker_config: dict = field(factory=dict)
+    agent_profile: Optional[str] = None
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:
@@ -81,6 +82,7 @@ class DeployConfigParams:
             "enable_krisp": self.enable_krisp,
             "enable_managed_keys": self.enable_managed_keys,
             "docker_config": self.docker_config,
+            "agent_profile": self.agent_profile,
         }
 
 
@@ -121,6 +123,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "enable_krisp",
             "enable_managed_keys",
             "docker",
+            "agent_profile",
         }
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:

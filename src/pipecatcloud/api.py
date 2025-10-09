@@ -322,6 +322,7 @@ class _API:
             },
             "enableKrisp": deploy_config.enable_krisp,
             "enableIntegratedKeysProxy": deploy_config.enable_managed_keys,  # API expects this field name
+            "agentProfile": deploy_config.agent_profile,
         }
 
         # Remove None values recursively
