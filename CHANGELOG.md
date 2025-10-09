@@ -10,8 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added an optional `--profile` option to the `deploy` command which selects between
-  `agent-1x`, with 0.5 vCPUs / 1 GB RAM, and `agent-2x`, with 1 vCPU / 2 GB RAM.  The
-  default profile is `agent-1x`
+  `agent-1x`, with 0.5 vCPUs / 1 GB RAM, and `agent-2x`, with 1 vCPU / 2 GB RAM. The
+  default profile is `agent-1x`.
+
+### Fixed
+
+- Fixed an issue where the `agent status` CLI command would return incorrect
+  values for Min and Max Agents.
 
 ## [0.2.5] - 2025-10-02
 
