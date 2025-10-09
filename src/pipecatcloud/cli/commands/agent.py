@@ -170,11 +170,11 @@ async def status(
         if autoscaling_data:
             scaling_renderables = [
                 Panel(
-                    f"[bold]Minimum Agents[/bold]\n{autoscaling_data.get('minAgents', 0)}",
+                    f"[bold]Minimum Agents[/bold]\n{autoscaling_data.get('minReplicas', 0)}",
                     expand=True,
                 ),
                 Panel(
-                    f"[bold]Maximum Agents[/bold]\n{autoscaling_data.get('maxAgents', 0)}",
+                    f"[bold]Maximum Agents[/bold]\n{autoscaling_data.get('maxReplicas', 0)}",
                     expand=True,
                 ),
             ]

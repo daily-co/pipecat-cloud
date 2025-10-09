@@ -246,7 +246,10 @@ class TestAgentStatusDisplay:
                     "deployment": {
                         "manifest": {"spec": {"integratedKeysProxy": {"enabled": True}}}
                     },
-                    "autoScaling": {"minAgents": 0, "maxAgents": 1},  # Avoid undefined variable bug
+                    "autoScaling": {
+                        "minReplicas": 0,
+                        "maxReplicas": 1,
+                    },  # Avoid undefined variable bug
                 },
                 None,
             )
@@ -270,7 +273,10 @@ class TestAgentStatusDisplay:
                 {
                     "ready": True,
                     "deployment": {"manifest": {"spec": {}}},
-                    "autoScaling": {"minAgents": 0, "maxAgents": 1},  # Avoid undefined variable bug
+                    "autoScaling": {
+                        "minReplicas": 0,
+                        "maxReplicas": 1,
+                    },  # Avoid undefined variable bug
                 },
                 None,
             )
@@ -294,7 +300,10 @@ class TestAgentStatusDisplay:
                 {
                     "ready": True,
                     "deployment": {"manifest": {"spec": {"integratedKeysProxy": True}}},
-                    "autoScaling": {"minAgents": 0, "maxAgents": 1},  # Avoid undefined variable bug
+                    "autoScaling": {
+                        "minReplicas": 0,
+                        "maxReplicas": 1,
+                    },  # Avoid undefined variable bug
                 },
                 None,
             )
