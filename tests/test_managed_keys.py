@@ -5,17 +5,12 @@ Tests follow AAA pattern and focus on behaviors/outcomes rather than implementat
 Covers data model, TOML parsing, CLI commands, and API integration.
 """
 
-import json
-import tempfile
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-import toml
 
 from src.pipecatcloud._utils.deploy_utils import DeployConfigParams, load_deploy_config_file
 from src.pipecatcloud.api import _API
-from src.pipecatcloud.exception import ConfigFileError
 
 
 class TestDeployConfigDataModel:
@@ -25,7 +20,7 @@ class TestDeployConfigDataModel:
         """When not specified, managed keys should default to disabled."""
         # Arrange & Act
         config = DeployConfigParams()
-        
+
         # Assert
         assert config.enable_managed_keys is False
 
@@ -33,21 +28,18 @@ class TestDeployConfigDataModel:
         """Integrated keys can be explicitly enabled."""
         # Arrange & Act
         config = DeployConfigParams(enable_managed_keys=True)
-        
+
         # Assert
         assert config.enable_managed_keys is True
 
     def test_keys_included_in_dict_representation(self):
         """Dictionary representation should include managed keys setting."""
         # Arrange
-        config = DeployConfigParams(
-            agent_name="test-agent",
-            enable_managed_keys=True
-        )
-        
+        config = DeployConfigParams(agent_name="test-agent", enable_managed_keys=True)
+
         # Act
         result = config.to_dict()
-        
+
         # Assert
         assert "enable_managed_keys" in result
         assert result["enable_managed_keys"] is True
@@ -59,12 +51,12 @@ class TestDeployConfigDataModel:
             agent_name="test-agent",
             image="test:latest",
             enable_krisp=True,
-            enable_managed_keys=True
+            enable_managed_keys=True,
         )
-        
+
         # Act
         result = config.to_dict()
-        
+
         # Assert
         assert result["agent_name"] == "test-agent"
         assert result["image"] == "test:latest"
@@ -90,11 +82,11 @@ class TestTOMLConfiguration:
         enable_managed_keys = true
         """
         temp_config_file.write_text(config_content)
-        
+
         # Act
         with patch("pipecatcloud.cli.config.deploy_config_path", str(temp_config_file)):
             config = load_deploy_config_file()
-        
+
         # Assert
         assert config is not None
         assert config.enable_managed_keys is True
@@ -108,11 +100,11 @@ class TestTOMLConfiguration:
         enable_managed_keys = false
         """
         temp_config_file.write_text(config_content)
-        
+
         # Act
         with patch("pipecatcloud.cli.config.deploy_config_path", str(temp_config_file)):
             config = load_deploy_config_file()
-        
+
         # Assert
         assert config is not None
         assert config.enable_managed_keys is False
@@ -125,11 +117,11 @@ class TestTOMLConfiguration:
         image = "test:latest"
         """
         temp_config_file.write_text(config_content)
-        
+
         # Act
         with patch("pipecatcloud.cli.config.deploy_config_path", str(temp_config_file)):
             config = load_deploy_config_file()
-        
+
         # Assert
         assert config is not None
         assert config.enable_managed_keys is False
@@ -149,11 +141,11 @@ class TestTOMLConfiguration:
         max_agents = 10
         """
         temp_config_file.write_text(config_content)
-        
+
         # Act
         with patch("pipecatcloud.cli.config.deploy_config_path", str(temp_config_file)):
             config = load_deploy_config_file()
-        
+
         # Assert
         assert config.agent_name == "test-agent"
         assert config.image == "test:latest"
@@ -162,7 +154,6 @@ class TestTOMLConfiguration:
         assert config.secret_set == "my-secrets"
         assert config.scaling.min_agents == 2
         assert config.scaling.max_agents == 10
-
 
 
 class TestAPIIntegration:
@@ -178,17 +169,15 @@ class TestAPIIntegration:
         """Deploy payload should include enableIntegratedKeys field."""
         # Arrange
         config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            enable_managed_keys=True
+            agent_name="test-agent", image="test:latest", enable_managed_keys=True
         )
-        
+
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
             mock_request.return_value = {"success": True}
-            
+
             # Act
             await api_client._deploy(config, "test-org", update=False)
-            
+
             # Assert
             mock_request.assert_called_once()
             payload = mock_request.call_args[1]["json"]
@@ -200,17 +189,15 @@ class TestAPIIntegration:
         """Update payload should include enableIntegratedKeys field."""
         # Arrange
         config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            enable_managed_keys=True
+            agent_name="test-agent", image="test:latest", enable_managed_keys=True
         )
-        
+
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
             mock_request.return_value = {"success": True}
-            
+
             # Act
             await api_client._deploy(config, "test-org", update=True)
-            
+
             # Assert
             mock_request.assert_called_once()
             payload = mock_request.call_args[1]["json"]
@@ -222,17 +209,15 @@ class TestAPIIntegration:
         """When managed keys is disabled, API should send false value."""
         # Arrange
         config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            enable_managed_keys=False
+            agent_name="test-agent", image="test:latest", enable_managed_keys=False
         )
-        
+
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
             mock_request.return_value = {"success": True}
-            
+
             # Act
             await api_client._deploy(config, "test-org", update=False)
-            
+
             # Assert
             mock_request.assert_called_once()
             payload = mock_request.call_args[1]["json"]
@@ -253,24 +238,23 @@ class TestAgentStatusDisplay:
         """Agent status should display when managed keys is enabled."""
         # Arrange
         from src.pipecatcloud.cli.commands.agent import status
-        
-        mock_api.agent = AsyncMock(return_value=({
-            "ready": True,
-            "deployment": {
-                "manifest": {
-                    "spec": {
-                        "integratedKeysProxy": {
-                            "enabled": True
-                        }
-                    }
-                }
-            },
-            "autoScaling": {"minAgents": 0, "maxAgents": 1}  # Avoid undefined variable bug
-        }, None))
-        
+
+        mock_api.agent = AsyncMock(
+            return_value=(
+                {
+                    "ready": True,
+                    "deployment": {
+                        "manifest": {"spec": {"integratedKeysProxy": {"enabled": True}}}
+                    },
+                    "autoScaling": {"minAgents": 0, "maxAgents": 1},  # Avoid undefined variable bug
+                },
+                None,
+            )
+        )
+
         # Act
         status(agent_name="test-agent", organization="test-org")
-        
+
         # Assert
         captured = capsys.readouterr()
         assert "Managed Keys" in captured.out
@@ -280,20 +264,21 @@ class TestAgentStatusDisplay:
         """Agent status should display when managed keys is disabled."""
         # Arrange
         from src.pipecatcloud.cli.commands.agent import status
-        
-        mock_api.agent = AsyncMock(return_value=({
-            "ready": True,
-            "deployment": {
-                "manifest": {
-                    "spec": {}
-                }
-            },
-            "autoScaling": {"minAgents": 0, "maxAgents": 1}  # Avoid undefined variable bug
-        }, None))
-        
+
+        mock_api.agent = AsyncMock(
+            return_value=(
+                {
+                    "ready": True,
+                    "deployment": {"manifest": {"spec": {}}},
+                    "autoScaling": {"minAgents": 0, "maxAgents": 1},  # Avoid undefined variable bug
+                },
+                None,
+            )
+        )
+
         # Act
         status(agent_name="test-agent", organization="test-org")
-        
+
         # Assert
         captured = capsys.readouterr()
         assert "Managed Keys" in captured.out
@@ -303,22 +288,21 @@ class TestAgentStatusDisplay:
         """Agent status should handle boolean value for backward compatibility."""
         # Arrange
         from src.pipecatcloud.cli.commands.agent import status
-        
-        mock_api.agent = AsyncMock(return_value=({
-            "ready": True,
-            "deployment": {
-                "manifest": {
-                    "spec": {
-                        "integratedKeysProxy": True
-                    }
-                }
-            },
-            "autoScaling": {"minAgents": 0, "maxAgents": 1}  # Avoid undefined variable bug
-        }, None))
-        
+
+        mock_api.agent = AsyncMock(
+            return_value=(
+                {
+                    "ready": True,
+                    "deployment": {"manifest": {"spec": {"integratedKeysProxy": True}}},
+                    "autoScaling": {"minAgents": 0, "maxAgents": 1},  # Avoid undefined variable bug
+                },
+                None,
+            )
+        )
+
         # Act
         status(agent_name="test-agent", organization="test-org")
-        
+
         # Assert
         captured = capsys.readouterr()
         assert "Managed Keys" in captured.out
@@ -331,15 +315,11 @@ class TestBackwardCompatibility:
     def test_existing_config_without_keys_proxy_works(self):
         """Existing configs without managed keys field should work unchanged."""
         # Arrange
-        config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            enable_krisp=True
-        )
-        
+        config = DeployConfigParams(agent_name="test-agent", image="test:latest", enable_krisp=True)
+
         # Act
         result = config.to_dict()
-        
+
         # Assert
         assert result["enable_krisp"] is True
         assert result["enable_managed_keys"] is False
@@ -347,24 +327,20 @@ class TestBackwardCompatibility:
     def test_api_response_without_keys_proxy_doesnt_crash(self):
         """Agent status should handle API responses without managed keys field."""
         # Arrange
-        data = {
-            "ready": True,
-            "deployment": {
-                "manifest": {
-                    "spec": {
-                        "image": "test:latest"
-                    }
-                }
-            }
-        }
-        
+        data = {"ready": True, "deployment": {"manifest": {"spec": {"image": "test:latest"}}}}
+
         # Act - simulate the logic from agent.py
-        integrated_keys = data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("integratedKeysProxy", {})
+        integrated_keys = (
+            data.get("deployment", {})
+            .get("manifest", {})
+            .get("spec", {})
+            .get("integratedKeysProxy", {})
+        )
         if isinstance(integrated_keys, dict):
             keys_proxy_enabled = integrated_keys.get("enabled", False)
         else:
             keys_proxy_enabled = bool(integrated_keys)
-        
+
         # Assert
         assert keys_proxy_enabled is False
 
@@ -389,7 +365,7 @@ class TestBackwardCompatibility:
         # Arrange & Act
         with patch("pipecatcloud.cli.config.deploy_config_path", str(temp_legacy_config)):
             config = load_deploy_config_file()
-        
+
         # Assert
         assert config is not None
         assert config.agent_name == "legacy-agent"
@@ -407,14 +383,12 @@ class TestErrorHandling:
         # Arrange
         api = _API(token="test-token", is_cli=True)
         config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            enable_managed_keys=True
+            agent_name="test-agent", image="test:latest", enable_managed_keys=True
         )
-        
+
         with patch.object(api, "_base_request", new_callable=AsyncMock) as mock_request:
             mock_request.side_effect = Exception("Network error")
-            
+
             # Act & Assert
             with pytest.raises(Exception, match="Network error"):
                 await api._deploy(config, "test-org", update=False)
@@ -426,12 +400,12 @@ class TestErrorHandling:
             agent_name="test-agent",
             image="test:latest",
             enable_krisp=True,
-            enable_managed_keys=True
+            enable_managed_keys=True,
         )
-        
+
         # Act
         result = config.to_dict()
-        
+
         # Assert
         assert result["enable_krisp"] is True
         assert result["enable_managed_keys"] is True

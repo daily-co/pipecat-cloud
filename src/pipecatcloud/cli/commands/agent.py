@@ -21,11 +21,16 @@ from rich.text import Text
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
-from pipecatcloud._utils.console_utils import console, format_duration, format_timestamp, calculate_percentiles
+from pipecatcloud._utils.console_utils import (
+    calculate_percentiles,
+    console,
+    format_duration,
+    format_timestamp,
+)
+from pipecatcloud._utils.deploy_utils import DeployConfigParams, with_deploy_config
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
-from pipecatcloud._utils.deploy_utils import with_deploy_config, DeployConfigParams
 
 agent_cli = typer.Typer(name="agent", help="Agent management", no_args_is_help=True)
 
@@ -54,7 +59,8 @@ async def list(
         if not data or len(data) == 0:
             console.error(
                 f"[red]No agents found for namespace / organization '{org}'[/red]\n\n"
-                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]")
+                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]"
+            )
             return typer.Exit(1)
 
         else:
@@ -140,10 +146,15 @@ async def status(
             "[bold]Updated At:[/bold]",
             str(data.get("updatedAt", "N/A")),
         )
-        
+
         # Check for Managed Keys status
         # API returns integratedKeysProxy but we display as "Managed Keys"
-        integrated_keys = data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("integratedKeysProxy", {})
+        integrated_keys = (
+            data.get("deployment", {})
+            .get("manifest", {})
+            .get("spec", {})
+            .get("integratedKeysProxy", {})
+        )
         if isinstance(integrated_keys, dict):
             integrated_keys_enabled = integrated_keys.get("enabled", False)
         else:
@@ -226,9 +237,7 @@ async def status(
 async def sessions(
     deploy_config=typer.Option(None, hidden=True),
     agent_name: str = typer.Argument(
-        None,
-        help="Name of the agent to list sessions for e.g. 'my-agent'",
-        show_default=False
+        None, help="Name of the agent to list sessions for e.g. 'my-agent'", show_default=False
     ),
     session_id: str = typer.Option(
         None,
@@ -241,7 +250,7 @@ async def sessions(
     ),
 ):
     org = organization or config.get("org")
-    
+
     # Get agent name from argument or deploy config
     if not agent_name:
         if deploy_config and deploy_config.agent_name:
@@ -273,15 +282,17 @@ async def sessions(
         for session in completed_sessions:
             try:
                 from datetime import datetime
-                created_at = datetime.fromisoformat(session["createdAt"].replace('Z', '+00:00'))
-                ended_at = datetime.fromisoformat(session["endedAt"].replace('Z', '+00:00'))
+
+                created_at = datetime.fromisoformat(session["createdAt"].replace("Z", "+00:00"))
+                ended_at = datetime.fromisoformat(session["endedAt"].replace("Z", "+00:00"))
                 duration_seconds = (ended_at - created_at).total_seconds()
                 durations.append(duration_seconds)
             except BaseException:
                 continue
 
-        bot_start_times = [s["botStartSeconds"]
-                           for s in sessions_list if s.get("botStartSeconds") is not None]
+        bot_start_times = [
+            s["botStartSeconds"] for s in sessions_list if s.get("botStartSeconds") is not None
+        ]
         bot_start_metrics = calculate_percentiles(bot_start_times)
         duration_metrics = calculate_percentiles(durations)
         cold_starts_count = sum(1 for s in sessions_list if s.get("coldStart") is True)
@@ -326,8 +337,9 @@ async def sessions(
             if session_id and session["sessionId"] != session_id:
                 continue
 
-            session_duration = format_duration(
-                session["createdAt"], session["endedAt"]) or "[dim]N/A[/dim]"
+            session_duration = (
+                format_duration(session["createdAt"], session["endedAt"]) or "[dim]N/A[/dim]"
+            )
             status = session.get("completionStatus", "")
             if session["endedAt"]:
                 if status == "500":
@@ -342,14 +354,18 @@ async def sessions(
 
             row_data = [
                 session["sessionId"],
-                format_timestamp(
-                    session["createdAt"]),
-                format_timestamp(
-                    session["endedAt"]) if session["endedAt"] else "[dim]N/A[/dim]",
+                format_timestamp(session["createdAt"]),
+                format_timestamp(session["endedAt"]) if session["endedAt"] else "[dim]N/A[/dim]",
                 session_duration,
                 status_display,
-                f"{session['botStartSeconds']}s" if session["botStartSeconds"] is not None else "[dim]N/A[/dim]",
-                "[red]Yes[/red]" if session["coldStart"] is True else "No" if session["coldStart"] is False else "[dim]N/A[/dim]",
+                f"{session['botStartSeconds']}s"
+                if session["botStartSeconds"] is not None
+                else "[dim]N/A[/dim]",
+                "[red]Yes[/red]"
+                if session["coldStart"] is True
+                else "No"
+                if session["coldStart"] is False
+                else "[dim]N/A[/dim]",
             ]
 
             if is_cold_start:
@@ -359,10 +375,11 @@ async def sessions(
 
         console.success(
             Group(
-                Columns(
-                    metric_renderables,
-                    equal=True) if metric_renderables and not session_id else "",
-                table),
+                Columns(metric_renderables, equal=True)
+                if metric_renderables and not session_id
+                else "",
+                table,
+            ),
             title=f"Session data for agent {agent_name} [dim]({org})[/dim]",
         )
 
@@ -399,32 +416,16 @@ class LogLevelColors(str, Enum):
 @synchronizer.create_blocking
 @requires_login
 async def logs(
-        agent_name: str,
-        organization: str = typer.Option(
-            None,
-            "--organization",
-            "-o",
-            help="Organization to get status of agent for"),
-        level: LogLevel = typer.Option(
-            None,
-            "--level",
-            "-l",
-            help="Level of logs to get"),
-        format: LogFormat = typer.Option(
-            LogFormat.TEXT,
-            "--format",
-            "-f",
-            help="Logs format"),
-        limit: int = typer.Option(
-            100,
-            "--limit",
-            "-n",
-            help="Number of logs to get"),
-        deployment_id: str = typer.Option(
-            None,
-            "--deployment",
-            "-d",
-            help="Filter logs by deployment ID"),
+    agent_name: str,
+    organization: str = typer.Option(
+        None, "--organization", "-o", help="Organization to get status of agent for"
+    ),
+    level: LogLevel = typer.Option(None, "--level", "-l", help="Level of logs to get"),
+    format: LogFormat = typer.Option(LogFormat.TEXT, "--format", "-f", help="Logs format"),
+    limit: int = typer.Option(100, "--limit", "-n", help="Number of logs to get"),
+    deployment_id: str = typer.Option(
+        None, "--deployment", "-d", help="Filter logs by deployment ID"
+    ),
 ):
     org = organization or config.get("org")
 
@@ -434,7 +435,9 @@ async def logs(
         f"[dim]Fetching logs for {status_text}: [bold]'{agent_name}'[/bold] with severity: [bold cyan]{level.value if level else 'ALL'}[/bold cyan][/dim]",
         spinner="dots",
     ):
-        data, error = await API.agent_logs(agent_name=agent_name, org=org, limit=limit, deployment_id=deployment_id)
+        data, error = await API.agent_logs(
+            agent_name=agent_name, org=org, limit=limit, deployment_id=deployment_id
+        )
 
         if not data or not data.get("logs"):
             console.print("[dim]No logs found for agent[/dim]")
@@ -646,7 +649,8 @@ async def start(
                 title="Public API Key Required",
                 title_align="left",
                 border_style="yellow",
-            ))
+            )
+        )
 
         return typer.Exit(1)
 
@@ -676,7 +680,8 @@ async def start(
                 title=f"[bold]Start Request for agent: {agent_name}[/bold]",
                 title_align="left",
                 border_style="yellow",
-            ))
+            )
+        )
         if not await questionary.confirm(
             "Are you sure you want to start an active session for this agent?"
         ).ask_async():
