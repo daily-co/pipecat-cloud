@@ -8,6 +8,7 @@ import asyncio
 import itertools
 import webbrowser
 import os
+import ssl
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional, Tuple
 
@@ -32,6 +33,28 @@ from pipecatcloud.cli.config import (
 auth_cli = typer.Typer(name="auth", help="Manage Pipecat Cloud credentials", no_args_is_help=True)
 
 
+def _get_ssl_context() -> ssl.SSLContext:
+    """Get SSL context with proper certificate verification.
+    
+    Attempts to use certifi's certificates as a fallback if system certificates
+    are not available. This fixes SSL verification issues on macOS and other systems.
+    """
+    ssl_context = ssl.create_default_context()
+    
+    # If SSL_CERT_FILE is not set, try to use certifi's certificates
+    if not os.environ.get('SSL_CERT_FILE'):
+        try:
+            import certifi
+            ssl_context.load_verify_locations(certifi.where())
+            logger.debug(f"Using certifi certificates from: {certifi.where()}")
+        except ImportError:
+            logger.debug("certifi not available, using system certificates")
+        except Exception as e:
+            logger.debug(f"Could not load certifi certificates: {e}")
+    
+    return ssl_context
+
+
 class _AuthFlow:
     def __init__(self):
         pass
@@ -39,23 +62,49 @@ class _AuthFlow:
     @asynccontextmanager
     async def start(self) -> AsyncGenerator[Tuple[Optional[str], Optional[str]], None]:
         try:
-            async with aiohttp.ClientSession() as session:
+            # Create SSL context with certifi fallback
+            ssl_context = _get_ssl_context()
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            
+            async with aiohttp.ClientSession(connector=connector) as session:
                 url = f"{API.construct_api_url('login_path')}"
-                logger.debug(url)
-                async with session.post(url) as resp:
+                logger.debug(f"Starting auth flow at: {url}")
+                async with session.post(
+                    url, timeout=aiohttp.ClientTimeout(total=10.0)
+                ) as resp:
                     if resp.status != 200:
-                        raise Exception(f"Failed to start auth flow: {resp.status}")
+                        error_msg = f"Failed to start auth flow: HTTP {resp.status}"
+                        try:
+                            error_data = await resp.json()
+                            if "error" in error_data:
+                                error_msg += f" - {error_data['error']}"
+                        except Exception:
+                            pass
+                        logger.error(error_msg)
+                        raise Exception(error_msg)
                     data = await resp.json()
                     self.token_flow_id = data["token_flow_id"]
                     self.wait_secret = data["wait_secret"]
                     web_url = data["web_url"]
                     yield (self.token_flow_id, web_url)
-        except Exception:
+        except asyncio.TimeoutError:
+            logger.error("Connection timeout while starting auth flow")
+            yield (None, None)
+        except aiohttp.ClientError as e:
+            logger.error(f"Network error during auth flow: {type(e).__name__}: {e}")
+            yield (None, None)
+        except Exception as e:
+            logger.error(f"Unexpected error during auth flow: {type(e).__name__}: {e}")
             yield (None, None)
 
     async def finish(self, timeout: float = 40.0, network_timeout: float = 5.0) -> Optional[str]:
         start_time = asyncio.get_event_loop().time()
-        async with aiohttp.ClientSession() as session:
+        
+        # Create SSL context with certifi fallback
+        ssl_context = _get_ssl_context()
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        
+        async with aiohttp.ClientSession(connector=connector) as session:
             while (asyncio.get_event_loop().time() - start_time) < timeout:
                 try:
                     async with session.get(
@@ -103,7 +152,11 @@ def _open_url(url: str) -> bool:
 async def _get_account_org(
     token: str, active_org: Optional[str] = None
 ) -> Tuple[Optional[str], Optional[str]]:
-    async with aiohttp.ClientSession() as session:
+    # Create SSL context with certifi fallback
+    ssl_context = _get_ssl_context()
+    connector = aiohttp.TCPConnector(ssl=ssl_context)
+    
+    async with aiohttp.ClientSession(connector=connector) as session:
         async with session.get(
             f"{API.construct_api_url('organization_path')}",
             headers={"Authorization": f"Bearer {token}"},
