@@ -33,7 +33,7 @@ def _get_ssl_context() -> ssl.SSLContext:
             ssl_context.load_verify_locations(certifi.where())
             logger.debug(f"Using certifi certificates from: {certifi.where()}")
         except ImportError:
-            logger.debug("certifi not available, using system certificates")
+            logger.trace("certifi not available, using system certificates")
         except Exception as e:
             logger.debug(f"Could not load certifi certificates: {e}")
     
