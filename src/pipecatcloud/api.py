@@ -5,6 +5,8 @@
 #
 
 import json
+import os
+import ssl
 from functools import wraps
 from typing import Callable, List, Optional, Union
 
@@ -14,6 +16,28 @@ from loguru import logger
 from pipecatcloud._utils.deploy_utils import DeployConfigParams
 from pipecatcloud.config import config
 from pipecatcloud.exception import AgentStartError
+
+
+def _get_ssl_context() -> ssl.SSLContext:
+    """Get SSL context with proper certificate verification.
+    
+    Attempts to use certifi's certificates as a fallback if system certificates
+    are not available. This fixes SSL verification issues on macOS and other systems.
+    """
+    ssl_context = ssl.create_default_context()
+    
+    # If SSL_CERT_FILE is not set, try to use certifi's certificates
+    if not os.environ.get('SSL_CERT_FILE'):
+        try:
+            import certifi
+            ssl_context.load_verify_locations(certifi.where())
+            logger.debug(f"Using certifi certificates from: {certifi.where()}")
+        except ImportError:
+            logger.trace("certifi not available, using system certificates")
+        except Exception as e:
+            logger.debug(f"Could not load certifi certificates: {e}")
+    
+    return ssl_context
 
 
 def api_method(func):
@@ -61,7 +85,11 @@ class _API:
         not_found_is_empty: bool = False,
         override_token: Optional[str] = None,
     ) -> Optional[dict]:
-        async with aiohttp.ClientSession() as session:
+        # Create SSL context with certifi fallback
+        ssl_context = _get_ssl_context()
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        
+        async with aiohttp.ClientSession(connector=connector) as session:
             logger.debug(f"Request: {method} {url} {params} {json}")
 
             response = await session.request(
