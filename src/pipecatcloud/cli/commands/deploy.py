@@ -19,9 +19,11 @@ from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
 from pipecatcloud._utils.deploy_utils import (
     DeployConfigParams,
+    KrispVivaConfig,
     ScalingParams,
     with_deploy_config,
 )
+from pipecatcloud.constants import KRISP_VIVA_MODELS
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -285,6 +287,12 @@ def create_deploy_command(app: typer.Typer):
             help="Enable Managed Keys for this deployment",
             rich_help_panel="Deployment Configuration",
         ),
+        krisp_viva_audio_filter: str = typer.Option(
+            None,
+            "--krisp-viva-audio-filter",
+            help=f"Enable Krisp VIVA with audio filter model ({' or '.join(KRISP_VIVA_MODELS)})",
+            rich_help_panel="Deployment Configuration",
+        ),
         profile: str = typer.Option(
             None,
             "--profile",
@@ -361,6 +369,10 @@ def create_deploy_command(app: typer.Typer):
         partial_config.enable_managed_keys = managed_keys or partial_config.enable_managed_keys
         partial_config.agent_profile = profile or partial_config.agent_profile
 
+        # Handle Krisp VIVA configuration
+        if krisp_viva_audio_filter is not None:
+            partial_config.krisp_viva = KrispVivaConfig(audio_filter=krisp_viva_audio_filter)
+
         # Assert agent name and image are provided
         if not partial_config.agent_name:
             console.error("Agent name is required")
@@ -399,6 +411,7 @@ def create_deploy_command(app: typer.Typer):
             (f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}"),
             (f"[bold white]Krisp:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}"),
             (f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}"),
+            (f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}"),
             "\n[dim]Scaling configuration:[/dim]",
             table,
             *

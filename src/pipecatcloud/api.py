@@ -323,6 +323,9 @@ class _API:
             "enableKrisp": deploy_config.enable_krisp,
             "enableIntegratedKeysProxy": deploy_config.enable_managed_keys,  # API expects this field name
             "agentProfile": deploy_config.agent_profile,
+            "krispViva": {
+                "audioFilter": deploy_config.krisp_viva.audio_filter,
+            },
         }
 
         # Remove None values recursively

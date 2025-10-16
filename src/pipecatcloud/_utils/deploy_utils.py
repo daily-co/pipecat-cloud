@@ -12,6 +12,7 @@ import toml
 from attr import dataclass, field
 from loguru import logger
 
+from pipecatcloud.constants import KRISP_VIVA_MODELS
 from pipecatcloud.exception import ConfigFileError
 
 DEPLOY_STATUS_MAP = {
@@ -57,6 +58,23 @@ class ScalingParams:
 
 
 @dataclass
+class KrispVivaConfig:
+    audio_filter: Optional[str] = None
+
+    def __attrs_post_init__(self):
+        # Validation against known models
+        # IMPORTANT: KRISP_VIVA_MODELS must be kept in sync with API configuration
+        if self.audio_filter is not None:
+            if self.audio_filter not in KRISP_VIVA_MODELS:
+                raise ValueError(
+                    f"audio_filter must be one of {KRISP_VIVA_MODELS}, got '{self.audio_filter}'"
+                )
+
+    def to_dict(self):
+        return {"audio_filter": self.audio_filter}
+
+
+@dataclass
 class DeployConfigParams:
     agent_name: Optional[str] = None
     image: Optional[str] = None
@@ -67,6 +85,7 @@ class DeployConfigParams:
     enable_managed_keys: bool = False
     docker_config: dict = field(factory=dict)
     agent_profile: Optional[str] = None
+    krisp_viva: KrispVivaConfig = field(factory=KrispVivaConfig)
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:
@@ -83,6 +102,7 @@ class DeployConfigParams:
             "enable_managed_keys": self.enable_managed_keys,
             "docker_config": self.docker_config,
             "agent_profile": self.agent_profile,
+            "krisp_viva": self.krisp_viva.to_dict() if self.krisp_viva else None,
         }
 
 
@@ -106,11 +126,16 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
         # Extract docker configuration if present
         docker_data = config_data.pop("docker", {})
 
+        # Extract krisp_viva configuration if present
+        krisp_viva_data = config_data.pop("krisp_viva", {})
+        krisp_viva_config = KrispVivaConfig(**krisp_viva_data)
+
         # Create DeployConfigParams with validated data
         validated_config = DeployConfigParams(
             **config_data,
             scaling=scaling_params,
             docker_config=docker_data,
+            krisp_viva=krisp_viva_config,
         )
 
         # Check for unexpected keys
@@ -124,6 +149,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "enable_managed_keys",
             "docker",
             "agent_profile",
+            "krisp_viva",
         }
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:
