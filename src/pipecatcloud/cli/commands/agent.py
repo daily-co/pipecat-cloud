@@ -165,6 +165,20 @@ async def status(
             "[green]Enabled[/green]" if integrated_keys_enabled else "[dim]Disabled[/dim]",
         )
 
+        # Check for Krisp VIVA status (reverse-mapped by API)
+        krisp_viva = data.get("krispViva")
+        krisp_viva_status = "[dim]Disabled[/dim]"
+
+        if krisp_viva and isinstance(krisp_viva, dict):
+            audio_filter = krisp_viva.get("audioFilter")
+            if audio_filter:
+                krisp_viva_status = f"[green]Enabled ({audio_filter})[/green]"
+
+        deployment_table.add_row(
+            "[bold]Krisp VIVA:[/bold]",
+            krisp_viva_status,
+        )
+
         # Autoscaling info
         autoscaling_data = data.get("autoScaling", None)
         if autoscaling_data:
