@@ -12,7 +12,7 @@ import toml
 from attr import dataclass, field
 from loguru import logger
 
-from pipecatcloud.constants import KRISP_VIVA_MODELS
+from pipecatcloud.constants import KRISP_VIVA_MODELS, KrispVivaAudioFilter
 from pipecatcloud.exception import ConfigFileError
 
 DEPLOY_STATUS_MAP = {
@@ -59,7 +59,7 @@ class ScalingParams:
 
 @dataclass
 class KrispVivaConfig:
-    audio_filter: Optional[str] = None
+    audio_filter: Optional[KrispVivaAudioFilter] = None
 
     def __attrs_post_init__(self):
         # Validation against known models
