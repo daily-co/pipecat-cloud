@@ -278,7 +278,7 @@ def create_deploy_command(app: typer.Typer):
             False,
             "--enable-krisp",
             "-krisp",
-            help="Enable Krisp integration for this deployment",
+            help="[DEPRECATED] Enable Krisp integration for this deployment. Use --krisp-viva-audio-filter instead",
             rich_help_panel="Deployment Configuration",
         ),
         managed_keys: bool = typer.Option(
@@ -341,6 +341,9 @@ def create_deploy_command(app: typer.Typer):
         if max_instances is not None:
             logger.warning("max_instances is deprecated, use max_agents instead")
             max_agents = max_instances
+
+        if krisp:
+            logger.warning("--enable-krisp is deprecated, use --krisp-viva-audio-filter instead for the latest Krisp VIVA models.")
 
         org = organization or config.get("org")
 
@@ -409,9 +412,9 @@ def create_deploy_command(app: typer.Typer):
             (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
             (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
             (f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}"),
-            (f"[bold white]Krisp:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}"),
-            (f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}"),
+            (f"[bold white]Krisp (deprecated):[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}"),
             (f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}"),
+            (f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}"),
             "\n[dim]Scaling configuration:[/dim]",
             table,
             *
