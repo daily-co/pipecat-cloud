@@ -15,8 +15,8 @@ try:
     from pipecat.runner.types import (
         DailyRunnerArguments,
         RunnerArguments,
-        WebSocketRunnerArguments,
         SmallWebRTCRunnerArguments,
+        WebSocketRunnerArguments,
     )
 
     _PIPECAT_RUNNER_TYPES_AVAILABLE = True
@@ -33,9 +33,10 @@ except ImportError:
             will be removed in a future release.
         """
 
-        handle_sigint: bool = field(init=False)
-        handle_sigterm: bool = field(init=False)
-        pipeline_idle_timeout_secs: int = field(init=False)
+        handle_sigint: bool = field(init=False, kw_only=True)
+        handle_sigterm: bool = field(init=False, kw_only=True)
+        pipeline_idle_timeout_secs: int = field(init=False, kw_only=True)
+        body: Optional[Any] = field(default_factory=dict, kw_only=True)
 
         def __post_init__(self):
             self.handle_sigint = False
@@ -52,7 +53,6 @@ except ImportError:
 
         room_url: str
         token: str
-        body: Any
 
     @dataclass
     class WebSocketRunnerArguments(RunnerArguments):
@@ -63,7 +63,6 @@ except ImportError:
         """
 
         websocket: WebSocket
-        body: Any
 
     @dataclass
     class SmallWebRTCRunnerArguments(RunnerArguments):
@@ -112,7 +111,9 @@ class PipecatSessionArguments(RunnerArguments, SessionArguments):
     For best compatibility, install: pip install pipecatcloud[pipecat]
     """
 
-    body: Any
+    def __post_init__(self):
+        RunnerArguments.__post_init__(self)
+        _warn_standalone_usage()
 
 
 @dataclass
@@ -143,6 +144,7 @@ class WebSocketSessionArguments(WebSocketRunnerArguments, SessionArguments):
     def __post_init__(self):
         WebSocketRunnerArguments.__post_init__(self)
         _warn_standalone_usage()
+
 
 @dataclass
 class SmallWebRTCSessionArguments(SmallWebRTCRunnerArguments, SessionArguments):
