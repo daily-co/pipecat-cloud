@@ -730,3 +730,70 @@ async def start(
                 url = f"{daily_room}?t={daily_token}"
                 console.print("\nJoin your session by visiting the link below:")
                 console.print(f"[link={url}]{url}[/link]")
+
+
+@agent_cli.command(name="stop", help="Stop an active agent session")
+@synchronizer.create_blocking
+@requires_login
+@with_deploy_config
+async def stop(
+    deploy_config=typer.Option(None, hidden=True),
+    agent_name: str = typer.Argument(None, help="Name of the agent e.g. 'my-agent'"),
+    session_id: str = typer.Option(
+        ...,
+        "--session-id",
+        "-s",
+        help="ID of the session to stop",
+    ),
+    organization: str = typer.Option(
+        None, "--organization", "-o", help="Organization which the agent belongs to"
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Bypass prompt for confirmation",
+    ),
+):
+    org = organization or config.get("org")
+
+    # Load values from deployment config file (if one exists)
+    partial_config = deploy_config or DeployConfigParams()
+
+    # Get agent name from argument or deploy config
+    if not agent_name:
+        if partial_config and partial_config.agent_name:
+            agent_name = partial_config.agent_name
+        else:
+            console.error("No target agent name provided")
+            return typer.Exit(1)
+
+    # Confirm stop request
+    if not force:
+        console.print(
+            Panel(
+                f"Agent Name: {agent_name}\n"
+                f"Session ID: {session_id}",
+                title=f"[bold]Stop Session[/bold]",
+                title_align="left",
+                border_style="yellow",
+            )
+        )
+        if not await questionary.confirm(
+            "Are you sure you want to stop this session?"
+        ).ask_async():
+            console.print("[bold]Aborting stop request[/bold]")
+            return typer.Exit(1)
+
+    with console.status(
+        f"[dim]Stopping session [bold]'{session_id}'[/bold] for agent [bold]'{agent_name}'[/bold][/dim]",
+        spinner="dots",
+    ):
+        data, error = await API.agent_session_terminate(
+            agent_name=agent_name, session_id=session_id, org=org
+        )
+
+        if error:
+            return typer.Exit(1)
+
+        console.success(f"Session '{session_id}' stopped successfully")
