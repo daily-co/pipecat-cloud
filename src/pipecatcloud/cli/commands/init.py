@@ -5,6 +5,7 @@
 #
 
 import os
+import warnings
 import zipfile
 from typing import Set
 
@@ -40,9 +41,25 @@ def check_existing_files() -> Set[str]:
 
 
 def create_init_command(app: typer.Typer):
-    @app.command(name="init", help="Initialize project directory with template files")
+    @app.command(
+        name="init",
+        help="[DEPRECATED] Initialize project directory with template files",
+        deprecated=True,
+    )
     @synchronizer.create_blocking
     async def init():
+        warnings.warn(
+            "The 'pcc init' command is deprecated and will be removed in a future version. "
+            "Please use the Pipecat CLI instead: https://github.com/pipecat-ai/pipecat-cli",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        console.print(
+            "[yellow]Warning:[/yellow] The 'pcc init' command is deprecated and will be removed in a future version.\n"
+            "Please use the Pipecat CLI instead: "
+            "[link=https://github.com/pipecat-ai/pipecat-cli]https://github.com/pipecat-ai/pipecat-cli[/link]"
+        )
+
         if not await questionary.confirm(
             "This will download the latest starter project to the current directory. Continue?"
         ).ask_async():

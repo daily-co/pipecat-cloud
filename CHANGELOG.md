@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fallback `RunnerArguments` now include a `body` field in the base class.
 
+### Deprecated
+
+- The `pcc init` command is now deprecated and will be removed in a future
+  version. Use the [Pipecat CLI](https://github.com/pipecat-ai/pipecat-cli)
+  instead.
+
 ## [0.2.6] - 2025-10-09
 
 ### Added
