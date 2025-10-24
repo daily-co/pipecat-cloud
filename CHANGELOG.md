@@ -5,6 +5,18 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added Krisp VIVA audio filtering support with the `--krisp-viva-audio-filter`
+  option to the `deploy` command. Supports `tel` (telephone) and `pro` (professional)
+  audio filter models. Can also be configured via `pcc-deploy.toml` by adding a
+  `[krisp_viva]` section with `audio_filter = "tel"` or `audio_filter = "pro"`.
+
+- `agent status` now displays the Krisp VIVA configuration state, showing whether
+  it's enabled and which audio filter model is active.
+
 ## [0.2.8] - 2025-10-24
 
 ### Added
