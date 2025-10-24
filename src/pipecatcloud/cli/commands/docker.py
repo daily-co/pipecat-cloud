@@ -336,7 +336,7 @@ async def build_push(
         console.print("\n[dim]To deploy this image, update your pcc-deploy.toml:[/dim]")
         console.print(f'  [bold]image = "{version_tag}"[/bold]')
         console.print("\n[dim]Then run:[/dim]")
-        console.print("  [bold]pipecatcloud deploy[/bold]")
+        console.print("  [bold]pipecat cloud deploy[/bold]")
 
 
 def create_docker_command(app: typer.Typer):
