@@ -62,10 +62,8 @@ entrypoint_cli_typer = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="markdown",
-    help="""
-    ᓚᘏᗢ Pipecat Cloud CLI
-    See website at https://pipecat.daily.co
-    """,
+    short_help="Deploy and manage bots on Pipecat Cloud",
+    help="ᓚᘏᗢ Pipecat Cloud CLI. See website at https://pipecat.daily.co",
 )
 
 
