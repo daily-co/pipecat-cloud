@@ -42,6 +42,9 @@ dev = [
 pcc = "pipecatcloud.__main__:main"
 pipecatcloud = "pipecatcloud.__main__:main"
 
+[project.entry-points."pipecat_cli.extensions"]
+cloud = "pipecatcloud.cli.entry_point:entrypoint_cli_typer"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
