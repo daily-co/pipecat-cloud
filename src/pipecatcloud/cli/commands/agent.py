@@ -440,17 +440,26 @@ async def logs(
     deployment_id: str = typer.Option(
         None, "--deployment", "-d", help="Filter logs by deployment ID"
     ),
+    session_id: str = typer.Option(None, "--session-id", "-s", help="Filter logs by session ID"),
 ):
     org = organization or config.get("org")
 
-    status_text = "agent" if not deployment_id else f"deployment ({deployment_id})"
+    status_text = "agent"
+    if deployment_id:
+        status_text = f"deployment ({deployment_id})"
+    if session_id:
+        status_text = f"session ({session_id})"
 
     with console.status(
         f"[dim]Fetching logs for {status_text}: [bold]'{agent_name}'[/bold] with severity: [bold cyan]{level.value if level else 'ALL'}[/bold cyan][/dim]",
         spinner="dots",
     ):
         data, error = await API.agent_logs(
-            agent_name=agent_name, org=org, limit=limit, deployment_id=deployment_id
+            agent_name=agent_name,
+            org=org,
+            limit=limit,
+            deployment_id=deployment_id,
+            session_id=session_id,
         )
 
         if not data or not data.get("logs"):
@@ -786,16 +795,13 @@ async def stop(
     if not force:
         console.print(
             Panel(
-                f"Agent Name: {agent_name}\n"
-                f"Session ID: {session_id}",
-                title=f"[bold]Stop Session[/bold]",
+                f"Agent Name: {agent_name}\nSession ID: {session_id}",
+                title="[bold]Stop Session[/bold]",
                 title_align="left",
                 border_style="yellow",
             )
         )
-        if not await questionary.confirm(
-            "Are you sure you want to stop this session?"
-        ).ask_async():
+        if not await questionary.confirm("Are you sure you want to stop this session?").ask_async():
             console.print("[bold]Aborting stop request[/bold]")
             return typer.Exit(1)
 
