@@ -15,7 +15,6 @@ from pipecatcloud.cli.commands.auth import auth_cli
 from pipecatcloud.cli.commands.deploy import create_deploy_command
 from pipecatcloud.cli.commands.docker import create_docker_command
 from pipecatcloud.cli.commands.organizations import organization_cli
-from pipecatcloud.cli.commands.run import create_run_command
 from pipecatcloud.cli.commands.secrets import secrets_cli
 from pipecatcloud.cli.config import config
 from pipecatcloud.exception import ConfigFileError
@@ -75,7 +74,6 @@ def cli(
     pass
 
 
-create_run_command(entrypoint_cli_typer)
 create_deploy_command(entrypoint_cli_typer)
 create_docker_command(entrypoint_cli_typer)
 entrypoint_cli_typer.add_typer(auth_cli, rich_help_panel="Commands")
