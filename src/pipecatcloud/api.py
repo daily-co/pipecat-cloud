@@ -86,8 +86,8 @@ class _API:
                     # Fallback structure matching API format
                     self.error = {
                         "error": response.reason or "Bad Request",
-                        "code": str(
-                            response.status)}
+                        "code": str(response.status),
+                    }
                 response.raise_for_status()
 
             return await response.json()
@@ -422,12 +422,20 @@ class _API:
     def agent_delete(self):
         return self.create_api_method(self._agent_delete)
 
-    async def _agent_logs(self, agent_name: str, org: str, limit: int = 100,
-                          deployment_id: Optional[str] = None) -> dict | None:
+    async def _agent_logs(
+        self,
+        agent_name: str,
+        org: str,
+        limit: int = 100,
+        deployment_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> dict | None:
         url = f"{self.construct_api_url('services_logs_path').format(org=org, service=agent_name)}"
         params: dict[str, Union[int, str]] = {"limit": limit}
         if deployment_id:
             params["deploymentId"] = deployment_id
+        if session_id:
+            params["sessionId"] = session_id
         return await self._base_request("GET", url, params=params)
 
     @property
@@ -442,7 +450,9 @@ class _API:
     def agent_sessions(self):
         return self.create_api_method(self._agent_sessions)
 
-    async def _agent_session_terminate(self, agent_name: str, session_id: str, org: str) -> dict | None:
+    async def _agent_session_terminate(
+        self, agent_name: str, session_id: str, org: str
+    ) -> dict | None:
         url = f"{self.construct_api_url('services_sessions_path').format(org=org, service=agent_name)}/{session_id}"
         return await self._base_request("DELETE", url, not_found_is_empty=True)
 
