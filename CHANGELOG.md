@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an option to retrieve logs by session ID using `--session-id` / `-s`
   with the `agent logs` command.
 
+### Fixed
+
+- Improved error handling when building a docker image on an x86 machine.
+
 ## [0.2.10] - 2025-10-25
 
 ### Removed
