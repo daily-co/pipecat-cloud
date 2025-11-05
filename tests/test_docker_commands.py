@@ -13,6 +13,7 @@ from src.pipecatcloud.cli.commands.docker import (
     RegistryType,
     _build_image_name,
     _is_auth_error,
+    _suggest_and_install_binfmt,
     _suggest_docker_login,
 )
 
@@ -138,6 +139,61 @@ class TestErrorHandling:
             "\n[yellow]💡 You need to authenticate with the registry[/yellow]"
         )
         mock_console.print.assert_any_call("[yellow]   docker login[/yellow]")
+
+
+class TestBinfmtErrorHandling:
+    """Test binfmt error detection and messaging."""
+
+    @patch("src.pipecatcloud.cli.commands.docker.typer.confirm")
+    @patch("src.pipecatcloud.cli.commands.docker.run_docker_command")
+    @patch("src.pipecatcloud.cli.commands.docker.console")
+    def test_suggest_and_install_binfmt_user_accepts(
+        self, mock_console, mock_run_cmd, mock_confirm
+    ):
+        """Test binfmt installation when user accepts."""
+        mock_confirm.return_value = True
+        mock_run_cmd.return_value = True
+
+        _suggest_and_install_binfmt()
+
+        mock_console.print.assert_any_call(
+            "\n[yellow]⚠️  Cross-platform build support missing[/yellow]"
+        )
+        mock_console.print.assert_any_call(
+            "\n[yellow]   This is a one-time setup that persists across Docker restarts.[/yellow]"
+        )
+        mock_confirm.assert_called_once()
+        mock_run_cmd.assert_called_once()
+        mock_console.success.assert_called_once()
+
+    @patch("src.pipecatcloud.cli.commands.docker.typer.confirm")
+    @patch("src.pipecatcloud.cli.commands.docker.console")
+    def test_suggest_and_install_binfmt_user_declines(self, mock_console, mock_confirm):
+        """Test binfmt installation when user declines."""
+        mock_confirm.return_value = False
+
+        _suggest_and_install_binfmt()
+
+        mock_console.print.assert_any_call(
+            "\n[yellow]Skipping installation. To install manually, run:[/yellow]"
+        )
+
+    @patch("src.pipecatcloud.cli.commands.docker.typer.confirm")
+    @patch("src.pipecatcloud.cli.commands.docker.run_docker_command")
+    @patch("src.pipecatcloud.cli.commands.docker.console")
+    def test_suggest_and_install_binfmt_installation_fails(
+        self, mock_console, mock_run_cmd, mock_confirm
+    ):
+        """Test binfmt installation when the installation command fails."""
+        mock_confirm.return_value = True
+        mock_run_cmd.return_value = False
+
+        _suggest_and_install_binfmt()
+
+        mock_console.error.assert_called_once()
+        mock_console.print.assert_any_call(
+            "\n[yellow]You can install it manually by running:[/yellow]"
+        )
 
 
 class TestDeployConfigIntegration:
