@@ -27,6 +27,8 @@ jobs:
       - name: Install development dependencies
         run: uv sync --group dev
       - name: Build project
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ github.event.inputs.gitref }}
         run: uv build
       - name: Upload wheels
         uses: actions/upload-artifact@v4
