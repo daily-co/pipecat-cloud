@@ -80,6 +80,7 @@ class DeployConfigParams:
     image: Optional[str] = None
     image_credentials: Optional[str] = None
     secret_set: Optional[str] = None
+    region: Optional[str] = None
     scaling: ScalingParams = ScalingParams()
     enable_krisp: bool = False
     enable_managed_keys: bool = False
@@ -97,6 +98,7 @@ class DeployConfigParams:
             "image": self.image,
             "image_credentials": self.image_credentials,
             "secret_set": self.secret_set,
+            "region": self.region,
             "scaling": self.scaling.to_dict() if self.scaling else None,
             "enable_krisp": self.enable_krisp,
             "enable_managed_keys": self.enable_managed_keys,
@@ -144,6 +146,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "image",
             "image_credentials",
             "secret_set",
+            "region",
             "scaling",
             "enable_krisp",
             "enable_managed_keys",

@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added regional support for secrets and services/agents with three regions: `us`
+  (US), `eu` (Europe), and `ap` (Asia-Pacific). Services and secrets must be in
+  the same region.
+
+- Added `--region` / `-r` option to the `secrets set` command to specify the
+  region when creating or updating secret sets.
+
+- Added `--region` / `-r` filter option to the `secrets list` command to filter
+  secret sets by region. The Region column is now displayed in the output table.
+
+- Added `--region` / `-r` option to the `secrets image-pull-secret` command to
+  specify the region for image pull secrets.
+
+- Added `--region` / `-r` option to the `deploy` command to specify the region
+  for service deployments. Region can also be configured via `pcc-deploy.toml`
+  by adding the `region` attribute. The region is displayed in the deployment
+  review panel.
+
+- Added `--region` / `-r` filter option to the `agent list` command to filter
+  agents by region. The Region column is now displayed in the output table.
+
 ### Changed
+
+- When the `--region` option is not specified for create/update operations
+  (secrets, deployments), the CLI now defaults to `us` with a deprecation
+  warning. Users are encouraged to explicitly specify the region as this default
+  will be required in a future version.
 
 - All error messages reference the Pipecat CLI (e.g. `pipecat cloud`) in place
   of `pipecatcloud` or `pcc`.

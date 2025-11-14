@@ -7,6 +7,7 @@
 import base64
 import os
 import re
+from typing import Optional
 from xmlrpc.client import boolean
 
 import questionary
@@ -23,6 +24,7 @@ from pipecatcloud._utils.console_utils import console
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
+from pipecatcloud.constants import Region
 
 secrets_cli = typer.Typer(
     name="secrets", help="Secret and image pull secret management", no_args_is_help=True
@@ -87,6 +89,12 @@ async def set(
         "--organization",
         "-o",
         help="Organization to create secret set in",
+    ),
+    region: Optional[Region] = typer.Option(
+        None,
+        "--region",
+        "-r",
+        help="Region for secret set",
     ),
 ):
     if not validate_secret_name(name):
@@ -225,6 +233,16 @@ async def set(
                 console.print("[bold red]Secret set creation cancelled[/bold red]")
                 return typer.Exit(1)
 
+    # Handle region with warning if not specified
+    # CLI always sends region explicitly (PUT semantics), API validates it matches for existing sets
+    secret_region = region
+    if not secret_region:
+        logger.warning(
+            "Region not specified, defaulting to 'us'. Please use --region to specify explicitly. "
+            "This default will be required in a future version."
+        )
+        secret_region = "us"
+
     with console.status(
         f"[dim]{'Modifying' if existing_set else 'Creating'} secret set [bold]'{name}'[/bold][/dim]",
         spinner="dots",
@@ -239,6 +257,7 @@ async def set(
                 },
                 set_name=name,
                 org=org,
+                region=secret_region,
             )
 
             if error:
@@ -326,6 +345,12 @@ async def list(
         help="Filter results to show secret sets only (no image pull secrets)",
     ),
     organization: str = typer.Option(None, "--organization", "-o"),
+    region: Optional[Region] = typer.Option(
+        None,
+        "--region",
+        "-r",
+        help="Filter by region",
+    ),
 ):
     org = organization or config.get("org")
     status_title = "Retrieving secret sets"
@@ -333,7 +358,7 @@ async def list(
     logger.debug(f"Secret set name to lookup: {name}")
 
     with console.status(f"[dim]{status_title}[/dim]", spinner="dots"):
-        data, error = await API.bubble_error().secrets_list(org=org, secret_set=name)
+        data, error = await API.bubble_error().secrets_list(org=org, secret_set=name, region=region)
 
         if error:
             if error == 400:
@@ -381,6 +406,7 @@ async def list(
                 show_lines=False,
             )
             table.add_column("Secret Set Name", style="white")
+            table.add_column("Region", style="white")
             if show_all:
                 table.add_column("Type", style="white")
                 for secret_set in filtered_sets:
@@ -389,10 +415,17 @@ async def list(
                         if secret_set["type"] == "imagePullSecret"
                         else "Secret Set"
                     )
-                    table.add_row(secret_set["name"], set_type)
+                    table.add_row(
+                        secret_set["name"],
+                        secret_set["region"],
+                        set_type
+                    )
             else:
                 for secret_set in filtered_sets:
-                    table.add_row(secret_set["name"])
+                    table.add_row(
+                        secret_set["name"],
+                        secret_set["region"]
+                    )
 
             console.success(table, title_extra=f"Secret sets for {org}")
 
@@ -461,6 +494,12 @@ async def image_pull_secret(
         "--organization",
         "-o",
     ),
+    region: Optional[Region] = typer.Option(
+        None,
+        "--region",
+        "-r",
+        help="Region for image pull secret",
+    ),
 ):
     org = organization or config.get("org")
 
@@ -486,6 +525,16 @@ async def image_pull_secret(
 
     if base64encode:
         credentials = base64.b64encode(credentials.encode()).decode()
+
+    # Handle region with warning if not specified
+    # CLI always sends region explicitly (PUT semantics)
+    secret_region = region
+    if not secret_region:
+        logger.warning(
+            "Region not specified, defaulting to 'us'. Please use --region to specify explicitly. "
+            "This default will be required in a future version."
+        )
+        secret_region = "us"
 
     # Check if secret already exists
     with Live(
@@ -520,6 +569,7 @@ async def image_pull_secret(
             data={"isImagePullSecret": True, "secretValue": credentials, "host": host},
             set_name=name,
             org=org,
+            region=secret_region,
         )
 
         if error:

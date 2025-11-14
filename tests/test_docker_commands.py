@@ -8,8 +8,13 @@ from unittest.mock import patch
 
 import pytest
 
-from src.pipecatcloud._utils.deploy_utils import DeployConfigParams
-from src.pipecatcloud.cli.commands.docker import (
+# Import from source, not installed package
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from pipecatcloud._utils.deploy_utils import DeployConfigParams
+from pipecatcloud.cli.commands.docker import (
     RegistryType,
     _build_image_name,
     _is_auth_error,
@@ -108,7 +113,7 @@ class TestErrorHandling:
         stderr = "Error: failed to build: syntax error in Dockerfile"
         assert _is_auth_error(stderr.lower()) is False
 
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_docker_login_dockerhub(self, mock_console):
         """Test Docker Hub login suggestion."""
         registry_info = {"type": "dockerhub"}
@@ -119,7 +124,7 @@ class TestErrorHandling:
         )
         mock_console.print.assert_any_call("[yellow]   docker login[/yellow]")
 
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_docker_login_custom_registry(self, mock_console):
         """Test custom registry login suggestion."""
         registry_info = {"type": "custom", "url": "gcr.io"}
@@ -130,7 +135,7 @@ class TestErrorHandling:
         )
         mock_console.print.assert_any_call("[yellow]   docker login gcr.io[/yellow]")
 
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_docker_login_no_registry_info(self, mock_console):
         """Test login suggestion with no registry info."""
         _suggest_docker_login(None)

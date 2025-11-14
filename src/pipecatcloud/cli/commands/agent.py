@@ -6,6 +6,7 @@
 
 import json
 from enum import Enum
+from typing import Optional
 
 import aiohttp
 import questionary
@@ -31,6 +32,7 @@ from pipecatcloud._utils.deploy_utils import DeployConfigParams, with_deploy_con
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
+from pipecatcloud.constants import Region
 
 agent_cli = typer.Typer(name="agent", help="Agent management", no_args_is_help=True)
 
@@ -45,13 +47,19 @@ async def list(
     organization: str = typer.Option(
         None, "--organization", "-o", help="Organization to list agents for"
     ),
+    region: Optional[Region] = typer.Option(
+        None,
+        "--region",
+        "-r",
+        help="Filter by region",
+    ),
 ):
     org = organization or config.get("org")
 
     with console.status(
         f"[dim]Fetching agents for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"
     ):
-        data, error = await API.agents(org=org)
+        data, error = await API.agents(org=org, region=region)
 
         if error:
             return typer.Exit()
@@ -66,6 +74,7 @@ async def list(
         else:
             table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
             table.add_column("Name")
+            table.add_column("Region")
             table.add_column("Agent ID")
             table.add_column("Active Deployment ID")
             table.add_column("Created At")
@@ -74,6 +83,7 @@ async def list(
             for service in data:
                 table.add_row(
                     f"[bold]{service['name']}[/bold]",
+                    service["region"],
                     service["id"],
                     service["activeDeploymentId"],
                     service["createdAt"],
