@@ -9,8 +9,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.pipecatcloud._utils.deploy_utils import DeployConfigParams, load_deploy_config_file
-from src.pipecatcloud.api import _API
+# Import from source, not installed package
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from pipecatcloud._utils.deploy_utils import DeployConfigParams, load_deploy_config_file
+from pipecatcloud.api import _API
 
 
 class TestDeployConfigDataModel:
@@ -231,13 +236,13 @@ class TestAgentStatusDisplay:
     @pytest.fixture
     def mock_api(self):
         """Mock the API agent method."""
-        with patch("src.pipecatcloud.cli.commands.agent.API") as mock_api:
+        with patch("pipecatcloud.cli.commands.agent.API") as mock_api:
             yield mock_api
 
     def test_displays_enabled_keys_proxy(self, mock_api, capsys):
         """Agent status should display when managed keys is enabled."""
         # Arrange
-        from src.pipecatcloud.cli.commands.agent import status
+        from pipecatcloud.cli.commands.agent import status
 
         mock_api.agent = AsyncMock(
             return_value=(
@@ -266,7 +271,7 @@ class TestAgentStatusDisplay:
     def test_displays_disabled_keys_proxy(self, mock_api, capsys):
         """Agent status should display when managed keys is disabled."""
         # Arrange
-        from src.pipecatcloud.cli.commands.agent import status
+        from pipecatcloud.cli.commands.agent import status
 
         mock_api.agent = AsyncMock(
             return_value=(
@@ -293,7 +298,7 @@ class TestAgentStatusDisplay:
     def test_handles_boolean_keys_proxy_value(self, mock_api, capsys):
         """Agent status should handle boolean value for backward compatibility."""
         # Arrange
-        from src.pipecatcloud.cli.commands.agent import status
+        from pipecatcloud.cli.commands.agent import status
 
         mock_api.agent = AsyncMock(
             return_value=(

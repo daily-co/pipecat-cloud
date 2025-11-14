@@ -9,13 +9,18 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.pipecatcloud._utils.deploy_utils import (
+# Import from source, not installed package
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from pipecatcloud._utils.deploy_utils import (
     DeployConfigParams,
     KrispVivaConfig,
     load_deploy_config_file,
 )
-from src.pipecatcloud.api import _API
-from src.pipecatcloud.constants import KRISP_VIVA_MODELS
+from pipecatcloud.api import _API
+from pipecatcloud.constants import KRISP_VIVA_MODELS
 
 
 class TestKrispVivaDataModel:
@@ -360,13 +365,13 @@ class TestAgentStatusDisplay:
     @pytest.fixture
     def mock_api(self):
         """Mock the API agent method."""
-        with patch("src.pipecatcloud.cli.commands.agent.API") as mock_api:
+        with patch("pipecatcloud.cli.commands.agent.API") as mock_api:
             yield mock_api
 
     def test_displays_enabled_krisp_viva_tel(self, mock_api, capsys):
         """Agent status should display when Krisp VIVA is enabled with tel model."""
         # Arrange
-        from src.pipecatcloud.cli.commands.agent import status
+        from pipecatcloud.cli.commands.agent import status
 
         mock_api.agent = AsyncMock(
             return_value=(
@@ -395,7 +400,7 @@ class TestAgentStatusDisplay:
     def test_displays_enabled_krisp_viva_pro(self, mock_api, capsys):
         """Agent status should display when Krisp VIVA is enabled with pro model."""
         # Arrange
-        from src.pipecatcloud.cli.commands.agent import status
+        from pipecatcloud.cli.commands.agent import status
 
         mock_api.agent = AsyncMock(
             return_value=(
@@ -424,7 +429,7 @@ class TestAgentStatusDisplay:
     def test_displays_disabled_krisp_viva(self, mock_api, capsys):
         """Agent status should display when Krisp VIVA is disabled."""
         # Arrange
-        from src.pipecatcloud.cli.commands.agent import status
+        from pipecatcloud.cli.commands.agent import status
 
         mock_api.agent = AsyncMock(
             return_value=(
@@ -451,7 +456,7 @@ class TestAgentStatusDisplay:
     def test_handles_null_audio_filter(self, mock_api, capsys):
         """Agent status should handle krispViva with null audioFilter."""
         # Arrange
-        from src.pipecatcloud.cli.commands.agent import status
+        from pipecatcloud.cli.commands.agent import status
 
         mock_api.agent = AsyncMock(
             return_value=(
@@ -479,7 +484,7 @@ class TestAgentStatusDisplay:
     def test_handles_missing_krisp_viva_field(self, mock_api, capsys):
         """Agent status should handle responses without krispViva field."""
         # Arrange
-        from src.pipecatcloud.cli.commands.agent import status
+        from pipecatcloud.cli.commands.agent import status
 
         mock_api.agent = AsyncMock(
             return_value=(
