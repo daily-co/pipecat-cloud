@@ -20,3 +20,11 @@ KrispVivaAudioFilter = Literal["tel", "pro"]
 
 # Derive runtime list from the Literal type for validation
 KRISP_VIVA_MODELS = list(get_args(KrispVivaAudioFilter))
+
+# Regions
+# These must match the valid region codes in the API
+# Location: pipecat-cloud-sandbox/api/src/models/service.ts and set.ts -> region field
+Region = Literal["us", "eu", "ap"]
+
+# Derive runtime list from the Literal type for validation
+REGIONS = list(get_args(Region))

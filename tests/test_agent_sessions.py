@@ -8,8 +8,12 @@ import pytest
 from unittest.mock import patch
 import typer
 
-# Import the function under test from local source
-from src.pipecatcloud.cli.commands.agent import sessions
+# Import from source, not installed package
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from pipecatcloud.cli.commands.agent import sessions
 
 # Test constants
 TEST_ORG = "test-org"
@@ -22,7 +26,7 @@ class TestAgentSessionsCommand:
     @pytest.fixture
     def mock_api(self):
         """Mock the underlying API agent_sessions method."""
-        with patch('src.pipecatcloud.cli.commands.agent.API._agent_sessions') as mock_api:
+        with patch('pipecatcloud.cli.commands.agent.API._agent_sessions') as mock_api:
             yield mock_api
 
     def test_handles_zero_sessions_without_crash(self, mock_api):

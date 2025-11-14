@@ -5,6 +5,7 @@
 #
 
 import asyncio
+from typing import Optional
 
 import typer
 from loguru import logger
@@ -23,7 +24,7 @@ from pipecatcloud._utils.deploy_utils import (
     ScalingParams,
     with_deploy_config,
 )
-from pipecatcloud.constants import KRISP_VIVA_MODELS
+from pipecatcloud.constants import KRISP_VIVA_MODELS, Region
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -300,6 +301,13 @@ def create_deploy_command(app: typer.Typer):
             help="Agent profile to use for deployment",
             rich_help_panel="Deployment Configuration",
         ),
+        region: Optional[Region] = typer.Option(
+            None,
+            "--region",
+            "-r",
+            help="Region for service deployment",
+            rich_help_panel="Deployment Configuration",
+        ),
         skip_confirm: bool = typer.Option(
             False,
             "--force",
@@ -372,6 +380,16 @@ def create_deploy_command(app: typer.Typer):
         partial_config.enable_managed_keys = managed_keys or partial_config.enable_managed_keys
         partial_config.agent_profile = profile or partial_config.agent_profile
 
+        # Handle region with warning if not specified
+        deploy_region = region or partial_config.region
+        if not deploy_region:
+            logger.warning(
+                "Region not specified, defaulting to 'us'. Please use --region to specify explicitly. "
+                "This default will be required in a future version."
+            )
+            deploy_region = "us"
+        partial_config.region = deploy_region
+
         # Handle Krisp VIVA configuration
         if krisp_viva_audio_filter is not None:
             partial_config.krisp_viva = KrispVivaConfig(audio_filter=krisp_viva_audio_filter)
@@ -409,6 +427,7 @@ def create_deploy_command(app: typer.Typer):
             (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
             (f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"),
             (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
+            (f"[bold white]Region:[/bold white] [green]{partial_config.region}[/green]"),
             (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
             (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
             (f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}"),
