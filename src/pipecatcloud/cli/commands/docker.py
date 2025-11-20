@@ -25,9 +25,61 @@ class RegistryType(str, Enum):
     CUSTOM = "custom"
 
 
-def _provide_error_hints(stderr: str, command: list[str], registry_info: dict = None):
+def _suggest_and_install_binfmt():
+    """Suggest and optionally install binfmt_misc support for cross-platform builds."""
+    console.print("\n[yellow]⚠️  Cross-platform build support missing[/yellow]")
+    console.print(
+        "[yellow]   Building ARM64 images on x86_64 requires QEMU and binfmt_misc support.[/yellow]"
+    )
+    console.print(
+        "\n[yellow]   This is a one-time setup that persists across Docker restarts.[/yellow]"
+    )
+    console.print(
+        "\n[dim]   The following command will be run (requires Docker --privileged flag):[/dim]"
+    )
+    console.print("[dim]   docker run --privileged --rm tonistiigi/binfmt --install all[/dim]")
+
+    if typer.confirm("\nWould you like to install binfmt support now?", default=True):
+        console.print("\n[cyan]Installing binfmt support...[/cyan]")
+        install_cmd = [
+            "docker",
+            "run",
+            "--privileged",
+            "--rm",
+            "tonistiigi/binfmt",
+            "--install",
+            "all",
+        ]
+        if run_docker_command(
+            install_cmd, "Setting up cross-platform build support", stream_output=False
+        ):
+            console.success("✓ binfmt support installed! You can now retry your build.")
+        else:
+            console.error("Failed to install binfmt support.")
+            console.print("\n[yellow]You can install it manually by running:[/yellow]")
+            console.print(
+                "[yellow]   docker run --privileged --rm tonistiigi/binfmt --install all[/yellow]"
+            )
+    else:
+        console.print("\n[yellow]Skipping installation. To install manually, run:[/yellow]")
+        console.print(
+            "[yellow]   docker run --privileged --rm tonistiigi/binfmt --install all[/yellow]"
+        )
+
+
+def _provide_error_hints(stderr: str, stdout: str, command: list[str], registry_info: dict = None):
     """Provide helpful error hints only when Docker's message isn't clear enough."""
     stderr_lower = stderr.lower()
+    stdout_lower = stdout.lower()
+    combined_output = f"{stderr_lower} {stdout_lower}"
+
+    # Check for exec format error (cross-platform build issue)
+    if (
+        "exec format error" in combined_output
+        or "exec /bin/sh: exec format error" in combined_output
+    ):
+        _suggest_and_install_binfmt()
+        return
 
     # Only add hints for authentication errors where the solution isn't obvious
     if _is_auth_error(stderr_lower) and "push" in " ".join(command):
@@ -59,6 +111,8 @@ def run_docker_command(
 
         if stream_output:
             # Stream output in real-time for build commands
+            # Collect output for error analysis
+            output_lines = []
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
@@ -70,11 +124,17 @@ def run_docker_command(
 
             # Stream output line by line
             for line in process.stdout:
+                output_lines.append(line)
                 console.print(f"[dim]{line.rstrip()}[/dim]")
 
             process.wait()
             if process.returncode != 0:
-                raise subprocess.CalledProcessError(process.returncode, command)
+                # Create a pseudo-exception with captured output
+                error = subprocess.CalledProcessError(process.returncode, command)
+                error.output = "".join(output_lines)
+                error.stdout = error.output
+                error.stderr = ""
+                raise error
         else:
             # Capture output for push commands (less verbose)
             result = subprocess.run(command, capture_output=True, text=True, check=True)
@@ -84,13 +144,16 @@ def run_docker_command(
         return True
     except subprocess.CalledProcessError as e:
         console.error(f"Docker command failed: {' '.join(command)}")
-        if e.stdout:
-            console.print(f"[red]stdout: {e.stdout}[/red]")
-        if e.stderr:
-            console.print(f"[red]stderr: {e.stderr}[/red]")
+        stdout = getattr(e, "stdout", "") or getattr(e, "output", "") or ""
+        stderr = getattr(e, "stderr", "") or ""
 
-            # Provide helpful hints for common errors
-            _provide_error_hints(e.stderr, command, registry_info)
+        if stdout:
+            console.print(f"[red]stdout: {stdout}[/red]")
+        if stderr:
+            console.print(f"[red]stderr: {stderr}[/red]")
+
+        # Provide helpful hints for common errors
+        _provide_error_hints(stderr, stdout, command, registry_info)
         return False
     except FileNotFoundError:
         console.error("Docker not found. Please ensure Docker is installed and in your PATH.")
