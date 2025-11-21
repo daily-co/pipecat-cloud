@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-PIPECAT_CLI_NAME = "pcc"
+PIPECAT_CLI_NAME = "pipecat cloud"
 PIPECAT_CREDENTIALS_PATH = "~/.config/pipecatcloud/pipecatcloud.toml"
 PIPECAT_DEPLOY_CONFIG_PATH = "pcc-deploy.toml"
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- All error messages reference the Pipecat CLI (e.g. `pipecat cloud`) in place
+  of `pipecatcloud` or `pcc`.
+
 ### Fixed
 
 - Improved error handling when building a docker image on an x86 machine.
