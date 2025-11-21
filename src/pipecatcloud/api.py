@@ -484,3 +484,23 @@ class _API:
             org: Organization ID
         """
         return self.create_api_method(self._agent_session_terminate)
+
+    # Regions
+
+    async def _regions(self) -> list[dict] | None:
+        url = self.construct_api_url("regions_path")
+        result = await self._base_request("GET", url, not_found_is_empty=True)
+
+        if result and "regions" in result:
+            # Return full region objects with code and display_name
+            return result["regions"]
+
+        return None
+
+    @property
+    def regions(self):
+        """List available regions
+        Returns:
+            List of region objects with 'code' and 'display_name' fields
+        """
+        return self.create_api_method(self._regions)

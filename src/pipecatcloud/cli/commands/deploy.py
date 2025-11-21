@@ -24,6 +24,7 @@ from pipecatcloud._utils.deploy_utils import (
     ScalingParams,
     with_deploy_config,
 )
+from pipecatcloud._utils.regions import get_region_codes, validate_region
 from pipecatcloud.constants import KRISP_VIVA_MODELS, Region
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
@@ -384,11 +385,19 @@ def create_deploy_command(app: typer.Typer):
         deploy_region = region or partial_config.region
         if not deploy_region:
             logger.warning(
-                "Region not specified, defaulting to 'us'. Please use --region to specify explicitly. "
+                "Region not specified, defaulting to 'us-west'. Please use --region to specify explicitly. "
                 "This default will be required in a future version."
             )
-            deploy_region = "us"
+            deploy_region = "us-west"
         partial_config.region = deploy_region
+
+        # Validate region against API
+        if not await validate_region(deploy_region):
+            valid_regions = await get_region_codes()
+            console.error(
+                f"Invalid region '{deploy_region}'. Valid regions are: {', '.join(valid_regions)}"
+            )
+            return typer.Exit(1)
 
         # Handle Krisp VIVA configuration
         if krisp_viva_audio_filter is not None:
