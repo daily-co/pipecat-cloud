@@ -14,6 +14,7 @@ from rich.panel import Panel
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.console_utils import console
 from pipecatcloud._utils.deploy_utils import DeployConfigParams, with_deploy_config
+from pipecatcloud.cli import PIPECAT_CLI_NAME
 
 docker_cli = typer.Typer(
     name="docker", help="Docker build and push utilities", no_args_is_help=True
@@ -399,7 +400,7 @@ async def build_push(
         console.print("\n[dim]To deploy this image, update your pcc-deploy.toml:[/dim]")
         console.print(f'  [bold]image = "{version_tag}"[/bold]')
         console.print("\n[dim]Then run:[/dim]")
-        console.print("  [bold]pipecat cloud deploy[/bold]")
+        console.print(f"  [bold]{PIPECAT_CLI_NAME} deploy[/bold]")
 
 
 def create_docker_command(app: typer.Typer):
