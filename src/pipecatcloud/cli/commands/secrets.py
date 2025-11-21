@@ -21,6 +21,7 @@ from rich.table import Table
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
+from pipecatcloud._utils.regions import get_region_codes, validate_region
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -238,10 +239,18 @@ async def set(
     secret_region = region
     if not secret_region:
         logger.warning(
-            "Region not specified, defaulting to 'us'. Please use --region to specify explicitly. "
+            "Region not specified, defaulting to 'us-west'. Please use --region to specify explicitly. "
             "This default will be required in a future version."
         )
-        secret_region = "us"
+        secret_region = "us-west"
+
+    # Validate region against API
+    if not await validate_region(secret_region):
+        valid_regions = await get_region_codes()
+        console.print(
+            f"[red]Invalid region '{secret_region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
+        )
+        return typer.Exit(1)
 
     with console.status(
         f"[dim]{'Modifying' if existing_set else 'Creating'} secret set [bold]'{name}'[/bold][/dim]",
@@ -354,6 +363,14 @@ async def list(
 ):
     org = organization or config.get("org")
     status_title = "Retrieving secret sets"
+
+    # Validate region if provided
+    if region and not await validate_region(region):
+        valid_regions = await get_region_codes()
+        console.print(
+            f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
+        )
+        return typer.Exit(1)
 
     logger.debug(f"Secret set name to lookup: {name}")
 
@@ -531,10 +548,18 @@ async def image_pull_secret(
     secret_region = region
     if not secret_region:
         logger.warning(
-            "Region not specified, defaulting to 'us'. Please use --region to specify explicitly. "
+            "Region not specified, defaulting to 'us-west'. Please use --region to specify explicitly. "
             "This default will be required in a future version."
         )
-        secret_region = "us"
+        secret_region = "us-west"
+
+    # Validate region against API
+    if not await validate_region(secret_region):
+        valid_regions = await get_region_codes()
+        console.print(
+            f"[red]Invalid region '{secret_region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
+        )
+        return typer.Exit(1)
 
     # Check if secret already exists
     with Live(

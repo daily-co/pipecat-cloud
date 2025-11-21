@@ -29,6 +29,7 @@ from pipecatcloud._utils.console_utils import (
     format_timestamp,
 )
 from pipecatcloud._utils.deploy_utils import DeployConfigParams, with_deploy_config
+from pipecatcloud._utils.regions import get_region_codes, validate_region
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -55,6 +56,14 @@ async def list(
     ),
 ):
     org = organization or config.get("org")
+
+    # Validate region if provided
+    if region and not await validate_region(region):
+        valid_regions = await get_region_codes()
+        console.print(
+            f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
+        )
+        return typer.Exit(1)
 
     with console.status(
         f"[dim]Fetching agents for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"

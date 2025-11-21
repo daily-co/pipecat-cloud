@@ -34,6 +34,7 @@ _SETTINGS = {
     "start_path": _Setting("/v1/public/{service}/start"),
     "api_keys_path": _Setting("/v1/organizations/{org}/apiKeys"),
     "secrets_path": _Setting("/v1/organizations/{org}/secrets"),
+    "regions_path": _Setting("/v1/regions"),
 }
 
 
