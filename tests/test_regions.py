@@ -20,7 +20,7 @@ class TestRegionsAPI:
     """Test regions API client functionality."""
 
     async def test_regions_endpoint_parses_response(self):
-        """API client should correctly parse regions from /v1/regions endpoint."""
+        """API client should correctly parse regions from /v1/organizations/{org}/regions endpoint."""
         # Arrange
         from pipecatcloud.api import _API
 
@@ -38,7 +38,7 @@ class TestRegionsAPI:
             mock_request.return_value = mock_response
 
             # Act
-            result = await api._regions()
+            result = await api._regions(org="test-org")
 
             # Assert
             assert result == [
@@ -66,9 +66,11 @@ class TestRegionsCaching:
             {"code": "eu-central", "display_name": "EU Central"}
         ]
 
-        with patch("pipecatcloud._utils.regions.API") as mock_api:
+        with patch("pipecatcloud._utils.regions.API") as mock_api, \
+             patch("pipecatcloud._utils.regions.config") as mock_config:
             # API returns (data, error) tuple
             mock_api.regions = AsyncMock(return_value=(mock_regions, None))
+            mock_config.get.return_value = "test-org"
 
             # Act - Call multiple times
             result1 = await regions.get_regions()
@@ -100,9 +102,11 @@ class TestRegionValidation:
             {"code": "ap-south", "display_name": "AP South"}
         ]
 
-        with patch("pipecatcloud._utils.regions.API") as mock_api:
+        with patch("pipecatcloud._utils.regions.API") as mock_api, \
+             patch("pipecatcloud._utils.regions.config") as mock_config:
             # API returns (data, error) tuple
             mock_api.regions = AsyncMock(return_value=(mock_regions, None))
+            mock_config.get.return_value = "test-org"
 
             # Act & Assert
             assert await regions.validate_region("us-west") is True
@@ -122,9 +126,11 @@ class TestRegionValidation:
             {"code": "ap-south", "display_name": "AP South"}
         ]
 
-        with patch("pipecatcloud._utils.regions.API") as mock_api:
+        with patch("pipecatcloud._utils.regions.API") as mock_api, \
+             patch("pipecatcloud._utils.regions.config") as mock_config:
             # API returns (data, error) tuple
             mock_api.regions = AsyncMock(return_value=(mock_regions, None))
+            mock_config.get.return_value = "test-org"
 
             # Act & Assert
             assert await regions.validate_region("invalid") is False
@@ -150,10 +156,12 @@ class TestCLIRegionValidation:
         ]
 
         with patch("pipecatcloud._utils.regions.API") as mock_regions_api, \
+             patch("pipecatcloud._utils.regions.config") as mock_config, \
              patch("pipecatcloud.cli.commands.secrets.API") as mock_api:
 
             # API returns (data, error) tuple
             mock_regions_api.regions = AsyncMock(return_value=(mock_regions, None))
+            mock_config.get.return_value = "test-org"
             mock_api.secrets_list = AsyncMock(return_value=(None, None))
 
             # Act
@@ -183,10 +191,12 @@ class TestCLIRegionValidation:
         ]
 
         with patch("pipecatcloud._utils.regions.API") as mock_regions_api, \
+             patch("pipecatcloud._utils.regions.config") as mock_config, \
              patch("pipecatcloud.cli.commands.secrets.API") as mock_api:
 
             # API returns (data, error) tuple
             mock_regions_api.regions = AsyncMock(return_value=(mock_regions, None))
+            mock_config.get.return_value = "test-org"
             mock_api.secrets_list = AsyncMock(return_value=(None, None))
             mock_api.secrets_upsert = AsyncMock(return_value=({"status": "OK"}, None))
 

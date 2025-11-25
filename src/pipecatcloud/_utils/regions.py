@@ -13,6 +13,7 @@ Provides functions to fetch and cache available regions from the API.
 from typing import Dict, List, Optional
 
 from pipecatcloud.cli.api import API
+from pipecatcloud.cli.config import config
 
 
 # Module-level cache for regions
@@ -35,8 +36,9 @@ async def get_regions() -> List[Dict[str, str]]:
     global _regions_cache
 
     if _regions_cache is None:
+        org = config.get("org")
         # API returns (data, error) tuple
-        data, error = await API.regions()
+        data, error = await API.regions(org=org)
         if error or not data:
             return []
         _regions_cache = data

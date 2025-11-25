@@ -487,8 +487,8 @@ class _API:
 
     # Regions
 
-    async def _regions(self) -> list[dict] | None:
-        url = self.construct_api_url("regions_path")
+    async def _regions(self, org: str) -> list[dict] | None:
+        url = self.construct_api_url("regions_path").format(org=org)
         result = await self._base_request("GET", url, not_found_is_empty=True)
 
         if result and "regions" in result:
@@ -500,6 +500,8 @@ class _API:
     @property
     def regions(self):
         """List available regions
+        Args:
+            org: Organization ID
         Returns:
             List of region objects with 'code' and 'display_name' fields
         """
