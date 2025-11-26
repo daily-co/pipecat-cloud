@@ -4,13 +4,13 @@ Unit tests for Docker build-push command.
 Tests the core functionality: image parsing, registry detection, and error handling.
 """
 
+# Import from source, not installed package
+import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-# Import from source, not installed package
-import sys
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pipecatcloud._utils.deploy_utils import DeployConfigParams
@@ -149,9 +149,9 @@ class TestErrorHandling:
 class TestBinfmtErrorHandling:
     """Test binfmt error detection and messaging."""
 
-    @patch("src.pipecatcloud.cli.commands.docker.typer.confirm")
-    @patch("src.pipecatcloud.cli.commands.docker.run_docker_command")
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.typer.confirm")
+    @patch("pipecatcloud.cli.commands.docker.run_docker_command")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_and_install_binfmt_user_accepts(
         self, mock_console, mock_run_cmd, mock_confirm
     ):
@@ -171,8 +171,8 @@ class TestBinfmtErrorHandling:
         mock_run_cmd.assert_called_once()
         mock_console.success.assert_called_once()
 
-    @patch("src.pipecatcloud.cli.commands.docker.typer.confirm")
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.typer.confirm")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_and_install_binfmt_user_declines(self, mock_console, mock_confirm):
         """Test binfmt installation when user declines."""
         mock_confirm.return_value = False
@@ -183,9 +183,9 @@ class TestBinfmtErrorHandling:
             "\n[yellow]Skipping installation. To install manually, run:[/yellow]"
         )
 
-    @patch("src.pipecatcloud.cli.commands.docker.typer.confirm")
-    @patch("src.pipecatcloud.cli.commands.docker.run_docker_command")
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.typer.confirm")
+    @patch("pipecatcloud.cli.commands.docker.run_docker_command")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_and_install_binfmt_installation_fails(
         self, mock_console, mock_run_cmd, mock_confirm
     ):
