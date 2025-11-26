@@ -236,13 +236,16 @@ class _API:
 
     # Secret
 
-    async def _secrets_list(self, org: str, secret_set: Optional[str] = None) -> dict | None:
+    async def _secrets_list(self, org: str, secret_set: Optional[str] = None, region: Optional[str] = None) -> dict | None:
         if secret_set:
             url = f"{self.construct_api_url('secrets_path').format(org=org)}/{secret_set}"
         else:
             url = f"{self.construct_api_url('secrets_path').format(org=org)}"
 
-        result = await self._base_request("GET", url, not_found_is_empty=True) or {}
+        # Build query params if region filter is specified
+        params = {"region": region} if region else None
+
+        result = await self._base_request("GET", url, params=params, not_found_is_empty=True) or {}
 
         if "sets" in result:
             return result["sets"]
@@ -258,12 +261,17 @@ class _API:
         Args:
             org: Organization ID,
             secret_set: (optional) name of secret set to lookup
+            region: (optional) filter by region
 
         """
         return self.create_api_method(self._secrets_list)
 
-    async def _secrets_upsert(self, data: dict, set_name: str, org: str) -> dict:
+    async def _secrets_upsert(self, data: dict, set_name: str, org: str, region: str) -> dict:
         url = f"{self.construct_api_url('secrets_path').format(org=org)}/{set_name}"
+
+        # Add region to data payload
+        data = {**data, "region": region}
+
         return await self._base_request("PUT", url, json=data) or {}
 
     @property
@@ -273,6 +281,7 @@ class _API:
             data: key and value of secret to add (or credentials for image pull secrets)
             set_name: name of set to create or update
             org: Organization ID
+            region: region for secret set
         """
         return self.create_api_method(self._secrets_upsert)
 
@@ -316,6 +325,7 @@ class _API:
             "image": deploy_config.image,
             "imagePullSecretSet": deploy_config.image_credentials,
             "secretSet": deploy_config.secret_set,
+            "region": deploy_config.region,
             "autoScaling": {
                 "minAgents": deploy_config.scaling.min_agents,
                 "maxAgents": deploy_config.scaling.max_agents,
@@ -373,9 +383,13 @@ class _API:
         """
         return self.create_api_method(self._agent)
 
-    async def _agents(self, org: str) -> List[dict] | None:
+    async def _agents(self, org: str, region: Optional[str] = None) -> List[dict] | None:
         url = f"{self.construct_api_url('services_path').format(org=org)}"
-        result = await self._base_request("GET", url) or {}
+
+        # Build query params if region filter is specified
+        params = {"region": region} if region else None
+
+        result = await self._base_request("GET", url, params=params) or {}
 
         if "services" in result:
             return result["services"]
@@ -384,6 +398,11 @@ class _API:
 
     @property
     def agents(self):
+        """List agents/services
+        Args:
+            org: Organization ID
+            region: (optional) filter by region
+        """
         return self.create_api_method(self._agents)
 
     async def _start_agent(
@@ -465,3 +484,25 @@ class _API:
             org: Organization ID
         """
         return self.create_api_method(self._agent_session_terminate)
+
+    # Regions
+
+    async def _regions(self, org: str) -> list[dict] | None:
+        url = self.construct_api_url("regions_path").format(org=org)
+        result = await self._base_request("GET", url, not_found_is_empty=True)
+
+        if result and "regions" in result:
+            # Return full region objects with code and display_name
+            return result["regions"]
+
+        return None
+
+    @property
+    def regions(self):
+        """List available regions
+        Args:
+            org: Organization ID
+        Returns:
+            List of region objects with 'code' and 'display_name' fields
+        """
+        return self.create_api_method(self._regions)

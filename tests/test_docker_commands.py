@@ -4,12 +4,17 @@ Unit tests for Docker build-push command.
 Tests the core functionality: image parsing, registry detection, and error handling.
 """
 
+# Import from source, not installed package
+import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from src.pipecatcloud._utils.deploy_utils import DeployConfigParams
-from src.pipecatcloud.cli.commands.docker import (
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from pipecatcloud._utils.deploy_utils import DeployConfigParams
+from pipecatcloud.cli.commands.docker import (
     RegistryType,
     _build_image_name,
     _is_auth_error,
@@ -108,7 +113,7 @@ class TestErrorHandling:
         stderr = "Error: failed to build: syntax error in Dockerfile"
         assert _is_auth_error(stderr.lower()) is False
 
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_docker_login_dockerhub(self, mock_console):
         """Test Docker Hub login suggestion."""
         registry_info = {"type": "dockerhub"}
@@ -119,7 +124,7 @@ class TestErrorHandling:
         )
         mock_console.print.assert_any_call("[yellow]   docker login[/yellow]")
 
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_docker_login_custom_registry(self, mock_console):
         """Test custom registry login suggestion."""
         registry_info = {"type": "custom", "url": "gcr.io"}
@@ -130,7 +135,7 @@ class TestErrorHandling:
         )
         mock_console.print.assert_any_call("[yellow]   docker login gcr.io[/yellow]")
 
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_docker_login_no_registry_info(self, mock_console):
         """Test login suggestion with no registry info."""
         _suggest_docker_login(None)
@@ -144,9 +149,9 @@ class TestErrorHandling:
 class TestBinfmtErrorHandling:
     """Test binfmt error detection and messaging."""
 
-    @patch("src.pipecatcloud.cli.commands.docker.typer.confirm")
-    @patch("src.pipecatcloud.cli.commands.docker.run_docker_command")
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.typer.confirm")
+    @patch("pipecatcloud.cli.commands.docker.run_docker_command")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_and_install_binfmt_user_accepts(
         self, mock_console, mock_run_cmd, mock_confirm
     ):
@@ -166,8 +171,8 @@ class TestBinfmtErrorHandling:
         mock_run_cmd.assert_called_once()
         mock_console.success.assert_called_once()
 
-    @patch("src.pipecatcloud.cli.commands.docker.typer.confirm")
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.typer.confirm")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_and_install_binfmt_user_declines(self, mock_console, mock_confirm):
         """Test binfmt installation when user declines."""
         mock_confirm.return_value = False
@@ -178,9 +183,9 @@ class TestBinfmtErrorHandling:
             "\n[yellow]Skipping installation. To install manually, run:[/yellow]"
         )
 
-    @patch("src.pipecatcloud.cli.commands.docker.typer.confirm")
-    @patch("src.pipecatcloud.cli.commands.docker.run_docker_command")
-    @patch("src.pipecatcloud.cli.commands.docker.console")
+    @patch("pipecatcloud.cli.commands.docker.typer.confirm")
+    @patch("pipecatcloud.cli.commands.docker.run_docker_command")
+    @patch("pipecatcloud.cli.commands.docker.console")
     def test_suggest_and_install_binfmt_installation_fails(
         self, mock_console, mock_run_cmd, mock_confirm
     ):

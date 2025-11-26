@@ -8,8 +8,12 @@ import pytest
 import typer
 from unittest.mock import patch, AsyncMock, MagicMock
 
-# Import the function under test from local source
-from src.pipecatcloud.cli.commands.agent import stop
+# Import from source, not installed package
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from pipecatcloud.cli.commands.agent import stop
 
 # Test constants
 TEST_ORG = "test-org"
@@ -22,10 +26,10 @@ class TestAgentStopCommand:
 
     def test_stop_respects_force_flag(self):
         """Verify force flag skips confirmation when set to True."""
-        with patch('src.pipecatcloud.cli.commands.agent.console') as mock_console, \
-             patch('src.pipecatcloud.cli.commands.agent.config') as mock_config, \
-             patch('src.pipecatcloud.cli.commands.agent.questionary') as mock_questionary, \
-             patch('src.pipecatcloud.cli.commands.agent.DeployConfigParams') as mock_params:
+        with patch('pipecatcloud.cli.commands.agent.console') as mock_console, \
+             patch('pipecatcloud.cli.commands.agent.config') as mock_config, \
+             patch('pipecatcloud.cli.commands.agent.questionary') as mock_questionary, \
+             patch('pipecatcloud.cli.commands.agent.DeployConfigParams') as mock_params:
 
             mock_config.get.return_value = TEST_ORG
             mock_params.return_value = MagicMock(agent_name=TEST_AGENT)
@@ -47,10 +51,10 @@ class TestAgentStopCommand:
 
     def test_stop_shows_confirmation_without_force(self):
         """Verify confirmation prompt is shown when force is False."""
-        with patch('src.pipecatcloud.cli.commands.agent.console') as mock_console, \
-             patch('src.pipecatcloud.cli.commands.agent.config') as mock_config, \
-             patch('src.pipecatcloud.cli.commands.agent.questionary') as mock_questionary, \
-             patch('src.pipecatcloud.cli.commands.agent.DeployConfigParams') as mock_params:
+        with patch('pipecatcloud.cli.commands.agent.console') as mock_console, \
+             patch('pipecatcloud.cli.commands.agent.config') as mock_config, \
+             patch('pipecatcloud.cli.commands.agent.questionary') as mock_questionary, \
+             patch('pipecatcloud.cli.commands.agent.DeployConfigParams') as mock_params:
 
             mock_config.get.return_value = TEST_ORG
             mock_params.return_value = MagicMock(agent_name=TEST_AGENT)
@@ -72,10 +76,10 @@ class TestAgentStopCommand:
 
     def test_stop_aborts_on_user_rejection(self):
         """Verify command aborts when user rejects the confirmation."""
-        with patch('src.pipecatcloud.cli.commands.agent.console') as mock_console, \
-             patch('src.pipecatcloud.cli.commands.agent.config') as mock_config, \
-             patch('src.pipecatcloud.cli.commands.agent.questionary') as mock_questionary, \
-             patch('src.pipecatcloud.cli.commands.agent.DeployConfigParams') as mock_params:
+        with patch('pipecatcloud.cli.commands.agent.console') as mock_console, \
+             patch('pipecatcloud.cli.commands.agent.config') as mock_config, \
+             patch('pipecatcloud.cli.commands.agent.questionary') as mock_questionary, \
+             patch('pipecatcloud.cli.commands.agent.DeployConfigParams') as mock_params:
 
             mock_config.get.return_value = TEST_ORG
             mock_params.return_value = MagicMock(agent_name=TEST_AGENT)

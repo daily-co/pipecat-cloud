@@ -20,3 +20,10 @@ KrispVivaAudioFilter = Literal["tel", "pro"]
 
 # Derive runtime list from the Literal type for validation
 KRISP_VIVA_MODELS = list(get_args(KrispVivaAudioFilter))
+
+# Regions
+# Region type alias for CLI parameters
+# Valid region codes are fetched dynamically from the API
+# Use pipecatcloud._utils.regions.get_regions() to fetch available regions
+# Use pipecatcloud._utils.regions.validate_region() to validate user input
+Region = str
