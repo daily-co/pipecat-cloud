@@ -15,7 +15,6 @@ from typing import Dict, List, Optional
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
-
 # Module-level cache for regions
 _regions_cache: Optional[List[Dict[str, str]]] = None
 

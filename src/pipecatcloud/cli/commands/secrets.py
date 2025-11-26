@@ -184,6 +184,24 @@ async def set(
 
     validate_secrets(secrets_dict)
 
+    # Handle region with warning if not specified
+    # CLI always sends region explicitly (PUT semantics), API validates it matches for existing sets
+    secret_region = region
+    if not secret_region:
+        logger.warning(
+            "Region not specified, defaulting to 'us-west'. Please use --region to specify explicitly. "
+            "This default will be required in a future version."
+        )
+        secret_region = "us-west"
+
+    # Validate region against API
+    if not await validate_region(secret_region):
+        valid_regions = await get_region_codes()
+        console.print(
+            f"[red]Invalid region '{secret_region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
+        )
+        return typer.Exit(1)
+
     if not skip_confirm:
         table = Table(
             border_style="dim", box=box.SIMPLE, show_header=True, show_edge=True, show_lines=False
@@ -193,10 +211,13 @@ async def set(
         for key, value in secrets_dict.items():
             preview = value[:5] + "..." if len(value) > 5 else value
             table.add_row(key, preview)
+
+        console.print(f"\n[bold white]Secret Set:[/bold white] {name}")
+        console.print(f"[bold white]Region:[/bold white] {secret_region}\n")
         console.print(
             Panel(
                 table,
-                title="[bold]Secrets to create / modify in set[/bold]",
+                title="[bold]Secrets to create / modify[/bold]",
                 title_align="left",
             )
         )
@@ -233,24 +254,6 @@ async def set(
             if not create:
                 console.print("[bold red]Secret set creation cancelled[/bold red]")
                 return typer.Exit(1)
-
-    # Handle region with warning if not specified
-    # CLI always sends region explicitly (PUT semantics), API validates it matches for existing sets
-    secret_region = region
-    if not secret_region:
-        logger.warning(
-            "Region not specified, defaulting to 'us-west'. Please use --region to specify explicitly. "
-            "This default will be required in a future version."
-        )
-        secret_region = "us-west"
-
-    # Validate region against API
-    if not await validate_region(secret_region):
-        valid_regions = await get_region_codes()
-        console.print(
-            f"[red]Invalid region '{secret_region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
-        )
-        return typer.Exit(1)
 
     with console.status(
         f"[dim]{'Modifying' if existing_set else 'Creating'} secret set [bold]'{name}'[/bold][/dim]",
@@ -432,17 +435,10 @@ async def list(
                         if secret_set["type"] == "imagePullSecret"
                         else "Secret Set"
                     )
-                    table.add_row(
-                        secret_set["name"],
-                        secret_set["region"],
-                        set_type
-                    )
+                    table.add_row(secret_set["name"], secret_set["region"], set_type)
             else:
                 for secret_set in filtered_sets:
-                    table.add_row(
-                        secret_set["name"],
-                        secret_set["region"]
-                    )
+                    table.add_row(secret_set["name"], secret_set["region"])
 
             console.success(table, title_extra=f"Secret sets for {org}")
 
