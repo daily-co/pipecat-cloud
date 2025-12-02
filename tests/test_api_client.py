@@ -111,6 +111,25 @@ class TestAPISecretsRegions:
             assert payload["secretValue"] == "value"
             assert payload["isImagePullSecret"] is False
 
+    @pytest.mark.asyncio
+    async def test_secrets_upsert_without_region(self, api_client):
+        """Secrets upsert without region should not include region in payload (API uses org default)."""
+        # Arrange
+        data = {"secretKey": "KEY", "secretValue": "value"}
+
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = {"status": "OK", "region": "us-west"}
+
+            # Act
+            await api_client._secrets_upsert(
+                data=data, set_name="my-secrets", org="test-org", region=None
+            )
+
+            # Assert
+            mock_request.assert_called_once()
+            payload = mock_request.call_args[1]["json"]
+            assert "region" not in payload  # Region omitted, API uses org default
+
 
 class TestAPIServicesRegions:
     """Test API client services/agents methods with region support."""
@@ -270,3 +289,76 @@ class TestAPIRegionWithOtherParameters:
             assert payload["secretSet"] == "my-secrets"
             assert payload["imagePullSecretSet"] == "my-creds"
             assert payload["enableIntegratedKeysProxy"] is True
+
+
+class TestAPIProperties:
+    """Test API client organization properties methods."""
+
+    @pytest.fixture
+    def api_client(self):
+        """Create an API client instance."""
+        return _API(token="test-token", is_cli=True)
+
+    @pytest.mark.asyncio
+    async def test_properties_returns_properties_dict(self, api_client):
+        """Properties endpoint should return the properties object."""
+        # Arrange
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = {"properties": {"defaultRegion": "us-west"}}
+
+            # Act
+            result = await api_client._properties(org="test-org")
+
+            # Assert
+            assert result == {"defaultRegion": "us-west"}
+            mock_request.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_properties_schema_returns_schema_dict(self, api_client):
+        """Properties schema endpoint should return schema with metadata."""
+        # Arrange
+        mock_schema = {
+            "defaultRegion": {
+                "type": "string",
+                "description": "Default region for deployments",
+                "readOnly": False,
+                "currentValue": "us-west",
+                "default": "us-west",
+                "availableValues": ["us-west", "eu-central"]
+            }
+        }
+
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = {"properties": mock_schema}
+
+            # Act
+            result = await api_client._properties_schema(org="test-org")
+
+            # Assert
+            assert result == mock_schema
+            mock_request.assert_called_once()
+            # Verify it called the /schema endpoint
+            call_url = mock_request.call_args[0][1]
+            assert "/schema" in call_url
+
+    @pytest.mark.asyncio
+    async def test_properties_update_sends_patch_request(self, api_client):
+        """Properties update should send PATCH request with properties payload."""
+        # Arrange
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = {"properties": {"defaultRegion": "eu-central"}}
+
+            # Act
+            result = await api_client._properties_update(
+                org="test-org",
+                properties={"defaultRegion": "eu-central"}
+            )
+
+            # Assert
+            assert result == {"defaultRegion": "eu-central"}
+            mock_request.assert_called_once()
+            # Verify PATCH method
+            assert mock_request.call_args[0][0] == "PATCH"
+            # Verify payload
+            payload = mock_request.call_args[1]["json"]
+            assert payload == {"defaultRegion": "eu-central"}

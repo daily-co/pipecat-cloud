@@ -184,21 +184,12 @@ async def set(
 
     validate_secrets(secrets_dict)
 
-    # Handle region with warning if not specified
-    # CLI always sends region explicitly (PUT semantics), API validates it matches for existing sets
-    secret_region = region
-    if not secret_region:
-        logger.warning(
-            "Region not specified, defaulting to 'us-west'. Please use --region to specify explicitly. "
-            "This default will be required in a future version."
-        )
-        secret_region = "us-west"
-
-    # Validate region against API
-    if not await validate_region(secret_region):
+    # Validate region if explicitly provided
+    # If not provided, API will use org's default region
+    if region and not await validate_region(region):
         valid_regions = await get_region_codes()
         console.print(
-            f"[red]Invalid region '{secret_region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
+            f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
         )
         return typer.Exit(1)
 
@@ -213,7 +204,14 @@ async def set(
             table.add_row(key, preview)
 
         console.print(f"\n[bold white]Secret Set:[/bold white] {name}")
-        console.print(f"[bold white]Region:[/bold white] {secret_region}\n")
+        if region:
+            console.print(f"[bold white]Region:[/bold white] {region}\n")
+        else:
+            # Fetch org's default region to show user what will be used
+            props, error = await API.properties(org)
+            if error:
+                return typer.Exit()
+            console.print(f"[bold white]Region:[/bold white] {props['defaultRegion']} [dim](organization default)[/dim]\n")
         console.print(
             Panel(
                 table,
@@ -255,6 +253,7 @@ async def set(
                 console.print("[bold red]Secret set creation cancelled[/bold red]")
                 return typer.Exit(1)
 
+    used_region = None
     with console.status(
         f"[dim]{'Modifying' if existing_set else 'Creating'} secret set [bold]'{name}'[/bold][/dim]",
         spinner="dots",
@@ -269,14 +268,19 @@ async def set(
                 },
                 set_name=name,
                 org=org,
-                region=secret_region,
+                region=region,  # Pass region if provided, otherwise API uses org default
             )
 
             if error:
                 return typer.Exit()
 
+            # Capture the region that was used (from API response)
+            if data and "region" in data:
+                used_region = data["region"]
+
     action = "created" if not existing_set else "modified"
-    message = f"Secret set [bold green]'{name}'[/bold green] {action} successfully"
+    region_info = f" in [bold cyan]{used_region}[/bold cyan]" if used_region else ""
+    message = f"Secret set [bold green]'{name}'[/bold green] {action} successfully{region_info}"
     if action == "modified":
         message += "\n[bold white]You must re-deploy any agents using this secret set for changes to take effect[/bold white]"
     else:
@@ -539,25 +543,17 @@ async def image_pull_secret(
     if base64encode:
         credentials = base64.b64encode(credentials.encode()).decode()
 
-    # Handle region with warning if not specified
-    # CLI always sends region explicitly (PUT semantics)
-    secret_region = region
-    if not secret_region:
-        logger.warning(
-            "Region not specified, defaulting to 'us-west'. Please use --region to specify explicitly. "
-            "This default will be required in a future version."
-        )
-        secret_region = "us-west"
-
-    # Validate region against API
-    if not await validate_region(secret_region):
+    # Validate region if explicitly provided
+    # If not provided, API will use org's default region
+    if region and not await validate_region(region):
         valid_regions = await get_region_codes()
         console.print(
-            f"[red]Invalid region '{secret_region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
+            f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
         )
         return typer.Exit(1)
 
     # Check if secret already exists
+    used_region = None
     with Live(
         console.status(
             f"[dim]Checking if image pull secret '{name}' already exists[/dim]", spinner="dots"
@@ -590,12 +586,17 @@ async def image_pull_secret(
             data={"isImagePullSecret": True, "secretValue": credentials, "host": host},
             set_name=name,
             org=org,
-            region=secret_region,
+            region=region,  # Pass region if provided, otherwise API uses org default
         )
 
         if error:
             return typer.Exit()
 
+        # Capture the region that was used (from API response)
+        if data and "region" in data:
+            used_region = data["region"]
+
+    region_info = f" in [bold cyan]{used_region}[/bold cyan]" if used_region else ""
     console.success(
-        f"Image pull secret [bold green]'{name}'[/bold green] for [bold green]{host}[/bold green] created successfully.",
+        f"Image pull secret [bold green]'{name}'[/bold green] for [bold green]{host}[/bold green] created successfully{region_info}.",
     )

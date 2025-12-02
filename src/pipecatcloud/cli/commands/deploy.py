@@ -38,6 +38,7 @@ ALIVE_CHECK_SLEEP = 5
 
 async def _deploy(params: DeployConfigParams, org, force: bool = False):
     existing_agent = False
+    deployed_region = None  # Will be captured from API response
 
     # Check for an existing deployment with this agent name
     with Live(
@@ -381,18 +382,12 @@ def create_deploy_command(app: typer.Typer):
         partial_config.enable_managed_keys = managed_keys or partial_config.enable_managed_keys
         partial_config.agent_profile = profile or partial_config.agent_profile
 
-        # Handle region with warning if not specified
+        # Handle region - if not specified, API will use org's default region
         deploy_region = region or partial_config.region
-        if not deploy_region:
-            logger.warning(
-                "Region not specified, defaulting to 'us-west'. Please use --region to specify explicitly. "
-                "This default will be required in a future version."
-            )
-            deploy_region = "us-west"
-        partial_config.region = deploy_region
+        partial_config.region = deploy_region  # Can be None, API will use org default
 
-        # Validate region against API
-        if not await validate_region(deploy_region):
+        # Validate region if explicitly provided
+        if deploy_region and not await validate_region(deploy_region):
             valid_regions = await get_region_codes()
             console.error(
                 f"Invalid region '{deploy_region}'. Valid regions are: {', '.join(valid_regions)}"
@@ -432,11 +427,21 @@ def create_deploy_command(app: typer.Typer):
         else:
             table.add_row("Max agents", "[dim]Use existing or default[/dim]")
 
+        # Resolve region display - fetch org default if not explicitly specified
+        if partial_config.region:
+            region_display = f"[green]{partial_config.region}[/green]"
+        else:
+            # Fetch org's default region to show user what will be used
+            props, error = await API.properties(org)
+            if error:
+                return typer.Exit()
+            region_display = f"[green]{props['defaultRegion']}[/green] [dim](organization default)[/dim]"
+
         content = Group(
             (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
             (f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"),
             (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
-            (f"[bold white]Region:[/bold white] [green]{partial_config.region}[/green]"),
+            (f"[bold white]Region:[/bold white] {region_display}"),
             (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
             (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
             (f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}"),

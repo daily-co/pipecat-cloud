@@ -25,7 +25,9 @@ organization_cli = typer.Typer(
     name="organizations", help="User organizations", no_args_is_help=True
 )
 keys_cli = typer.Typer(name="keys", help="API key management commands", no_args_is_help=True)
+properties_cli = typer.Typer(name="properties", help="Organization property management", no_args_is_help=True)
 organization_cli.add_typer(keys_cli)
+organization_cli.add_typer(properties_cli)
 
 
 # ---- Commands
@@ -385,3 +387,196 @@ async def use_key(
     except Exception as e:
         logger.debug(e)
         console.error("Unable to set default key in local config. Please contact support.")
+
+
+# ---- Properties Commands ----
+
+
+@properties_cli.command(name="list", help="List current organization property values.")
+@synchronizer.create_blocking
+@requires_login
+async def properties_list(
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization to list properties for",
+    ),
+):
+    org = organization or config.get("org")
+
+    with console.status(
+        f"[dim]Fetching properties for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"
+    ):
+        data, error = await API.properties(org)
+
+        if error:
+            return typer.Exit()
+
+    if not data:
+        console.print("[dim]No properties configured.[/dim]")
+        return
+
+    table = Table(
+        show_header=True,
+        show_lines=False,
+        border_style="dim",
+        box=box.SIMPLE,
+    )
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="white")
+
+    for prop_name, prop_value in data.items():
+        table.add_row(prop_name, str(prop_value))
+
+    console.success(table, title_extra=f"Properties for organization: {org}")
+
+
+@properties_cli.command(name="schema", help="Show available properties with metadata.")
+@synchronizer.create_blocking
+@requires_login
+async def properties_schema(
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization to show properties schema for",
+    ),
+):
+    org = organization or config.get("org")
+
+    with console.status(
+        f"[dim]Fetching properties schema for organization: [bold]'{org}'[/bold][/dim]",
+        spinner="dots",
+    ):
+        data, error = await API.properties_schema(org)
+
+        if error:
+            return typer.Exit()
+
+    if not data:
+        console.print("[dim]No properties available.[/dim]")
+        return
+
+    table = Table(
+        show_header=True,
+        show_lines=True,
+        border_style="dim",
+        box=box.SIMPLE,
+    )
+    table.add_column("Property", style="cyan")
+    table.add_column("Type")
+    table.add_column("Current Value", style="green")
+    table.add_column("Default")
+    table.add_column("Description")
+
+    for prop_name, prop_info in data.items():
+        current = prop_info.get("currentValue", "")
+        default = prop_info.get("default", "")
+        available = prop_info.get("availableValues")
+
+        # Show available values in description if present
+        description = prop_info.get("description", "")
+        if available:
+            description += f"\n[dim]Available: {', '.join(str(v) for v in available)}[/dim]"
+
+        table.add_row(
+            prop_name,
+            prop_info.get("type", ""),
+            str(current) if current is not None else "[dim]not set[/dim]",
+            str(default) if default is not None else "",
+            description,
+        )
+
+    console.success(table, title_extra=f"Properties schema for organization: {org}")
+
+
+@properties_cli.command(name="set", help="Update an organization property.")
+@synchronizer.create_blocking
+@requires_login
+async def properties_set(
+    property_name: str = typer.Argument(..., help="Name of the property to set"),
+    value: str = typer.Argument(..., help="Value to set"),
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization to update property for",
+    ),
+):
+    org = organization or config.get("org")
+
+    with console.status(
+        f"[dim]Updating property [bold]'{property_name}'[/bold] for organization: [bold]'{org}'[/bold][/dim]",
+        spinner="dots",
+    ):
+        data, error = await API.properties_update(org, {property_name: value})
+
+        if error:
+            return typer.Exit()
+
+    if not data:
+        console.error("Failed to update property.")
+        return typer.Exit(1)
+
+    new_value = data.get(property_name, value)
+    console.success(
+        f"Property [bold cyan]{property_name}[/bold cyan] set to [bold green]{new_value}[/bold green]"
+    )
+
+
+# ---- Convenience Commands ----
+
+
+@organization_cli.command(name="default-region", help="Get or set the default region for an organization.")
+@synchronizer.create_blocking
+@requires_login
+async def default_region(
+    region: str = typer.Argument(None, help="Region to set as default (omit to show current)"),
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization to configure",
+    ),
+):
+    org = organization or config.get("org")
+
+    if region:
+        # Set the default region
+        with console.status(
+            f"[dim]Setting default region to [bold]'{region}'[/bold] for organization: [bold]'{org}'[/bold][/dim]",
+            spinner="dots",
+        ):
+            data, error = await API.properties_update(org, {"defaultRegion": region})
+
+            if error:
+                return typer.Exit()
+
+        if not data:
+            console.error("Failed to update default region.")
+            return typer.Exit(1)
+
+        console.success(f"Default region set to [bold green]{data.get('defaultRegion', region)}[/bold green]")
+    else:
+        # Show the current default region
+        with console.status(
+            f"[dim]Fetching default region for organization: [bold]'{org}'[/bold][/dim]",
+            spinner="dots",
+        ):
+            data, error = await API.properties_schema(org)
+
+            if error:
+                return typer.Exit()
+
+        if not data or "defaultRegion" not in data:
+            console.print("[dim]No default region configured.[/dim]")
+            return
+
+        prop = data["defaultRegion"]
+        current = prop.get("currentValue", prop.get("default", "not set"))
+        available = prop.get("availableValues", [])
+
+        console.print(f"Default region: [bold green]{current}[/bold green]")
+        if available:
+            console.print(f"[dim]Available regions: {', '.join(available)}[/dim]")
