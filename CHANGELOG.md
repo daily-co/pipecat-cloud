@@ -5,23 +5,25 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.2.13] - 2025-12-03
 
 ### Added
 
 - Added `pcc organizations properties` commands for managing organization-level
   configuration:
+
   - `properties list` - Display current property values
   - `properties set <name> <value>` - Update a property value
-  - `properties schema` - Show available properties with metadata and allowed values
+  - `properties schema` - Show available properties with metadata and allowed
+    values
 
 - Added `pcc organizations default-region [region]` convenience command to get or
   set the organization's default region.
 
 ### Changed
 
-- Region is now truly optional for `secrets set`, `secrets image-pull-secret`,
-  and `deploy` commands. When `--region` is not specified, the API now uses the
+- Region is now optional for `secrets set`, `secrets image-pull-secret`, and
+  `deploy` commands. When `--region` is not specified, the API now uses the
   organization's configured default region instead of the CLI defaulting to
   `us-west`. The confirmation display shows the actual region that will be used
   (e.g., "us-west (organization default)").
