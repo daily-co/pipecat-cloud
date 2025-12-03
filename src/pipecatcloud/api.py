@@ -266,11 +266,13 @@ class _API:
         """
         return self.create_api_method(self._secrets_list)
 
-    async def _secrets_upsert(self, data: dict, set_name: str, org: str, region: str) -> dict:
+    async def _secrets_upsert(self, data: dict, set_name: str, org: str, region: Optional[str] = None) -> dict:
         url = f"{self.construct_api_url('secrets_path').format(org=org)}/{set_name}"
 
-        # Add region to data payload
-        data = {**data, "region": region}
+        # Add region to data payload only if explicitly provided
+        # If not provided, API will use org's default region
+        if region:
+            data = {**data, "region": region}
 
         return await self._base_request("PUT", url, json=data) or {}
 
@@ -506,3 +508,57 @@ class _API:
             List of region objects with 'code' and 'display_name' fields
         """
         return self.create_api_method(self._regions)
+
+    # Organization Properties
+
+    async def _properties(self, org: str) -> dict | None:
+        url = self.construct_api_url("properties_path").format(org=org)
+        result = await self._base_request("GET", url, not_found_is_empty=True)
+        if result and "properties" in result:
+            return result["properties"]
+        return None
+
+    @property
+    def properties(self):
+        """Get current organization properties
+        Args:
+            org: Organization ID
+        Returns:
+            Dict of property names to current values
+        """
+        return self.create_api_method(self._properties)
+
+    async def _properties_schema(self, org: str) -> dict | None:
+        url = f"{self.construct_api_url('properties_path').format(org=org)}/schema"
+        result = await self._base_request("GET", url, not_found_is_empty=True)
+        if result and "properties" in result:
+            return result["properties"]
+        return None
+
+    @property
+    def properties_schema(self):
+        """Get organization properties schema with metadata
+        Args:
+            org: Organization ID
+        Returns:
+            Dict of property names to schema info (type, description, currentValue, default, availableValues)
+        """
+        return self.create_api_method(self._properties_schema)
+
+    async def _properties_update(self, org: str, properties: dict) -> dict | None:
+        url = self.construct_api_url("properties_path").format(org=org)
+        result = await self._base_request("PATCH", url, json=properties)
+        if result and "properties" in result:
+            return result["properties"]
+        return None
+
+    @property
+    def properties_update(self):
+        """Update organization properties
+        Args:
+            org: Organization ID
+            properties: Dict of property names to new values
+        Returns:
+            Updated properties dict
+        """
+        return self.create_api_method(self._properties_update)
