@@ -37,7 +37,9 @@ class _AuthFlow:
         pass
 
     @asynccontextmanager
-    async def start(self) -> AsyncGenerator[Tuple[Optional[str], Optional[str]], None]:
+    async def start(
+        self,
+    ) -> AsyncGenerator[Tuple[Optional[str], Optional[str], Optional[str]], None]:
         try:
             async with aiohttp.ClientSession() as session:
                 url = f"{API.construct_api_url('login_path')}"
@@ -49,9 +51,10 @@ class _AuthFlow:
                     self.token_flow_id = data["token_flow_id"]
                     self.wait_secret = data["wait_secret"]
                     web_url = data["web_url"]
-                    yield (self.token_flow_id, web_url)
+                    code = data.get("code")
+                    yield (self.token_flow_id, web_url, code)
         except Exception:
-            yield (None, None)
+            yield (None, None, None)
 
     async def finish(self, timeout: float = 40.0, network_timeout: float = 5.0) -> Optional[str]:
         start_time = asyncio.get_event_loop().time()
@@ -84,15 +87,18 @@ AuthFlow = synchronize_api(_AuthFlow)
 
 def _open_url(url: str) -> bool:
     try:
-        is_wsl = 'WSL_DISTRO_NAME' in os.environ or 'WSL_INTEROP' in os.environ
-        has_display = bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
+        is_wsl = "WSL_DISTRO_NAME" in os.environ or "WSL_INTEROP" in os.environ
+        has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
         if is_wsl and not has_display:
             return False
 
         browser = webbrowser.get()
-        if (isinstance(browser, webbrowser.GenericBrowser) and
-                browser.name not in ['open', 'x-www-browser', 'xdg-open']):
+        if isinstance(browser, webbrowser.GenericBrowser) and browser.name not in [
+            "open",
+            "x-www-browser",
+            "xdg-open",
+        ]:
             return False
 
         return browser.open_new_tab(url)
@@ -147,12 +153,16 @@ async def login(
         logger.debug(f"Current active org: {active_org}")
 
     try:
-        async with auth_flow.start() as (token_flow_id, web_url):
+        async with auth_flow.start() as (token_flow_id, web_url, code):
             if web_url is None:
                 console.error(
                     "Unable to connect to Pipecat Cloud API. Please check your network connection and try again."
                 )
                 return
+
+            # Display the code if it was provided
+            if code:
+                console.print(f"[bold]Authentication code:[/bold] [cyan]{code}[/cyan]\n")
 
             with Live(
                 console.status(
@@ -167,7 +177,10 @@ async def login(
                             Panel(
                                 "The web browser should have opened for you to authenticate with Pipecat Cloud.\n"
                                 "If it didn't, please copy this URL into your web browser manually:\n\n"
-                                f"[blue][link={web_url}]{web_url}[/link][/blue]\n", )))
+                                f"[blue][link={web_url}]{web_url}[/link][/blue]\n",
+                            )
+                        )
+                    )
                 else:
                     # For headless use-cases, just print the URL
                     live.stop()
@@ -235,8 +248,9 @@ async def logout():
     )
 
 
-@auth_cli.command(name="whoami",
-                  help="Display data about the current user. Also show Daily API key.")
+@auth_cli.command(
+    name="whoami", help="Display data about the current user. Also show Daily API key."
+)
 @synchronizer.create_blocking
 @requires_login
 async def whomai():
@@ -277,14 +291,16 @@ async def whomai():
                 pass
 
             live.stop()
-            message = Columns([
-                "[bold]User ID[/bold]\n"
-                "[bold]Active Organization[/bold]\n"
-                "[bold]Daily API Key[/bold]",
-                f"{user_data['user']['userId']}\n"
-                f"{account['verbose_name']} [dim]({account['name']})[/dim]\n"
-                f"{daily_api_key.get('apiKey', '[dim]N/A[/dim]') if daily_api_key else '[dim]N/A[/dim]'}",
-            ])
+            message = Columns(
+                [
+                    "[bold]User ID[/bold]\n"
+                    "[bold]Active Organization[/bold]\n"
+                    "[bold]Daily API Key[/bold]",
+                    f"{user_data['user']['userId']}\n"
+                    f"{account['verbose_name']} [dim]({account['name']})[/dim]\n"
+                    f"{daily_api_key.get('apiKey', '[dim]N/A[/dim]') if daily_api_key else '[dim]N/A[/dim]'}",
+                ]
+            )
             console.success(message)
     except Exception:
         console.error("Unable to obtain user data. Please contact support")
