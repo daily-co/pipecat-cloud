@@ -44,7 +44,7 @@ class _AuthFlow:
             async with aiohttp.ClientSession() as session:
                 url = f"{API.construct_api_url('login_path')}"
                 logger.debug(url)
-                async with session.post(url) as resp:
+                async with session.post(url, params={"use_code": "true"}) as resp:
                     if resp.status != 200:
                         raise Exception(f"Failed to start auth flow: {resp.status}")
                     data = await resp.json()
