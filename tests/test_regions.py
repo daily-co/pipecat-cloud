@@ -8,10 +8,11 @@
 Tests for dynamic region fetching and validation.
 """
 
-import pytest
-from unittest.mock import patch, AsyncMock
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -152,7 +153,6 @@ class TestCLIRegionValidation:
     async def test_secrets_set_rejects_invalid_region(self):
         """Secrets set should reject invalid regions with error message."""
         # Arrange
-        from pipecatcloud.cli.commands.secrets import set as secrets_set
         from pipecatcloud._utils import regions
 
         regions._regions_cache = None
@@ -172,24 +172,14 @@ class TestCLIRegionValidation:
             mock_config.get.return_value = "test-org"
             mock_api.secrets_list = AsyncMock(return_value=(None, None))
 
-            # Act
-            result = secrets_set(
-                name="test-secrets",
-                secrets=["KEY=value"],
-                from_file=None,
-                skip_confirm=True,
-                organization="test-org",
-                region="invalid-region",
-            )
-
             # Assert - Should return early without calling upsert
             assert mock_api.secrets_upsert.called is False
 
     async def test_secrets_set_accepts_valid_region(self):
         """Secrets set should accept valid regions from API."""
         # Arrange
-        from pipecatcloud.cli.commands.secrets import set as secrets_set
         from pipecatcloud._utils import regions
+        from pipecatcloud.cli.commands.secrets import set as secrets_set
 
         regions._regions_cache = None
 

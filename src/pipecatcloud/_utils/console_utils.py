@@ -96,7 +96,7 @@ class PipecatConsole(Console):
 
         self.print(
             Panel(
-                f"[red]{title}[/red]\n\n" f"[dim]Error message:[/dim]\n{error_message}",
+                f"[red]{title}[/red]\n\n[dim]Error message:[/dim]\n{error_message}",
                 title=f"[bold red]{PANEL_TITLE_ERROR}{f' - {code}' if code else ''}[/bold red]",
                 subtitle=f"[dim]Docs: https://docs.pipecat.daily.co/agents/error-codes#{code}[/dim]"
                 if not hide_subtitle and code

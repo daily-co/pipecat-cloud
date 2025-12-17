@@ -4,12 +4,12 @@ Unit tests for the 'pcc agent stop' command.
 Tests focus on core behaviors and edge cases, not implementation details.
 """
 
-import typer
-from unittest.mock import patch, AsyncMock, MagicMock
-
 # Import from source, not installed package
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -27,7 +27,6 @@ class TestAgentStopCommand:
     def test_stop_respects_force_flag(self):
         """Verify force flag skips confirmation when set to True."""
         with (
-            patch("pipecatcloud.cli.commands.agent.console") as mock_console,
             patch("pipecatcloud.cli.commands.agent.config") as mock_config,
             patch("pipecatcloud.cli.commands.agent.questionary") as mock_questionary,
             patch("pipecatcloud.cli.commands.agent.DeployConfigParams") as mock_params,
@@ -53,7 +52,6 @@ class TestAgentStopCommand:
     def test_stop_shows_confirmation_without_force(self):
         """Verify confirmation prompt is shown when force is False."""
         with (
-            patch("pipecatcloud.cli.commands.agent.console") as mock_console,
             patch("pipecatcloud.cli.commands.agent.config") as mock_config,
             patch("pipecatcloud.cli.commands.agent.questionary") as mock_questionary,
             patch("pipecatcloud.cli.commands.agent.DeployConfigParams") as mock_params,
