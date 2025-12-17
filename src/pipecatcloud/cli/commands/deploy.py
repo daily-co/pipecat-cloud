@@ -25,10 +25,10 @@ from pipecatcloud._utils.deploy_utils import (
     with_deploy_config,
 )
 from pipecatcloud._utils.regions import get_region_codes, validate_region
-from pipecatcloud.constants import KRISP_VIVA_MODELS, Region
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
+from pipecatcloud.constants import KRISP_VIVA_MODELS, Region
 
 MAX_ALIVE_CHECKS = 18
 ALIVE_CHECK_SLEEP = 5
@@ -38,7 +38,6 @@ ALIVE_CHECK_SLEEP = 5
 
 async def _deploy(params: DeployConfigParams, org, force: bool = False):
     existing_agent = False
-    deployed_region = None  # Will be captured from API response
 
     # Check for an existing deployment with this agent name
     with Live(
@@ -64,7 +63,9 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     return typer.Exit()
 
     # Start the deployment process
-    with Live(console.status("[dim]Preparing deployment...", spinner="dots"), transient=True) as live:
+    with Live(
+        console.status("[dim]Preparing deployment...", spinner="dots"), transient=True
+    ) as live:
         """
         # 1. Check that provided secret set exists
         """
@@ -141,13 +142,12 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     checks_performed = 0
 
     console.print(
-        f"[bold cyan]{'Updating' if existing_agent else 'Pushing'}[/bold cyan] deployment for agent '{params.agent_name}'")
+        f"[bold cyan]{'Updating' if existing_agent else 'Pushing'}[/bold cyan] deployment for agent '{params.agent_name}'"
+    )
 
     # Create a simple spinner for the polling phase
     deployment_status_message = "[dim]Waiting for deployment to become ready...[/dim]"
-    with console.status(
-        deployment_status_message, spinner="bouncingBar"
-    ) as status:
+    with console.status(deployment_status_message, spinner="bouncingBar") as status:
         try:
             while checks_performed < MAX_ALIVE_CHECKS:
                 logger.debug("Polling for deployment status")
@@ -187,7 +187,11 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 # @TODO - Implement this
 
                 # Check if deployment is ready
-                if agent_status.get("activeDeploymentReady", False):
+                # Both the service AND the active deployment must be ready
+                service_ready = agent_status.get("ready", False)
+                deployment_ready = agent_status.get("activeDeploymentReady", False)
+
+                if service_ready and deployment_ready:
                     is_ready = True
                     break
 
@@ -207,7 +211,9 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         extra_message = ""
         if not public_api_key:
             extra_message = "\n\n[yellow]Note: if you have not already created a public API key (required to start a session), you can do so by running:\n[/yellow]"
-            extra_message += f"[bold yellow]`{PIPECAT_CLI_NAME} organizations keys create`[/bold yellow]"
+            extra_message += (
+                f"[bold yellow]`{PIPECAT_CLI_NAME} organizations keys create`[/bold yellow]"
+            )
 
         console.success(
             f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
@@ -219,7 +225,8 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     else:
         console.error(
             f"Deployment did not enter ready state within {MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP} seconds. "
-            f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`")
+            f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`"
+        )
 
     return typer.Exit()
 
@@ -276,7 +283,6 @@ def create_deploy_command(app: typer.Typer):
             help="Organization to deploy to",
             rich_help_panel="Deployment Configuration",
         ),
-
         krisp: bool = typer.Option(
             False,
             "--enable-krisp",
@@ -342,7 +348,6 @@ def create_deploy_command(app: typer.Typer):
             max=50,
         ),
     ):
-
         # Handle @deprecated options
         if min_instances is not None:
             logger.warning("min_instances is deprecated, use min_agents instead")
@@ -353,7 +358,9 @@ def create_deploy_command(app: typer.Typer):
             max_agents = max_instances
 
         if krisp:
-            logger.warning("--enable-krisp is deprecated, use --krisp-viva-audio-filter instead for the latest Krisp VIVA models.")
+            logger.warning(
+                "--enable-krisp is deprecated, use --krisp-viva-audio-filter instead for the latest Krisp VIVA models."
+            )
 
         org = organization or config.get("org")
 
@@ -371,12 +378,8 @@ def create_deploy_command(app: typer.Typer):
         partial_config.image_credentials = credentials or partial_config.image_credentials
         partial_config.secret_set = secret_set or partial_config.secret_set
         partial_config.scaling = ScalingParams(
-            min_agents=min_agents
-            if min_agents is not None
-            else partial_config.scaling.min_agents,
-            max_agents=max_agents
-            if max_agents is not None
-            else partial_config.scaling.max_agents,
+            min_agents=min_agents if min_agents is not None else partial_config.scaling.min_agents,
+            max_agents=max_agents if max_agents is not None else partial_config.scaling.max_agents,
         )
         partial_config.enable_krisp = krisp or partial_config.enable_krisp
         partial_config.enable_managed_keys = managed_keys or partial_config.enable_managed_keys
@@ -435,32 +438,50 @@ def create_deploy_command(app: typer.Typer):
             props, error = await API.properties(org)
             if error:
                 return typer.Exit()
-            region_display = f"[green]{props['defaultRegion']}[/green] [dim](organization default)[/dim]"
+            region_display = (
+                f"[green]{props['defaultRegion']}[/green] [dim](organization default)[/dim]"
+            )
 
         content = Group(
             (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
             (f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"),
             (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
             (f"[bold white]Region:[/bold white] {region_display}"),
-            (f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] '+ partial_config.secret_set + '[/green]'}"),
-            (f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"),
-            (f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}"),
-            (f"[bold white]Krisp (deprecated):[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}"),
-            (f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}"),
-            (f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}"),
+            (
+                f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] ' + partial_config.secret_set + '[/green]'}"
+            ),
+            (
+                f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"
+            ),
+            (
+                f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}"
+            ),
+            (
+                f"[bold white]Krisp (deprecated):[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}"
+            ),
+            (
+                f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}"
+            ),
+            (
+                f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}"
+            ),
             "\n[dim]Scaling configuration:[/dim]",
             table,
-            *
-            (
+            *(
                 [
                     Text(
                         f"Note: Usage costs will apply for {partial_config.scaling.min_agents} reserved agent(s). Please see: https://www.daily.co/pricing/pipecat-cloud/",
                         style="red",
-                    )] if partial_config.scaling.min_agents else [
+                    )
+                ]
+                if partial_config.scaling.min_agents
+                else [
                     Text(
                         "Note: Deploying with 0 minimum agents may result in cold starts",
                         style="red",
-                    )]),
+                    )
+                ]
+            ),
         )
 
         console.print(
