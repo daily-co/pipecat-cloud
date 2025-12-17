@@ -12,6 +12,7 @@ import pytest
 # Import from source, not installed package
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pipecatcloud.api import _API
@@ -173,11 +174,7 @@ class TestAPIServicesRegions:
     async def test_deploy_payload_includes_region(self, api_client):
         """Deploy payload should include region field when specified."""
         # Arrange
-        config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            region="eu"
-        )
+        config = DeployConfigParams(agent_name="test-agent", image="test:latest", region="eu")
 
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
             mock_request.return_value = {"success": True}
@@ -194,11 +191,7 @@ class TestAPIServicesRegions:
     async def test_deploy_payload_without_region(self, api_client):
         """Deploy payload should omit region field when not specified."""
         # Arrange
-        config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            region=None
-        )
+        config = DeployConfigParams(agent_name="test-agent", image="test:latest", region=None)
 
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
             mock_request.return_value = {"success": True}
@@ -216,11 +209,7 @@ class TestAPIServicesRegions:
     async def test_update_payload_includes_region(self, api_client):
         """Update (PUT) payload should include region field."""
         # Arrange
-        config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            region="ap"
-        )
+        config = DeployConfigParams(agent_name="test-agent", image="test:latest", region="ap")
 
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
             mock_request.return_value = {"success": True}
@@ -247,10 +236,7 @@ class TestAPIRegionWithOtherParameters:
         """Deploy with both region and secrets should include both in payload."""
         # Arrange
         config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            region="eu",
-            secret_set="my-secrets"
+            agent_name="test-agent", image="test:latest", region="eu", secret_set="my-secrets"
         )
 
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
@@ -274,7 +260,7 @@ class TestAPIRegionWithOtherParameters:
             region="ap",
             secret_set="my-secrets",
             image_credentials="my-creds",
-            enable_managed_keys=True
+            enable_managed_keys=True,
         )
 
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
@@ -324,7 +310,7 @@ class TestAPIProperties:
                 "readOnly": False,
                 "currentValue": "us-west",
                 "default": "us-west",
-                "availableValues": ["us-west", "eu-central"]
+                "availableValues": ["us-west", "eu-central"],
             }
         }
 
@@ -350,8 +336,7 @@ class TestAPIProperties:
 
             # Act
             result = await api_client._properties_update(
-                org="test-org",
-                properties={"defaultRegion": "eu-central"}
+                org="test-org", properties={"defaultRegion": "eu-central"}
             )
 
             # Assert

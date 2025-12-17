@@ -236,7 +236,9 @@ class _API:
 
     # Secret
 
-    async def _secrets_list(self, org: str, secret_set: Optional[str] = None, region: Optional[str] = None) -> dict | None:
+    async def _secrets_list(
+        self, org: str, secret_set: Optional[str] = None, region: Optional[str] = None
+    ) -> dict | None:
         if secret_set:
             url = f"{self.construct_api_url('secrets_path').format(org=org)}/{secret_set}"
         else:
@@ -266,7 +268,9 @@ class _API:
         """
         return self.create_api_method(self._secrets_list)
 
-    async def _secrets_upsert(self, data: dict, set_name: str, org: str, region: Optional[str] = None) -> dict:
+    async def _secrets_upsert(
+        self, data: dict, set_name: str, org: str, region: Optional[str] = None
+    ) -> dict:
         url = f"{self.construct_api_url('secrets_path').format(org=org)}/{set_name}"
 
         # Add region to data payload only if explicitly provided

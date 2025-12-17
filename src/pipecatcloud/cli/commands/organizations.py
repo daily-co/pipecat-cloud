@@ -25,7 +25,9 @@ organization_cli = typer.Typer(
     name="organizations", help="User organizations", no_args_is_help=True
 )
 keys_cli = typer.Typer(name="keys", help="API key management commands", no_args_is_help=True)
-properties_cli = typer.Typer(name="properties", help="Organization property management", no_args_is_help=True)
+properties_cli = typer.Typer(
+    name="properties", help="Organization property management", no_args_is_help=True
+)
 organization_cli.add_typer(keys_cli)
 organization_cli.add_typer(properties_cli)
 
@@ -528,7 +530,9 @@ async def properties_set(
 # ---- Convenience Commands ----
 
 
-@organization_cli.command(name="default-region", help="Get or set the default region for an organization.")
+@organization_cli.command(
+    name="default-region", help="Get or set the default region for an organization."
+)
 @synchronizer.create_blocking
 @requires_login
 async def default_region(
@@ -557,7 +561,9 @@ async def default_region(
             console.error("Failed to update default region.")
             return typer.Exit(1)
 
-        console.success(f"Default region set to [bold green]{data.get('defaultRegion', region)}[/bold green]")
+        console.success(
+            f"Default region set to [bold green]{data.get('defaultRegion', region)}[/bold green]"
+        )
     else:
         # Show the current default region
         with console.status(
