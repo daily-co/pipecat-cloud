@@ -69,7 +69,8 @@ class PipecatConsole(Console):
                 title_align="left",
                 subtitle_align="left",
                 border_style="red",
-            ))
+            )
+        )
 
     def api_error(
         self,
@@ -80,9 +81,11 @@ class PipecatConsole(Console):
         DEFAULT_ERROR_MESSAGE = "Unknown error. Please contact support."
 
         if isinstance(error_code, dict):
-            error_message = error_code.get(
-                "error", None) or error_code.get(
-                "message", None) or DEFAULT_ERROR_MESSAGE
+            error_message = (
+                error_code.get("error", None)
+                or error_code.get("message", None)
+                or DEFAULT_ERROR_MESSAGE
+            )
             code = error_code.get("code")
         else:
             error_message = str(error_code) if error_code else DEFAULT_ERROR_MESSAGE
@@ -93,7 +96,7 @@ class PipecatConsole(Console):
 
         self.print(
             Panel(
-                f"[red]{title}[/red]\n\n" f"[dim]Error message:[/dim]\n{error_message}",
+                f"[red]{title}[/red]\n\n[dim]Error message:[/dim]\n{error_message}",
                 title=f"[bold red]{PANEL_TITLE_ERROR}{f' - {code}' if code else ''}[/bold red]",
                 subtitle=f"[dim]Docs: https://docs.pipecat.daily.co/agents/error-codes#{code}[/dim]"
                 if not hide_subtitle and code
@@ -150,8 +153,8 @@ def format_duration(created_at_str: str, ended_at_str: str) -> str | None:
         return None
 
     try:
-        created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-        ended_at = datetime.fromisoformat(ended_at_str.replace('Z', '+00:00'))
+        created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+        ended_at = datetime.fromisoformat(ended_at_str.replace("Z", "+00:00"))
         duration = ended_at - created_at
 
         # Convert to total seconds
@@ -213,6 +216,7 @@ async def cli_updates_available() -> str | None:
 
     try:
         from importlib.metadata import version as get_version
+
         current_version = get_version("pipecatcloud")
     except ImportError:
         return None

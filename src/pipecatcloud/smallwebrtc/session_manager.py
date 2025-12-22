@@ -34,7 +34,9 @@ class SmallWebRTCSessionManager:
             await asyncio.sleep(self._timeout_seconds)
             if self._pending_future and not self._pending_future.done():
                 self._pending_future.set_exception(
-                    TimeoutError(f"WebRTC connection not received within {self._timeout_seconds} seconds")
+                    TimeoutError(
+                        f"WebRTC connection not received within {self._timeout_seconds} seconds"
+                    )
                 )
 
         # Create and store the timeout task

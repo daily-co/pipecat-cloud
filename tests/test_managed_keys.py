@@ -12,6 +12,7 @@ import pytest
 # Import from source, not installed package
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pipecatcloud._utils.deploy_utils import DeployConfigParams, load_deploy_config_file

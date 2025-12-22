@@ -211,7 +211,9 @@ async def set(
             props, error = await API.properties(org)
             if error:
                 return typer.Exit()
-            console.print(f"[bold white]Region:[/bold white] {props['defaultRegion']} [dim](organization default)[/dim]\n")
+            console.print(
+                f"[bold white]Region:[/bold white] {props['defaultRegion']} [dim](organization default)[/dim]\n"
+            )
         console.print(
             Panel(
                 table,
