@@ -73,3 +73,40 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 ```
+
+## 🛠️ Contributing
+
+### Setup Steps
+
+1. Clone the repository and navigate to it:
+
+   ```bash
+   git clone https://github.com/daily-co/pipecat-cloud.git
+   cd pipecat-cloud
+   ```
+
+2. Install development and testing dependencies:
+
+   ```bash
+   uv sync --group dev
+   ```
+
+3. Install the git pre-commit hooks:
+
+   ```bash
+   uv run pre-commit install
+   ```
+
+### Running tests
+
+To run all tests, from the root directory:
+
+```bash
+uv run pytest
+```
+
+Run a specific test suite:
+
+```bash
+uv run pytest tests/test_name.py
+```
