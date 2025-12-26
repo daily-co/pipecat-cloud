@@ -187,11 +187,14 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 # @TODO - Implement this
 
                 # Check if deployment is ready
-                # Both the service AND the active deployment must be ready
-                service_ready = agent_status.get("ready", False)
+                # For KEDA deployments, we need:
+                # - available: true (can handle traffic)
+                # - activeDeploymentReady: true (ReplicaSet is ready)
+                # The 'available' field falls back to 'ready' if not present (for backwards compatibility)
+                available = agent_status.get("available", agent_status.get("ready", False))
                 deployment_ready = agent_status.get("activeDeploymentReady", False)
 
-                if service_ready and deployment_ready:
+                if available and deployment_ready:
                     is_ready = True
                     break
 
