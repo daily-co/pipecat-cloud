@@ -765,6 +765,7 @@ async def start(
         live.stop()
 
         console.success(f"Agent '{agent_name}' started successfully")
+
         if use_daily and isinstance(data, dict):
             daily_room = data.get("dailyRoom")
             daily_token = data.get("dailyToken")
@@ -772,6 +773,11 @@ async def start(
                 url = f"{daily_room}?t={daily_token}"
                 console.print("\nJoin your session by visiting the link below:")
                 console.print(f"[link={url}]{url}[/link]")
+
+        if isinstance(data, dict):
+            session_id = data.get("sessionId")
+            if session_id:
+                console.print(f"\nSession ID: {session_id}")
 
 
 @agent_cli.command(name="stop", help="Stop an active agent session")
