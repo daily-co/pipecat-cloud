@@ -5,7 +5,7 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.18] - 2026-01-06
 
 ### Added
 
@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved `auth login` UX to display authentication code and URL before opening
   browser. Users now press Enter to open browser or 'q' to quit, ensuring the
   authentication code is visible before browser takes focus.
+
+- Relaxed `synchronicity` version to ">=0.11,<1.0.0" for better compatibilty
+  with other libraries.
 
 ## [0.2.17] - 2025-12-26
 
