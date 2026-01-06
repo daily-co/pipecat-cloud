@@ -6,8 +6,8 @@
 
 import asyncio
 import itertools
-import webbrowser
 import os
+import webbrowser
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional, Tuple
 
@@ -160,9 +160,30 @@ async def login(
                 )
                 return
 
-            # Display the code if it was provided
-            if code:
-                console.print(f"[bold]Authentication code:[/bold] [cyan]{code}[/cyan]\n")
+            # Display the authentication URL and code
+            console.print(
+                Panel(
+                    "[bold]To authenticate with Pipecat Cloud:[/bold]\n\n"
+                    "Visit this URL:\n"
+                    f"[blue][link={web_url}]{web_url}[/link][/blue]\n\n"
+                    "Then enter this code:\n"
+                    f"[cyan bold]{code}[/cyan bold]",
+                    title="[bold]Authentication Required[/bold]",
+                    border_style="blue",
+                )
+            )
+
+            # Prompt user to open the browser (unless in headless mode)
+            if not headless:
+                response = typer.prompt(
+                    "\nPress Enter to open the browser (or 'q' to quit)",
+                    default="",
+                    show_default=False,
+                )
+                if response.lower() == "q":
+                    console.print("[yellow]Authentication cancelled[/yellow]")
+                    return typer.Exit()
+                _open_url(web_url)
 
             with Live(
                 console.status(
@@ -170,26 +191,6 @@ async def login(
                 ),
                 transient=True,
             ) as live:
-                # Open the web url in the browser
-                if not headless and _open_url(web_url):
-                    live.update(
-                        console.status(
-                            Panel(
-                                "The web browser should have opened for you to authenticate with Pipecat Cloud.\n"
-                                "If it didn't, please copy this URL into your web browser manually:\n\n"
-                                f"[blue][link={web_url}]{web_url}[/link][/blue]\n",
-                            )
-                        )
-                    )
-                else:
-                    # For headless use-cases, just print the URL
-                    live.stop()
-                    console.print("[dim]Unable to launch web browser[/dim]")
-                    console.print("[bold]Please visit the following URL to confirm login[/bold]\n")
-                    console.print(web_url)
-
-                live.start()
-
                 for attempt in itertools.count():
                     result = await auth_flow.finish()
                     if result is not None:
