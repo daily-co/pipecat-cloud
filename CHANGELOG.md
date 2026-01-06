@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Return the session ID when starting an agent session.
 
+### Changed
+
+- Improved `auth login` UX to display authentication code and URL before opening
+  browser. Users now press Enter to open browser or 'q' to quit, ensuring the
+  authentication code is visible before browser takes focus.
+
 ## [0.2.17] - 2025-12-26
 
 ### Changed
