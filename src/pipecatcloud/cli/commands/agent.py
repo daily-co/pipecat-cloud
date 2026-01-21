@@ -38,6 +38,41 @@ from pipecatcloud.constants import Region
 agent_cli = typer.Typer(name="agent", help="Agent management", no_args_is_help=True)
 
 
+def sparkline(values: list[int | float], max_width: int = 50) -> str:
+    """Generate Unicode sparkline from values, downsampling if needed."""
+    if not values:
+        return ""
+
+    # Downsample if too many values
+    if len(values) > max_width:
+        bucket_size = len(values) / max_width
+        downsampled = []
+        for i in range(max_width):
+            start = int(i * bucket_size)
+            end = int((i + 1) * bucket_size)
+            bucket = values[start:end]
+            downsampled.append(sum(bucket) / len(bucket) if bucket else 0)
+        values = downsampled
+
+    blocks = "▁▂▃▄▅▆▇█"
+    lo, hi = min(values), max(values)
+    if hi == lo:
+        return blocks[4] * len(values)  # flat line
+    scale = (hi - lo) / 7
+    return "".join(blocks[min(7, int((v - lo) / scale))] for v in values)
+
+
+def format_bytes(b: int) -> str:
+    """Format bytes as human-readable string."""
+    if b >= 1024 * 1024 * 1024:
+        return f"{b / (1024 * 1024 * 1024):.1f}GB"
+    if b >= 1024 * 1024:
+        return f"{b / (1024 * 1024):.0f}MB"
+    if b >= 1024:
+        return f"{b / 1024:.0f}KB"
+    return f"{b}B"
+
+
 # ----- Agent Commands -----
 
 
@@ -291,6 +326,81 @@ async def sessions(
         else:
             console.error("No target agent name provided")
             return typer.Exit(1)
+
+    # If session_id is specified, fetch single session with detailed metrics
+    if session_id:
+        with Live(
+            console.status(f"[dim]Looking up session '{session_id}'[/dim]", spinner="dots")
+        ) as live:
+            data, error = await API.agent_session(
+                agent_name=agent_name, session_id=session_id, org=org, live=live
+            )
+            live.stop()
+
+            if error:
+                return typer.Exit()
+
+            if not data:
+                console.error(f"Session '{session_id}' not found")
+                return typer.Exit()
+
+            # Display detailed session view
+            session_duration = format_duration(data.get("createdAt"), data.get("endedAt")) or "N/A"
+            status = data.get("completionStatus", "")
+            if data.get("endedAt"):
+                status_display = "[red]Error (500)[/red]" if status == "500" else "Complete"
+            else:
+                status_display = "[yellow]Active[/yellow]"
+
+            # Build session info panel
+            info_lines = [
+                f"[bold]Session ID:[/bold] {data['sessionId']}",
+                f"[bold]Status:[/bold] {status_display}" + (f" ({status})" if status and status != "500" else ""),
+                f"[bold]Duration:[/bold] {session_duration}",
+                f"[bold]Created:[/bold] {format_timestamp(data.get('createdAt'))}",
+                f"[bold]Ended:[/bold] {format_timestamp(data.get('endedAt')) if data.get('endedAt') else '[dim]N/A[/dim]'}",
+                f"[bold]Bot Start:[/bold] {data.get('botStartSeconds')}s" if data.get("botStartSeconds") is not None else "[bold]Bot Start:[/bold] [dim]N/A[/dim]",
+                f"[bold]Cold Start:[/bold] {'[red]Yes[/red]' if data.get('coldStart') else 'No'}",
+            ]
+
+            # Add resource metrics if available
+            metrics = data.get("resourceMetrics")
+            if metrics:
+                timeseries = metrics.get("timeseries", [])
+                sample_count = metrics.get("sampleCount", 0)
+
+                # Calculate duration from timeseries
+                if len(timeseries) >= 2:
+                    ts_duration = timeseries[-1].get("t", 0) - timeseries[0].get("t", 0)
+                    ts_duration_str = f"{ts_duration}s"
+                else:
+                    ts_duration_str = "N/A"
+
+                info_lines.append("")
+                info_lines.append(f"[bold]Resource Metrics[/bold] ({sample_count} samples over {ts_duration_str}):")
+
+                # CPU sparkline and percentiles
+                cpu_values = [s.get("c", 0) for s in timeseries]
+                cpu_spark = sparkline(cpu_values) if cpu_values else ""
+                cpu_p50 = metrics.get("cpuMillicoresP50", 0)
+                cpu_p99 = metrics.get("cpuMillicoresP99", 0)
+                info_lines.append(f"  CPU:    {cpu_spark}  p50: {cpu_p50}mc  p99: {cpu_p99}mc")
+
+                # Memory sparkline and percentiles
+                mem_values = [s.get("m", 0) for s in timeseries]
+                mem_spark = sparkline(mem_values) if mem_values else ""
+                mem_p50 = int(metrics.get("memoryBytesP50", 0))
+                mem_p99 = int(metrics.get("memoryBytesP99", 0))
+                info_lines.append(f"  Memory: {mem_spark}  p50: {format_bytes(mem_p50)}  p99: {format_bytes(mem_p99)}")
+
+            console.success(
+                Panel(
+                    "\n".join(info_lines),
+                    title=f"Session details for agent [bold]{agent_name}[/bold] [dim]({org})[/dim]",
+                    title_align="left",
+                ),
+            )
+            return
 
     with Live(
         console.status(f"[dim]Looking up agent with name '{agent_name}'[/dim]", spinner="dots")
