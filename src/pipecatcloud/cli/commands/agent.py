@@ -73,6 +73,11 @@ def format_bytes(b: int) -> str:
     return f"{b}B"
 
 
+def format_cpu(millicores: int) -> str:
+    """Format CPU millicores as human-readable string."""
+    return f"{millicores / 1000:.2f} cores"
+
+
 # ----- Agent Commands -----
 
 
@@ -389,7 +394,9 @@ async def sessions(
                 cpu_spark = sparkline(cpu_values) if cpu_values else ""
                 cpu_p50 = metrics.get("cpuMillicoresP50", 0)
                 cpu_p99 = metrics.get("cpuMillicoresP99", 0)
-                info_lines.append(f"  CPU:    {cpu_spark}  p50: {cpu_p50}mc  p99: {cpu_p99}mc")
+                info_lines.append(
+                    f"  CPU:    {cpu_spark}  p50: {format_cpu(cpu_p50)}  p99: {format_cpu(cpu_p99)}"
+                )
 
                 # Memory sparkline and percentiles
                 mem_values = [s.get("m", 0) for s in timeseries]
