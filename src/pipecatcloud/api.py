@@ -475,6 +475,20 @@ class _API:
     def agent_sessions(self):
         return self.create_api_method(self._agent_sessions)
 
+    async def _agent_session(self, agent_name: str, session_id: str, org: str) -> dict | None:
+        url = f"{self.construct_api_url('services_sessions_path').format(org=org, service=agent_name)}/{session_id}"
+        return await self._base_request("GET", url, not_found_is_empty=True)
+
+    @property
+    def agent_session(self):
+        """Get details for a specific session including resource metrics.
+        Args:
+            agent_name: Name of the agent
+            session_id: ID of the session
+            org: Organization ID
+        """
+        return self.create_api_method(self._agent_session)
+
     async def _agent_session_terminate(
         self, agent_name: str, session_id: str, org: str
     ) -> dict | None:
