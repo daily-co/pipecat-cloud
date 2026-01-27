@@ -355,11 +355,14 @@ async def sessions(
             # Build session info panel
             info_lines = [
                 f"[bold]Session ID:[/bold] {data['sessionId']}",
-                f"[bold]Status:[/bold] {status_display}" + (f" ({status})" if status and status != "500" else ""),
+                f"[bold]Status:[/bold] {status_display}"
+                + (f" ({status})" if status and status != "500" else ""),
                 f"[bold]Duration:[/bold] {session_duration}",
                 f"[bold]Created:[/bold] {format_timestamp(data.get('createdAt'))}",
                 f"[bold]Ended:[/bold] {format_timestamp(data.get('endedAt')) if data.get('endedAt') else '[dim]N/A[/dim]'}",
-                f"[bold]Bot Start:[/bold] {data.get('botStartSeconds')}s" if data.get("botStartSeconds") is not None else "[bold]Bot Start:[/bold] [dim]N/A[/dim]",
+                f"[bold]Bot Start:[/bold] {data.get('botStartSeconds')}s"
+                if data.get("botStartSeconds") is not None
+                else "[bold]Bot Start:[/bold] [dim]N/A[/dim]",
                 f"[bold]Cold Start:[/bold] {'[red]Yes[/red]' if data.get('coldStart') else 'No'}",
             ]
 
@@ -377,7 +380,9 @@ async def sessions(
                     ts_duration_str = "N/A"
 
                 info_lines.append("")
-                info_lines.append(f"[bold]Resource Metrics[/bold] ({sample_count} samples over {ts_duration_str}):")
+                info_lines.append(
+                    f"[bold]Resource Metrics[/bold] ({sample_count} samples over {ts_duration_str}):"
+                )
 
                 # CPU sparkline and percentiles
                 cpu_values = [s.get("c", 0) for s in timeseries]
@@ -391,7 +396,9 @@ async def sessions(
                 mem_spark = sparkline(mem_values) if mem_values else ""
                 mem_p50 = int(metrics.get("memoryBytesP50", 0))
                 mem_p99 = int(metrics.get("memoryBytesP99", 0))
-                info_lines.append(f"  Memory: {mem_spark}  p50: {format_bytes(mem_p50)}  p99: {format_bytes(mem_p99)}")
+                info_lines.append(
+                    f"  Memory: {mem_spark}  p50: {format_bytes(mem_p50)}  p99: {format_bytes(mem_p99)}"
+                )
 
             console.success(
                 Panel(
