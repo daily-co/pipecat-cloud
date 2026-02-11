@@ -5,6 +5,8 @@
 #
 
 import os
+import stat
+import warnings
 from typing import Optional
 
 import toml
@@ -47,6 +49,18 @@ def _read_user_config():
 
             if not all(isinstance(e, dict) for e in org_sections.values()):
                 config_problem = "Pipecat Cloud config file is not valid TOML. Organization sections must be dictionaries. Please log out and log back in."
+
+            # Warn if credentials file is readable by group or others (Unix only).
+            if os.name != "nt":
+                file_mode = os.stat(user_config_path).st_mode
+                if file_mode & (stat.S_IRWXG | stat.S_IRWXO):
+                    warnings.warn(
+                        f"Credentials file '{user_config_path}' has overly permissive "
+                        f"permissions ({stat.filemode(file_mode)}). Other users on this "
+                        f"system may be able to read your token. Run "
+                        f"'chmod 600 {user_config_path}' to fix, or login again to repair automatically.",
+                        stacklevel=2,
+                    )
         if config_problem:
             raise ConfigError(config_problem)
 
@@ -62,6 +76,12 @@ def _write_user_config(new_config):
 
     with open(user_config_path, "w") as f:
         toml.dump(new_config, f)
+
+    # Restrict permissions so only the file owner can access credentials.
+    # On Windows os.chmod is limited but home directories are already
+    # protected by ACLs, so this is effectively a Unix-only hardening.
+    os.chmod(dir_path, stat.S_IRWXU)  # 0o700
+    os.chmod(user_config_path, stat.S_IRUSR | stat.S_IWUSR)  # 0o600
 
 
 def remove_user_config():
