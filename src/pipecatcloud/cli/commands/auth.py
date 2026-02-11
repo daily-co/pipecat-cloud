@@ -161,17 +161,22 @@ async def login(
                 return
 
             # Display the authentication URL and code
-            console.print(
-                Panel(
-                    "[bold]To authenticate with Pipecat Cloud:[/bold]\n\n"
-                    "Visit this URL:\n"
-                    f"[blue][link={web_url}]{web_url}[/link][/blue]\n\n"
-                    "Then enter this code:\n"
-                    f"[cyan bold]{code}[/cyan bold]",
-                    title="[bold]Authentication Required[/bold]",
-                    border_style="blue",
+            if headless:
+                print("\nTo authenticate with Pipecat Cloud:\n", flush=True)
+                print(f"  Visit this URL: {web_url}", flush=True)
+                print(f"  Then enter this code: {code}\n", flush=True)
+            else:
+                console.print(
+                    Panel(
+                        "[bold]To authenticate with Pipecat Cloud:[/bold]\n\n"
+                        "Visit this URL:\n"
+                        f"[blue][link={web_url}]{web_url}[/link][/blue]\n\n"
+                        "Then enter this code:\n"
+                        f"[cyan bold]{code}[/cyan bold]",
+                        title="[bold]Authentication Required[/bold]",
+                        border_style="blue",
+                    )
                 )
-            )
 
             # Prompt user to open the browser (unless in headless mode)
             if not headless:
@@ -185,44 +190,76 @@ async def login(
                     return typer.Exit()
                 _open_url(web_url)
 
-            with Live(
-                console.status(
-                    "[dim]Waiting for authentication to complete...[/dim]", spinner="dots"
-                ),
-                transient=True,
-            ) as live:
+            if headless:
+                print("Waiting for authentication to complete...", flush=True)
                 for attempt in itertools.count():
                     result = await auth_flow.finish()
                     if result is not None:
                         break
-                    live.update(
-                        console.status(
-                            f"[dim]Waiting for authentication to complete... (attempt {attempt + 1})[/dim]"
-                        )
-                    )
                 if result is None:
-                    live.stop()
-                    console.error("Authentication failed")
+                    print("Error: Authentication failed", flush=True)
                     return typer.Exit()
 
-                live.update(console.status("[dim]Obtaining account data[/dim]", spinner="dots"))
+                print("Obtaining account data...", flush=True)
                 try:
                     account_name, account_name_verbose = await _get_account_org(result, active_org)
-                    live.stop()
                     logger.debug(f"Setting namespace to {account_name_verbose} ({account_name})")
                     if account_name is None:
                         raise
                 except Exception:
-                    live.stop()
-                    console.error(
-                        "Account has no associated namespace. Have you completed the onboarding process? Please first sign in via the web dashboard."
+                    print(
+                        "Error: Account has no associated namespace. "
+                        "Have you completed the onboarding process? "
+                        "Please first sign in via the web dashboard.",
+                        flush=True,
                     )
                     return typer.Exit()
 
-            console.success(
-                "Web authentication finished successfully!\n"
-                f"[dim]Account details stored to [magenta]{user_config_path}[/magenta][/dim]"
-            )
+                print("Web authentication finished successfully!", flush=True)
+                print(f"Account details stored to {user_config_path}", flush=True)
+            else:
+                with Live(
+                    console.status(
+                        "[dim]Waiting for authentication to complete...[/dim]", spinner="dots"
+                    ),
+                    transient=True,
+                ) as live:
+                    for attempt in itertools.count():
+                        result = await auth_flow.finish()
+                        if result is not None:
+                            break
+                        live.update(
+                            console.status(
+                                f"[dim]Waiting for authentication to complete... (attempt {attempt + 1})[/dim]"
+                            )
+                        )
+                    if result is None:
+                        live.stop()
+                        console.error("Authentication failed")
+                        return typer.Exit()
+
+                    live.update(console.status("[dim]Obtaining account data[/dim]", spinner="dots"))
+                    try:
+                        account_name, account_name_verbose = await _get_account_org(
+                            result, active_org
+                        )
+                        live.stop()
+                        logger.debug(
+                            f"Setting namespace to {account_name_verbose} ({account_name})"
+                        )
+                        if account_name is None:
+                            raise
+                    except Exception:
+                        live.stop()
+                        console.error(
+                            "Account has no associated namespace. Have you completed the onboarding process? Please first sign in via the web dashboard."
+                        )
+                        return typer.Exit()
+
+                console.success(
+                    "Web authentication finished successfully!\n"
+                    f"[dim]Account details stored to [magenta]{user_config_path}[/magenta][/dim]"
+                )
 
     except Exception as e:
         logger.debug(e)
