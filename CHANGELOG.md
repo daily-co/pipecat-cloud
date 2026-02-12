@@ -5,6 +5,15 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed `deploy` command reporting success prematurely when updating an existing
+  agent. The CLI now waits for the new deployment to actually start (deployment
+  ID to change) before checking readiness, preventing false "ready" status when
+  the operator is slow to process the update.
+
 ## [0.2.20] - 2026-02-11
 
 ### Fixed
