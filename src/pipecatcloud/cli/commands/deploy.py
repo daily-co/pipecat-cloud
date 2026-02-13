@@ -38,7 +38,6 @@ ALIVE_CHECK_SLEEP = 5
 
 async def _deploy(params: DeployConfigParams, org, force: bool = False):
     existing_agent = False
-    previous_deployment_id = None
 
     # Check for an existing deployment with this agent name
     with Live(
@@ -53,8 +52,6 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
 
         if data:
             existing_agent = True
-            # Capture the current deployment ID so we can detect when the new deployment starts
-            previous_deployment_id = data.get("activeDeploymentId")
 
             if not force:
                 live.stop()
@@ -141,7 +138,6 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     # 3. Poll status until healthy
     """
     active_deployment_id = None
-    new_deployment_started = not existing_agent  # New deployments don't need to wait for ID change
     is_ready = False
     checks_performed = 0
 
@@ -150,10 +146,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     )
 
     # Create a simple spinner for the polling phase
-    if existing_agent:
-        deployment_status_message = "[dim]Waiting for new deployment to start...[/dim]"
-    else:
-        deployment_status_message = "[dim]Waiting for deployment to become ready...[/dim]"
+    deployment_status_message = "[dim]Waiting for deployment to become ready...[/dim]"
     with console.status(deployment_status_message, spinner="bouncingBar") as status:
         try:
             while checks_performed < MAX_ALIVE_CHECKS:
@@ -184,34 +177,29 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     console.error("Error checking deployment status")
                     return typer.Exit()
 
-                # Track the current deployment ID
-                current_deployment_id = agent_status.get("activeDeploymentId")
+                # Get deployment IDs
+                # - desiredDeploymentId (or activeDeploymentId): what we requested
+                # - reconciledDeploymentId: what the operator has actually processed
+                desired_deployment_id = agent_status.get(
+                    "desiredDeploymentId", agent_status.get("activeDeploymentId")
+                )
+                reconciled_deployment_id = agent_status.get("reconciledDeploymentId")
 
-                # For updates, wait for the deployment ID to change before checking readiness
-                # This ensures we don't report success based on the old deployment's status
-                if not new_deployment_started:
-                    if current_deployment_id and current_deployment_id != previous_deployment_id:
-                        new_deployment_started = True
-                        active_deployment_id = current_deployment_id
-                        deployment_status_message = f"[dim]Waiting for deployment to become ready (deployment ID: {active_deployment_id})...[/dim]"
-                        status.update(deployment_status_message)
-                        logger.debug(
-                            f"New deployment started: {active_deployment_id} (was: {previous_deployment_id})"
-                        )
-                    else:
-                        # Still waiting for new deployment to start
-                        await asyncio.sleep(ALIVE_CHECK_SLEEP)
-                        checks_performed += 1
-                        continue
-
-                # Update deployment ID if not yet set (for new deployments)
-                if not active_deployment_id and current_deployment_id:
-                    active_deployment_id = current_deployment_id
+                # Update status message with deployment ID
+                if desired_deployment_id and not active_deployment_id:
+                    active_deployment_id = desired_deployment_id
                     deployment_status_message = f"[dim]Waiting for deployment to become ready (deployment ID: {active_deployment_id})...[/dim]"
                     status.update(deployment_status_message)
 
-                # If we have an active deployment ID, start tailing the log output
-                # @TODO - Implement this
+                # Check if operator has reconciled this deployment
+                deployment_reconciled = reconciled_deployment_id == desired_deployment_id
+                if not deployment_reconciled:
+                    logger.debug(
+                        f"Waiting for operator to reconcile: desired={desired_deployment_id}, reconciled={reconciled_deployment_id}"
+                    )
+                    await asyncio.sleep(ALIVE_CHECK_SLEEP)
+                    checks_performed += 1
+                    continue
 
                 # Check if deployment is ready
                 # For KEDA deployments, we need:
