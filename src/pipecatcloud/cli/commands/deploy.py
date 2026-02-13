@@ -177,14 +177,29 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     console.error("Error checking deployment status")
                     return typer.Exit()
 
-                # Update deployment ID if received
-                if not active_deployment_id and agent_status.get("activeDeploymentId"):
-                    active_deployment_id = agent_status["activeDeploymentId"]
+                # Get deployment IDs
+                # - desiredDeploymentId (or activeDeploymentId): what we requested
+                # - reconciledDeploymentId: what the operator has actually processed
+                desired_deployment_id = agent_status.get(
+                    "desiredDeploymentId", agent_status.get("activeDeploymentId")
+                )
+                reconciled_deployment_id = agent_status.get("reconciledDeploymentId")
+
+                # Update status message with deployment ID
+                if desired_deployment_id and not active_deployment_id:
+                    active_deployment_id = desired_deployment_id
                     deployment_status_message = f"[dim]Waiting for deployment to become ready (deployment ID: {active_deployment_id})...[/dim]"
                     status.update(deployment_status_message)
 
-                # If we have an active deployment ID, start tailing the log output
-                # @TODO - Implement this
+                # Check if operator has reconciled this deployment
+                deployment_reconciled = reconciled_deployment_id == desired_deployment_id
+                if not deployment_reconciled:
+                    logger.debug(
+                        f"Waiting for operator to reconcile: desired={desired_deployment_id}, reconciled={reconciled_deployment_id}"
+                    )
+                    await asyncio.sleep(ALIVE_CHECK_SLEEP)
+                    checks_performed += 1
+                    continue
 
                 # Check if deployment is ready
                 # For KEDA deployments, we need:
