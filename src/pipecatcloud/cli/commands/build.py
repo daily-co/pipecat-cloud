@@ -18,7 +18,7 @@ from rich.text import Text
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
-from pipecatcloud._utils.build_utils import BuildStatus
+from pipecatcloud._utils.build_utils import BuildStatus, format_size
 from pipecatcloud._utils.console_utils import console, format_timestamp
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -37,19 +37,6 @@ def _format_build_status(status: str) -> str:
     }
     color = status_colors.get(status, "white")
     return f"[{color}]{status}[/{color}]"
-
-
-def _format_size(size_bytes: Optional[int]) -> str:
-    """Format byte size as human-readable string."""
-    if size_bytes is None:
-        return "[dim]N/A[/dim]"
-    size_bytes = int(size_bytes)
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    else:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
 
 
 def _format_duration(seconds: Optional[int]) -> str:
@@ -196,10 +183,10 @@ async def status(
         info_lines.append(f"[bold]Duration:[/bold] {_format_duration(build.get('buildDurationSeconds'))}")
 
     if build.get("contextSizeBytes"):
-        info_lines.append(f"[bold]Context Size:[/bold] {_format_size(build.get('contextSizeBytes'))}")
+        info_lines.append(f"[bold]Context Size:[/bold] {format_size(int(build['contextSizeBytes']))}")
 
     if build.get("imageSizeBytes"):
-        info_lines.append(f"[bold]Image Size:[/bold] {_format_size(build.get('imageSizeBytes'))}")
+        info_lines.append(f"[bold]Image Size:[/bold] {format_size(int(build['imageSizeBytes']))}")
 
     if build.get("errorMessage"):
         info_lines.append(f"\n[bold red]Error:[/bold red] {build.get('errorMessage')}")
