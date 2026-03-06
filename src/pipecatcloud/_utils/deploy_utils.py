@@ -6,7 +6,7 @@
 
 import functools
 import os
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 import toml
 from attr import dataclass, field
@@ -75,9 +75,26 @@ class KrispVivaConfig:
 
 
 @dataclass
+class BuildConfig:
+    """Configuration for cloud builds."""
+
+    context_dir: str = "."
+    dockerfile: str = "Dockerfile"
+    exclude_patterns: List[str] = field(factory=list)
+
+    def to_dict(self):
+        return {
+            "context_dir": self.context_dir,
+            "dockerfile": self.dockerfile,
+            "exclude_patterns": self.exclude_patterns,
+        }
+
+
+@dataclass
 class DeployConfigParams:
     agent_name: Optional[str] = None
     image: Optional[str] = None
+    build_id: Optional[str] = None  # For cloud builds
     image_credentials: Optional[str] = None
     secret_set: Optional[str] = None
     region: Optional[str] = None
@@ -85,17 +102,22 @@ class DeployConfigParams:
     enable_krisp: bool = False
     enable_managed_keys: bool = False
     docker_config: dict = field(factory=dict)
+    build_config: BuildConfig = field(factory=BuildConfig)  # Cloud build configuration
     agent_profile: Optional[str] = None
     krisp_viva: KrispVivaConfig = field(factory=KrispVivaConfig)
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:
             raise ValueError("Provided image must include tag e.g. my-image:latest")
+        # Cannot specify both image and build_id
+        if self.image is not None and self.build_id is not None:
+            raise ValueError("Cannot specify both 'image' and 'build_id'")
 
     def to_dict(self):
         return {
             "agent_name": self.agent_name,
             "image": self.image,
+            "build_id": self.build_id,
             "image_credentials": self.image_credentials,
             "secret_set": self.secret_set,
             "region": self.region,
@@ -103,6 +125,7 @@ class DeployConfigParams:
             "enable_krisp": self.enable_krisp,
             "enable_managed_keys": self.enable_managed_keys,
             "docker_config": self.docker_config,
+            "build_config": self.build_config.to_dict() if self.build_config else None,
             "agent_profile": self.agent_profile,
             "krisp_viva": self.krisp_viva.to_dict() if self.krisp_viva else None,
         }
@@ -132,11 +155,21 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
         krisp_viva_data = config_data.pop("krisp_viva", {})
         krisp_viva_config = KrispVivaConfig(**krisp_viva_data)
 
+        # Extract build configuration if present
+        build_data = config_data.pop("build", {})
+        exclude_data = build_data.pop("exclude", {})
+        build_config = BuildConfig(
+            context_dir=build_data.get("context_dir", "."),
+            dockerfile=build_data.get("dockerfile", "Dockerfile"),
+            exclude_patterns=exclude_data.get("patterns", []),
+        )
+
         # Create DeployConfigParams with validated data
         validated_config = DeployConfigParams(
             **config_data,
             scaling=scaling_params,
             docker_config=docker_data,
+            build_config=build_config,
             krisp_viva=krisp_viva_config,
         )
 
@@ -144,6 +177,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
         expected_keys = {
             "agent_name",
             "image",
+            "build_id",
             "image_credentials",
             "secret_set",
             "region",
@@ -151,6 +185,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "enable_krisp",
             "enable_managed_keys",
             "docker",
+            "build",
             "agent_profile",
             "krisp_viva",
         }
