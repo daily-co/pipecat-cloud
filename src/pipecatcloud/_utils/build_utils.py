@@ -229,9 +229,7 @@ def create_deterministic_tarball(
 
         # Filter directories in-place to prevent descending into excluded dirs
         dirs[:] = [
-            d
-            for d in sorted(dirs)
-            if not _should_exclude(root_path / d, exclusions, base_path)
+            d for d in sorted(dirs) if not _should_exclude(root_path / d, exclusions, base_path)
         ]
 
         for filename in sorted(files):
@@ -272,8 +270,8 @@ def create_deterministic_tarball(
     MAX_CONTEXT_SIZE = 500 * 1024 * 1024
     if total_size > MAX_CONTEXT_SIZE:
         raise ValueError(
-            f"Build context too large: {total_size / (1024*1024):.1f}MB "
-            f"(max {MAX_CONTEXT_SIZE / (1024*1024):.0f}MB)"
+            f"Build context too large: {total_size / (1024 * 1024):.1f}MB "
+            f"(max {MAX_CONTEXT_SIZE / (1024 * 1024):.0f}MB)"
         )
 
     # Compress with gzip (mtime=0 for determinism)
@@ -329,9 +327,7 @@ async def upload_to_s3(
         data.add_field("Content-Type", "application/gzip")
 
     # Add file last (must be named "file" for S3 presigned POST)
-    data.add_field(
-        "file", tarball, filename="context.tar.gz", content_type="application/gzip"
-    )
+    data.add_field("file", tarball, filename="context.tar.gz", content_type="application/gzip")
 
     try:
         async with aiohttp.ClientSession() as session:

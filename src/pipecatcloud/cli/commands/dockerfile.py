@@ -75,8 +75,7 @@ def create_dockerfile_command(app: typer.Typer):
                 detected_type = ProjectType(project_type.lower())
             except ValueError:
                 console.error(
-                    f"Unknown project type: '{project_type}'\n\n"
-                    f"Supported types: uv, pip, poetry"
+                    f"Unknown project type: '{project_type}'\n\nSupported types: uv, pip, poetry"
                 )
                 return typer.Exit(1)
         else:

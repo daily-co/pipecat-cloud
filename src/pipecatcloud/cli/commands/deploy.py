@@ -148,9 +148,7 @@ async def _cloud_build_flow(
 
             dockerfile_content = generate_dockerfile(project_type, entrypoint)
             dockerfile_path.write_text(dockerfile_content)
-            console.print(
-                f"[green]Generated Dockerfile for {project_type.value} project[/green]"
-            )
+            console.print(f"[green]Generated Dockerfile for {project_type.value} project[/green]")
 
     # Create deterministic tarball
     console.print("[dim]Creating build context...[/dim]")
@@ -260,7 +258,9 @@ async def _cloud_build_flow(
         if status != last_status:
             last_status = status
 
-    with console.status("[dim]Building image (this may take a few minutes)...[/dim]", spinner="bouncingBar"):
+    with console.status(
+        "[dim]Building image (this may take a few minutes)...[/dim]", spinner="bouncingBar"
+    ):
         success, final_build = await poll_build_status(
             build_id=build_id,
             org=org,
@@ -764,7 +764,12 @@ def create_deploy_command(app: typer.Typer):
 
         # Assert credentials are provided if not using --no-credentials / force flag
         # Skip this check for cloud builds (they use managed credentials)
-        if not using_cloud_build and not no_credentials and not partial_config.image_credentials and not auto_yes:
+        if (
+            not using_cloud_build
+            and not no_credentials
+            and not partial_config.image_credentials
+            and not auto_yes
+        ):
             console.error(
                 "Deployments require an image pull secret [bold](--credentials)[/bold] to securely pull images from private repositories."
                 "\nPlease provide an image pull secret name or use [bold][--no-credentials][/bold] to deploy without one.",
@@ -797,7 +802,9 @@ def create_deploy_command(app: typer.Typer):
 
         # Build the image/build display line
         if using_cloud_build:
-            image_display = f"[bold white]Cloud Build:[/bold white] [green]{partial_config.build_id}[/green]"
+            image_display = (
+                f"[bold white]Cloud Build:[/bold white] [green]{partial_config.build_id}[/green]"
+            )
         else:
             image_display = f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"
 
@@ -816,13 +823,15 @@ def create_deploy_command(app: typer.Typer):
                 f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"
             )
 
-        content_items.extend([
-            f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}",
-            f"[bold white]Krisp (deprecated):[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}",
-            f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}",
-            f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}",
-            "\n[dim]Scaling configuration:[/dim]",
-        ])
+        content_items.extend(
+            [
+                f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}",
+                f"[bold white]Krisp (deprecated):[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}",
+                f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}",
+                f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}",
+                "\n[dim]Scaling configuration:[/dim]",
+            ]
+        )
 
         content = Group(
             *content_items,

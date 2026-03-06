@@ -66,9 +66,7 @@ async def logs(
         min=1,
         max=10000,
     ),
-    organization: Optional[str] = typer.Option(
-        None, "--organization", "-o", help="Organization"
-    ),
+    organization: Optional[str] = typer.Option(None, "--organization", "-o", help="Organization"),
 ):
     """View logs for a cloud build."""
     org = organization or config.get("org")
@@ -99,8 +97,7 @@ async def logs(
     # Display build ID header
     console.print(
         Panel(
-            f"[bold]Build ID:[/bold] {build_id}\n"
-            f"[bold]Lines:[/bold] {len(logs_list)}",
+            f"[bold]Build ID:[/bold] {build_id}\n[bold]Lines:[/bold] {len(logs_list)}",
             title="Build Logs",
             title_align="left",
             border_style="dim",
@@ -141,9 +138,7 @@ async def logs(
 @requires_login
 async def status(
     build_id: str = typer.Argument(help="Build ID to check"),
-    organization: Optional[str] = typer.Option(
-        None, "--organization", "-o", help="Organization"
-    ),
+    organization: Optional[str] = typer.Option(None, "--organization", "-o", help="Organization"),
 ):
     """Get status of a cloud build."""
     org = organization or config.get("org")
@@ -180,10 +175,14 @@ async def status(
         info_lines.append(f"[bold]Completed:[/bold] {format_timestamp(build.get('completedAt'))}")
 
     if build.get("buildDurationSeconds"):
-        info_lines.append(f"[bold]Duration:[/bold] {_format_duration(build.get('buildDurationSeconds'))}")
+        info_lines.append(
+            f"[bold]Duration:[/bold] {_format_duration(build.get('buildDurationSeconds'))}"
+        )
 
     if build.get("contextSizeBytes"):
-        info_lines.append(f"[bold]Context Size:[/bold] {format_size(int(build['contextSizeBytes']))}")
+        info_lines.append(
+            f"[bold]Context Size:[/bold] {format_size(int(build['contextSizeBytes']))}"
+        )
 
     if build.get("imageSizeBytes"):
         info_lines.append(f"[bold]Image Size:[/bold] {format_size(int(build['imageSizeBytes']))}")
@@ -243,9 +242,7 @@ async def list_builds(
         "-r",
         help="Filter by region",
     ),
-    organization: Optional[str] = typer.Option(
-        None, "--organization", "-o", help="Organization"
-    ),
+    organization: Optional[str] = typer.Option(None, "--organization", "-o", help="Organization"),
 ):
     """List recent cloud builds."""
     org = organization or config.get("org")

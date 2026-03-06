@@ -119,7 +119,7 @@ def detect_entrypoint(project_dir: str = ".") -> Optional[str]:
 
 # Dockerfile templates
 
-UV_DOCKERFILE_TEMPLATE = '''FROM dailyco/pipecat-base:latest
+UV_DOCKERFILE_TEMPLATE = """FROM dailyco/pipecat-base:latest
 
 # Enable bytecode compilation
 ENV UV_COMPILE_BYTECODE=1
@@ -135,9 +135,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \\
 
 # Copy the application code
 COPY ./{entrypoint} {entrypoint}
-'''
+"""
 
-PIP_DOCKERFILE_TEMPLATE = '''FROM dailyco/pipecat-base:latest
+PIP_DOCKERFILE_TEMPLATE = """FROM dailyco/pipecat-base:latest
 
 # Copy requirements first for better caching
 COPY requirements.txt .
@@ -148,9 +148,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \\
 
 # Copy the application code
 COPY ./{entrypoint} {entrypoint}
-'''
+"""
 
-POETRY_DOCKERFILE_TEMPLATE = '''FROM dailyco/pipecat-base:latest
+POETRY_DOCKERFILE_TEMPLATE = """FROM dailyco/pipecat-base:latest
 
 # Install poetry
 RUN pip install poetry
@@ -166,7 +166,7 @@ RUN poetry install --no-dev --no-interaction --no-ansi
 
 # Copy the application code
 COPY ./{entrypoint} {entrypoint}
-'''
+"""
 
 
 def generate_dockerfile(project_type: ProjectType, entrypoint: str) -> str:
