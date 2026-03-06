@@ -213,7 +213,7 @@ async def status(
     if status_val in (BuildStatus.FAILED, BuildStatus.TIMEOUT):
         console.print(f"\n[dim]View full logs:[/dim] [bold]pcc build logs {build_id}[/bold]")
     elif status_val in (BuildStatus.PENDING, BuildStatus.BUILDING):
-        console.print(f"\n[dim]Build in progress. Check again or view logs:[/dim]")
+        console.print("\n[dim]Build in progress. Check again or view logs:[/dim]")
         console.print(f"  [bold]pcc build status {build_id}[/bold]")
         console.print(f"  [bold]pcc build logs {build_id}[/bold]")
 

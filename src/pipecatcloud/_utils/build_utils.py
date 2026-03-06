@@ -19,7 +19,7 @@ import io
 import os
 import tarfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Set, Tuple
 
