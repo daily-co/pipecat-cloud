@@ -277,7 +277,44 @@ async def status(
                 border_style="red",
             )
 
-        color = "bold green" if data["ready"] else "bold yellow"
+        # Build health/status panel with revision info when available
+        current_rev = data.get("currentRevision")
+        previous_rev = data.get("previousRevision")
+
+        if current_rev:
+            # Rich status with revision details
+            health_lines = []
+
+            rev_phase = current_rev.get("phase", "Unknown")
+            rev_id = current_rev.get("deploymentID", "")[:8]
+            rev_replicas = current_rev.get("readyReplicas")
+
+            if data["ready"]:
+                health_lines.append("[bold green]Ready[/bold green]")
+            else:
+                health_lines.append(f"[bold yellow]{rev_phase}[/bold yellow]")
+
+            current_parts = [f"  Current  [bold]({rev_id})[/bold] {rev_phase}"]
+            if rev_replicas is not None:
+                current_parts.append(f"[dim]·[/dim] {rev_replicas} replicas")
+            health_lines.append(" ".join(current_parts))
+
+            if previous_rev:
+                prev_phase = previous_rev.get("phase", "Unknown")
+                prev_id = previous_rev.get("deploymentID", "")[:8]
+                prev_replicas = previous_rev.get("readyReplicas")
+                prev_parts = [f"  Previous [bold]({prev_id})[/bold] {prev_phase}"]
+                if prev_replicas is not None:
+                    prev_parts.append(f"[dim]·[/dim] {prev_replicas} replicas")
+                health_lines.append(" ".join(prev_parts))
+
+            health_content = "\n".join(health_lines)
+            health_border = "green" if data["ready"] else "yellow"
+        else:
+            # Fallback: no revision data from API
+            health_content = f"[{'bold green' if data['ready'] else 'bold yellow'}]Health: {'Ready' if data['ready'] else 'Stopped'}[/]"
+            health_border = "green" if data["ready"] else "yellow"
+
         subtitle = (
             f"[dim]Start a new active session with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]"
             if data["ready"]
@@ -289,8 +326,8 @@ async def status(
                     deployment_table,
                     scaling_panel if scaling_panel else "",
                     Panel(
-                        f"[{color}]Health: {'Ready' if data['ready'] else 'Stopped'}[/]",
-                        border_style="green" if data["ready"] else "yellow",
+                        health_content,
+                        border_style=health_border,
                         expand=False,
                     ),
                     error_panel if error_panel else "",

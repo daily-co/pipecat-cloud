@@ -62,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The CLI now uses `desiredDeploymentId` (with fallback to `activeDeploymentId`)
   and compares it against `reconciledDeploymentId` to determine deployment status.
+- `agent status` now shows per-revision details (phase, deployment ID, replica
+  counts) in the health panel when the API provides revision info, replacing the
+  binary "Health: Ready/Stopped" display.
 
 ## [0.2.20] - 2026-02-11
 
