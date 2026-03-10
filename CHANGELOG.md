@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Cloud Builds**: Deploy agents without managing a container registry. Run
   `pcc deploy` without an `image` and the CLI will build your image in the cloud.
-  - Automatic Dockerfile generation for uv, pip, and poetry projects
   - Deterministic content hashing for build caching (same files = skip rebuild)
   - `pcc deploy --build-id <id>` to reuse an existing build
   - `pcc deploy --yes` for non-interactive CI/CD usage
@@ -20,7 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `pcc build list` — list recent builds with status and region filtering
   - `pcc build status <id>` — get detailed status of a build
   - `pcc build logs <id>` — view build logs
-- New `pcc dockerfile` command to generate a Dockerfile without deploying
 
 ### Fixed
 

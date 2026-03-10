@@ -8,7 +8,6 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
-import questionary
 import typer
 from loguru import logger
 from rich.console import Group
@@ -34,12 +33,6 @@ from pipecatcloud._utils.deploy_utils import (
     KrispVivaConfig,
     ScalingParams,
     with_deploy_config,
-)
-from pipecatcloud._utils.dockerfile_gen import (
-    ProjectType,
-    detect_entrypoint,
-    detect_project_type,
-    generate_dockerfile,
 )
 from pipecatcloud._utils.regions import get_region_codes, validate_region
 from pipecatcloud.cli import PIPECAT_CLI_NAME
@@ -76,79 +69,13 @@ async def _cloud_build_flow(
 
     # Check for Dockerfile
     if not dockerfile_path.exists():
-        console.print(
-            Panel(
-                f"No Dockerfile found at [bold]{dockerfile_path}[/bold]\n\n"
-                "A Dockerfile is required to build your agent image.",
-                title="[yellow]Dockerfile Required[/yellow]",
-                title_align="left",
-                border_style="yellow",
-            )
+        console.error(
+            f"No Dockerfile found at [bold]{dockerfile_path}[/bold]\n\n"
+            "A Dockerfile is required for cloud builds.\n\n"
+            "See the quickstart project for a reference Dockerfile:\n"
+            "  https://github.com/pipecat-ai/pipecat-quickstart"
         )
-
-        if auto_yes:
-            # Auto-generate Dockerfile in CI/CD mode
-            project_type = detect_project_type(str(context_dir))
-            if project_type == ProjectType.UNKNOWN:
-                console.error(
-                    "Cannot auto-generate Dockerfile: unknown project type.\n"
-                    "Please create a Dockerfile manually or ensure your project has:\n"
-                    "  - uv.lock (uv project)\n"
-                    "  - requirements.txt (pip project)\n"
-                    "  - poetry.lock (poetry project)"
-                )
-                return None
-
-            entrypoint = detect_entrypoint(str(context_dir))
-            if not entrypoint:
-                console.error(
-                    "Cannot auto-generate Dockerfile: no entrypoint detected.\n"
-                    "Please create a Dockerfile with your entrypoint specified."
-                )
-                return None
-
-            dockerfile_content = generate_dockerfile(project_type, entrypoint)
-            dockerfile_path.write_text(dockerfile_content)
-            console.print(
-                f"[green]Generated Dockerfile for {project_type.value} project "
-                f"(entrypoint: {entrypoint})[/green]"
-            )
-        else:
-            # Interactive mode - offer to generate
-            if not typer.confirm("Would you like to generate a Dockerfile?", default=True):
-                console.error("Dockerfile is required for cloud builds")
-                return None
-
-            # Detect project type
-            project_type = detect_project_type(str(context_dir))
-            if project_type == ProjectType.UNKNOWN:
-                type_choice = await questionary.select(
-                    "Select project type:",
-                    choices=[
-                        questionary.Choice("uv (recommended)", value="uv"),
-                        questionary.Choice("pip", value="pip"),
-                        questionary.Choice("poetry", value="poetry"),
-                    ],
-                ).ask_async()
-                if not type_choice:
-                    console.cancel()
-                    return None
-                project_type = ProjectType(type_choice)
-
-            # Detect or prompt for entrypoint
-            entrypoint = detect_entrypoint(str(context_dir))
-            if not entrypoint:
-                entrypoint = await questionary.text(
-                    "Enter the Python file to run:",
-                    default="bot.py",
-                ).ask_async()
-                if not entrypoint:
-                    console.cancel()
-                    return None
-
-            dockerfile_content = generate_dockerfile(project_type, entrypoint)
-            dockerfile_path.write_text(dockerfile_content)
-            console.print(f"[green]Generated Dockerfile for {project_type.value} project[/green]")
+        return None
 
     # Create deterministic tarball
     console.print("[dim]Creating build context...[/dim]")
