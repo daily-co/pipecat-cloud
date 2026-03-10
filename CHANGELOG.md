@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.cache` to default cloud build context exclusions to reduce upload size and
   avoid including non-runtime files in container images.
 
+### Changed
+
+- Increased deploy polling timeout from 90 seconds to 10 minutes to support
+  large deployments with big images, high replica counts, and cross-region pulls.
+- Deploy polling now shows rich, multi-line status using API conditions and
+  revision info instead of a static "Waiting for deployment to become ready..."
+  message. The headline shows condition state (e.g. "Progressing · Available"),
+  with per-revision detail lines showing phase, replica counts, and elapsed time
+  for both current and previous deployments during rolling updates.
+- Deploy timeout now differentiates exit behavior: services that are available
+  and serving traffic show a soft warning instead of a hard error, with guidance
+  to check status. Hard errors are reserved for services that are truly
+  unavailable.
+
 ## [0.3.0] - 2026-03-12
 
 ### Added
@@ -41,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verify the operator has actually processed the deployment before reporting
   readiness, preventing false "ready" status when the operator is slow to process
   the update.
+
+### Changed
+
+- The `image` field in `pcc deploy` is now optional when using cloud builds
+
+- The CLI now uses `desiredDeploymentId` (with fallback to `activeDeploymentId`)
+  and compares it against `reconciledDeploymentId` to determine deployment status.
 
 ## [0.2.20] - 2026-02-11
 

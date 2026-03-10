@@ -32,6 +32,7 @@ from pipecatcloud._utils.deploy_utils import (
     DeployConfigParams,
     KrispVivaConfig,
     ScalingParams,
+    interpret_deployment_status,
     with_deploy_config,
 )
 from pipecatcloud._utils.regions import get_region_codes, validate_region
@@ -40,7 +41,7 @@ from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 from pipecatcloud.constants import KRISP_VIVA_MODELS, Region
 
-MAX_ALIVE_CHECKS = 18
+MAX_ALIVE_CHECKS = 120
 ALIVE_CHECK_SLEEP = 5
 
 # ----- Cloud Build Flow
@@ -349,6 +350,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     """
     active_deployment_id = None
     is_ready = False
+    last_status = None
     checks_performed = 0
 
     console.print(
@@ -387,41 +389,28 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     console.error("Error checking deployment status")
                     return typer.Exit()
 
-                # Get deployment IDs
-                # - desiredDeploymentId (or activeDeploymentId): what we requested
-                # - reconciledDeploymentId: what the operator has actually processed
+                # Capture the deployment ID for display
                 desired_deployment_id = agent_status.get(
                     "desiredDeploymentId", agent_status.get("activeDeploymentId")
                 )
-                reconciled_deployment_id = agent_status.get("reconciledDeploymentId")
-
-                # Update status message with deployment ID
                 if desired_deployment_id and not active_deployment_id:
                     active_deployment_id = desired_deployment_id
-                    deployment_status_message = f"[dim]Waiting for deployment to become ready (deployment ID: {active_deployment_id})...[/dim]"
-                    status.update(deployment_status_message)
 
-                # Check if operator has reconciled this deployment
-                deployment_reconciled = reconciled_deployment_id == desired_deployment_id
-                if not deployment_reconciled:
-                    logger.debug(
-                        f"Waiting for operator to reconcile: desired={desired_deployment_id}, reconciled={reconciled_deployment_id}"
-                    )
-                    await asyncio.sleep(ALIVE_CHECK_SLEEP)
-                    checks_performed += 1
-                    continue
+                # Interpret status using conditions, availability, and revision info
+                last_status = interpret_deployment_status(
+                    agent_status, desired_deployment_id=desired_deployment_id
+                )
 
-                # Check if deployment is ready
-                # For KEDA deployments, we need:
-                # - available: true (can handle traffic)
-                # - activeDeploymentReady: true (ReplicaSet is ready)
-                # The 'available' field falls back to 'ready' if not present (for backwards compatibility)
-                available = agent_status.get("available", agent_status.get("ready", False))
-                deployment_ready = agent_status.get("activeDeploymentReady", False)
+                logger.debug(
+                    f"Interpreted phase: {last_status.phase}, available: {last_status.is_available}"
+                )
 
-                if available and deployment_ready:
+                if last_status.is_ready:
                     is_ready = True
                     break
+
+                # Update spinner with current status message
+                status.update(last_status.status_message)
 
                 # Wait before checking again
                 await asyncio.sleep(ALIVE_CHECK_SLEEP)
@@ -450,9 +439,36 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             f"{extra_message}",
             title_extra=f"{'Update' if existing_agent else 'Deployment'} complete",
         )
+    elif last_status and last_status.is_available:
+        # Timed out but service is available — soft warning, not a hard error
+        timeout_seconds = MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP
+        console.print(
+            Panel(
+                f"Service is available and serving traffic, but the new deployment is still validating.\n"
+                f"This is normal for deployments with large images or high replica counts.\n\n"
+                f"[bold]Check status:[/bold]  `{PIPECAT_CLI_NAME} agent status {params.agent_name}`\n"
+                f"[bold]View logs:[/bold]    `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`",
+                title="Deployment still in progress",
+                title_align="left",
+                border_style="yellow",
+            )
+        )
+    elif last_status and last_status.degraded_reason:
+        # Timed out with degraded status
+        console.print(
+            Panel(
+                f"Deployment is degraded: {last_status.degraded_reason}\n\n"
+                f"[bold]Check status:[/bold]  `{PIPECAT_CLI_NAME} agent status {params.agent_name}`\n"
+                f"[bold]View logs:[/bold]    `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`",
+                title="Deployment degraded",
+                title_align="left",
+                border_style="red",
+            )
+        )
     else:
+        timeout_seconds = MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP
         console.error(
-            f"Deployment did not enter ready state within {MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP} seconds. "
+            f"Deployment did not become available within {timeout_seconds} seconds.\n"
             f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`"
         )
 
