@@ -6,6 +6,7 @@
 
 import functools
 import os
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable, List, Optional
 
@@ -56,8 +57,6 @@ def _format_elapsed(phase_started_at: Optional[str]) -> str:
     if not phase_started_at:
         return ""
     try:
-        from datetime import datetime, timezone
-
         started = datetime.fromisoformat(phase_started_at.replace("Z", "+00:00"))
         elapsed = datetime.now(timezone.utc) - started
         total_seconds = int(elapsed.total_seconds())

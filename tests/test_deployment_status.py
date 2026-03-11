@@ -5,12 +5,6 @@ Tests the interpret_deployment_status function which maps raw API responses
 to structured DeploymentStatus objects used for CLI display during deploy polling.
 """
 
-import sys
-from pathlib import Path
-
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from pipecatcloud._utils.deploy_utils import (
     DeploymentPhase,
     _format_elapsed,

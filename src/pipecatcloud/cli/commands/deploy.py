@@ -444,7 +444,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         timeout_seconds = MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP
         console.print(
             Panel(
-                f"Service is available and serving traffic, but the new deployment is still validating.\n"
+                f"Service is available and serving traffic, but the new deployment hasn't fully rolled out after {timeout_seconds}s.\n"
                 f"This is normal for deployments with large images or high replica counts.\n\n"
                 f"[bold]Check status:[/bold]  `{PIPECAT_CLI_NAME} agent status {params.agent_name}`\n"
                 f"[bold]View logs:[/bold]    `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`",
