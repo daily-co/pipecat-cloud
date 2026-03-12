@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Cloud Builds**: Deploy agents without managing a container registry. Run
+  `pcc deploy` without an `image` and the CLI will build your image in the cloud.
+  - Deterministic content hashing for build caching (same files = skip rebuild)
+  - `pcc deploy --build-id <id>` to reuse an existing build
+  - `pcc deploy --yes` for non-interactive CI/CD usage
+  - `[build]` section in `pcc-deploy.toml` for build configuration
+- New `pcc build` command group for managing cloud builds:
+  - `pcc build list` — list recent builds with status and region filtering
+  - `pcc build status <id>` — get detailed status of a build
+  - `pcc build logs <id>` — view build logs
+
 ### Fixed
 
 - Fixed `deploy` command reporting success prematurely when updating an existing
@@ -17,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `image` field in `pcc deploy` is now optional when using cloud builds
 - The CLI now uses `desiredDeploymentId` (with fallback to `activeDeploymentId`)
   and compares it against `reconciledDeploymentId` to determine deployment status.
 

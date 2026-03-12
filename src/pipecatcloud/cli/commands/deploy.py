@@ -5,6 +5,7 @@
 #
 
 import asyncio
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -17,8 +18,17 @@ from rich.text import Text
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
+from pipecatcloud._utils.build_utils import (
+    BuildStatus,
+    create_deterministic_tarball,
+    format_size,
+    get_exclusions,
+    poll_build_status,
+    upload_to_s3,
+)
 from pipecatcloud._utils.console_utils import console
 from pipecatcloud._utils.deploy_utils import (
+    BuildConfig,
     DeployConfigParams,
     KrispVivaConfig,
     ScalingParams,
@@ -32,6 +42,206 @@ from pipecatcloud.constants import KRISP_VIVA_MODELS, Region
 
 MAX_ALIVE_CHECKS = 18
 ALIVE_CHECK_SLEEP = 5
+
+# ----- Cloud Build Flow
+
+
+async def _cloud_build_flow(
+    build_config: BuildConfig,
+    region: Optional[str],
+    org: str,
+    auto_yes: bool,
+) -> Optional[str]:
+    """
+    Execute the cloud build flow.
+
+    Args:
+        build_config: Build configuration (context_dir, dockerfile, excludes)
+        region: Target region for the build
+        org: Organization ID
+        auto_yes: Skip prompts (for CI/CD)
+
+    Returns:
+        build_id on success, None on failure
+    """
+    # Resolve region - fetch org default if not explicitly specified
+    if region:
+        region_display = f"[green]{region}[/green]"
+    else:
+        props, error = await API.properties(org)
+        if error:
+            console.error("Failed to fetch organization properties")
+            return None
+        region = props["defaultRegion"]
+        region_display = f"[green]{region}[/green] [dim](organization default)[/dim]"
+
+    context_dir = Path(build_config.context_dir).resolve()
+    dockerfile_path = context_dir / build_config.dockerfile
+
+    # Check for Dockerfile
+    if not dockerfile_path.exists():
+        console.error(
+            f"No Dockerfile found at [bold]{dockerfile_path}[/bold]\n\n"
+            "A Dockerfile is required for cloud builds.\n\n"
+            "See the quickstart project for a reference Dockerfile:\n"
+            "  https://github.com/pipecat-ai/pipecat-quickstart"
+        )
+        return None
+
+    # Show build summary and confirm in interactive mode
+    if not auto_yes:
+        console.print(
+            Panel(
+                f"[bold white]Organization:[/bold white] [green]{org}[/green]\n"
+                f"[bold white]Region:[/bold white] {region_display}\n"
+                f"[bold white]Dockerfile:[/bold white] [green]{build_config.dockerfile}[/green]\n"
+                f"[bold white]Context:[/bold white] [green]{context_dir}[/green]",
+                title="Cloud Build",
+                title_align="left",
+                border_style="cyan",
+            )
+        )
+        if not typer.confirm("Proceed with cloud build?", default=True):
+            console.cancel()
+            return None
+
+    # Create deterministic tarball
+    console.print("[dim]Creating build context...[/dim]")
+    try:
+        exclusions = get_exclusions(context_dir, build_config.exclude_patterns)
+        build_context = create_deterministic_tarball(
+            context_dir=str(context_dir),
+            exclusions=exclusions,
+            dockerfile_path=build_config.dockerfile,
+        )
+    except FileNotFoundError as e:
+        console.error(str(e))
+        return None
+    except ValueError as e:
+        console.error(str(e))
+        return None
+
+    console.print(
+        f"[dim]Build context: {build_context.file_count} files, "
+        f"{format_size(len(build_context.tarball))} compressed, "
+        f"hash={build_context.context_hash}[/dim]"
+    )
+
+    # Check cache
+    console.print("[dim]Checking build cache...[/dim]")
+    cached_builds, cache_error = await API.build_list(
+        org=org,
+        context_hash=build_context.context_hash,
+        region=region,
+        status=BuildStatus.SUCCESS,
+        limit=1,
+    )
+
+    if cached_builds and cached_builds.get("builds"):
+        cached_build = cached_builds["builds"][0]
+        del build_context  # Free tarball memory, no upload needed
+        console.success(
+            f"[bold white]Build ID:[/bold white] {cached_build['id']}\n"
+            f"[bold white]Created:[/bold white] {cached_build.get('createdAt', 'N/A')}\n\n"
+            f"[dim]Using cached build - no upload needed[/dim]",
+            title="Cached Build Found",
+        )
+        return cached_build["id"]
+
+    console.print("[dim]No cached build found, starting new build...[/dim]")
+
+    # Get upload URL
+    with console.status("[dim]Requesting upload URL...[/dim]", spinner="dots"):
+        upload_data, error = await API.build_upload_url(org=org, region=region)
+        if error or not upload_data:
+            console.error("Failed to get upload URL")
+            return None
+
+    # Upload context
+    with console.status(
+        f"[dim]Uploading build context ({format_size(len(build_context.tarball))})...[/dim]",
+        spinner="dots",
+    ):
+        success = await upload_to_s3(
+            tarball=build_context.tarball,
+            upload_url=upload_data["uploadUrl"],
+            upload_fields=upload_data["uploadFields"],
+        )
+
+    # Free tarball memory now that upload is done
+    del build_context
+
+    if not success:
+        console.error("Failed to upload build context to cloud storage")
+        return None
+
+    console.print("[green]Upload complete[/green]")
+
+    # Create build
+    with console.status("[dim]Starting build...[/dim]", spinner="dots"):
+        build_result, error = await API.build_create(
+            org=org,
+            upload_id=upload_data["uploadId"],
+            region=region,
+            dockerfile_path=build_config.dockerfile,
+        )
+
+    if error or not build_result:
+        console.error("Failed to start build")
+        return None
+
+    build_data = build_result.get("build", build_result)
+    build_id = build_data.get("id")
+
+    # Check if this was a cache hit on the server side
+    if build_result.get("cached"):
+        console.success(
+            f"[bold white]Build ID:[/bold white] {build_id}\n\n"
+            f"[dim]Server found matching cached build[/dim]",
+            title="Using Cached Build",
+        )
+        return build_id
+
+    console.print(f"[cyan]Build started: {build_id}[/cyan]")
+
+    # Poll for completion
+    last_status = None
+
+    def status_callback(build):
+        nonlocal last_status
+        status = build.get("status", "unknown")
+        if status != last_status:
+            last_status = status
+
+    with console.status(
+        "[dim]Building image (this may take a few minutes)...[/dim]", spinner="bouncingBar"
+    ):
+        success, final_build = await poll_build_status(
+            build_id=build_id,
+            org=org,
+            api_client=API,
+            poll_interval=5.0,
+            max_duration=600.0,
+            status_callback=status_callback,
+        )
+
+    if success:
+        duration = final_build.get("buildDurationSeconds")
+        duration_str = f" ({duration}s)" if duration else ""
+        console.success(
+            f"[bold white]Build ID:[/bold white] {build_id}\n"
+            f"[bold white]Duration:[/bold white] {duration_str.strip('() s') if duration else 'N/A'}",
+            title=f"Build Complete{duration_str}",
+        )
+        return build_id
+    else:
+        error_msg = final_build.get("errorMessage", final_build.get("error", "Unknown error"))
+        console.error(
+            f"Build failed: {error_msg}\n\n"
+            f"[dim]View logs with:[/dim] [bold]pcc build logs {build_id}[/bold]"
+        )
+        return None
+
 
 # ----- Command
 
@@ -341,12 +551,39 @@ def create_deploy_command(app: typer.Typer):
             help="Force deployment / skip confirmation",
             rich_help_panel="Additional Options",
         ),
+        yes: bool = typer.Option(
+            False,
+            "--yes",
+            "-y",
+            help="Automatic yes to all prompts (for CI/CD automation)",
+            rich_help_panel="Additional Options",
+        ),
         no_credentials: bool = typer.Option(
             False,
             "--no-credentials",
             "-nc",
             help="Deployment will not require an image pull secret",
             rich_help_panel="Additional Options",
+        ),
+        build_dir: str = typer.Option(
+            None,
+            "--build-dir",
+            "-d",
+            help="Build context directory (for cloud builds)",
+            rich_help_panel="Cloud Build Options",
+        ),
+        dockerfile: str = typer.Option(
+            None,
+            "--dockerfile",
+            help="Path to Dockerfile (for cloud builds)",
+            rich_help_panel="Cloud Build Options",
+        ),
+        build_id: str = typer.Option(
+            None,
+            "--build-id",
+            "-b",
+            help="Use an existing cloud build ID",
+            rich_help_panel="Cloud Build Options",
         ),
         # @deprecated
         min_instances: int = typer.Option(
@@ -382,6 +619,9 @@ def create_deploy_command(app: typer.Typer):
 
         org = organization or config.get("org")
 
+        # Combine automation flags
+        auto_yes = yes or skip_confirm
+
         # Compose deployment config from CLI options and config file (if provided)
         # Order of precedence:
         #   1. Arguments provided to the CLI deploy command
@@ -403,6 +643,14 @@ def create_deploy_command(app: typer.Typer):
         partial_config.enable_managed_keys = managed_keys or partial_config.enable_managed_keys
         partial_config.agent_profile = profile or partial_config.agent_profile
 
+        # Override build config from CLI args
+        if build_dir:
+            partial_config.build_config.context_dir = build_dir
+        if dockerfile:
+            partial_config.build_config.dockerfile = dockerfile
+        if build_id:
+            partial_config.build_id = build_id
+
         # Handle region - if not specified, API will use org's default region
         deploy_region = region or partial_config.region
         partial_config.region = deploy_region  # Can be None, API will use org default
@@ -419,17 +667,62 @@ def create_deploy_command(app: typer.Typer):
         if krisp_viva_audio_filter is not None:
             partial_config.krisp_viva = KrispVivaConfig(audio_filter=krisp_viva_audio_filter)
 
-        # Assert agent name and image are provided
+        # Assert agent name is provided
         if not partial_config.agent_name:
             console.error("Agent name is required")
             return typer.Exit()
 
-        if not partial_config.image:
-            console.error("Image / repository URL is required")
-            return typer.Exit()
+        # Track if we're using cloud build (either from --build-id or interactive build)
+        using_cloud_build = bool(partial_config.build_id)
+
+        # Handle image: if not provided, offer cloud build
+        if not partial_config.image and not partial_config.build_id:
+            if auto_yes:
+                # CI/CD mode: automatically use cloud build
+                console.print("[cyan]No image specified, using Pipecat Cloud Build...[/cyan]")
+                should_build = True
+            else:
+                # Interactive mode: offer choice
+                console.print(
+                    Panel(
+                        "Pipecat Cloud can build your image automatically.\n\n"
+                        "You can also provide a pre-built image with [bold]--image[/bold] or\n"
+                        "an existing build with [bold]--build-id[/bold] in pcc-deploy.toml.",
+                        title="[yellow]Image Required[/yellow]",
+                        title_align="left",
+                        border_style="yellow",
+                    )
+                )
+                should_build = typer.confirm(
+                    "Would you like to build with Pipecat Cloud?",
+                    default=True,
+                )
+
+            if should_build:
+                build_id = await _cloud_build_flow(
+                    build_config=partial_config.build_config,
+                    region=deploy_region,
+                    org=org,
+                    auto_yes=auto_yes,
+                )
+
+                if not build_id:
+                    return typer.Exit(1)
+
+                partial_config.build_id = build_id
+                using_cloud_build = True
+            else:
+                console.cancel()
+                return typer.Exit()
 
         # Assert credentials are provided if not using --no-credentials / force flag
-        if not no_credentials and not partial_config.image_credentials and not skip_confirm:
+        # Skip this check for cloud builds (they use managed credentials)
+        if (
+            not using_cloud_build
+            and not no_credentials
+            and not partial_config.image_credentials
+            and not auto_yes
+        ):
             console.error(
                 "Deployments require an image pull secret [bold](--credentials)[/bold] to securely pull images from private repositories."
                 "\nPlease provide an image pull secret name or use [bold][--no-credentials][/bold] to deploy without one.",
@@ -460,30 +753,41 @@ def create_deploy_command(app: typer.Typer):
                 f"[green]{props['defaultRegion']}[/green] [dim](organization default)[/dim]"
             )
 
-        content = Group(
-            (f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]"),
-            (f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"),
-            (f"[bold white]Organization:[/bold white] [green]{org}[/green]"),
-            (f"[bold white]Region:[/bold white] {region_display}"),
-            (
-                f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] ' + partial_config.secret_set + '[/green]'}"
-            ),
-            (
+        # Build the image/build display line
+        if using_cloud_build:
+            image_display = (
+                f"[bold white]Cloud Build:[/bold white] [green]{partial_config.build_id}[/green]"
+            )
+        else:
+            image_display = f"[bold white]Image:[/bold white] [green]{partial_config.image}[/green]"
+
+        # Build content items
+        content_items = [
+            f"[bold white]Agent name:[/bold white] [green]{partial_config.agent_name}[/green]",
+            image_display,
+            f"[bold white]Organization:[/bold white] [green]{org}[/green]",
+            f"[bold white]Region:[/bold white] {region_display}",
+            f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] ' + partial_config.secret_set + '[/green]'}",
+        ]
+
+        # Only show image pull secret for non-cloud builds
+        if not using_cloud_build:
+            content_items.append(
                 f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"
-            ),
-            (
-                f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}"
-            ),
-            (
-                f"[bold white]Krisp (deprecated):[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}"
-            ),
-            (
-                f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}"
-            ),
-            (
-                f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}"
-            ),
-            "\n[dim]Scaling configuration:[/dim]",
+            )
+
+        content_items.extend(
+            [
+                f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}",
+                f"[bold white]Krisp (deprecated):[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}",
+                f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}",
+                f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}",
+                "\n[dim]Scaling configuration:[/dim]",
+            ]
+        )
+
+        content = Group(
+            *content_items,
             table,
             *(
                 [
@@ -506,7 +810,7 @@ def create_deploy_command(app: typer.Typer):
             Panel(content, title="Review deployment", title_align="left", border_style="yellow")
         )
 
-        if not skip_confirm and not typer.confirm(
+        if not auto_yes and not typer.confirm(
             "\nDo you want to proceed with deployment?", default=True
         ):
             console.cancel()
@@ -514,6 +818,6 @@ def create_deploy_command(app: typer.Typer):
 
         # Deploy method posts the deployment config to the API
         # and polls the deployment status until it's ready
-        await _deploy(partial_config, org, skip_confirm)
+        await _deploy(partial_config, org, auto_yes)
 
     return deploy

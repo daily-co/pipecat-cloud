@@ -328,7 +328,6 @@ class _API:
         # Create base payload and filter out None values
         payload = {
             "serviceName": deploy_config.agent_name,
-            "image": deploy_config.image,
             "imagePullSecretSet": deploy_config.image_credentials,
             "secretSet": deploy_config.secret_set,
             "region": deploy_config.region,
@@ -343,6 +342,12 @@ class _API:
                 "audioFilter": deploy_config.krisp_viva.audio_filter,
             },
         }
+
+        # Use either build_id (cloud build) or image (user-provided)
+        if deploy_config.build_id:
+            payload["buildId"] = deploy_config.build_id
+        else:
+            payload["image"] = deploy_config.image
 
         # Remove None values recursively
         def remove_none_values(d):
@@ -580,3 +585,121 @@ class _API:
             Updated properties dict
         """
         return self.create_api_method(self._properties_update)
+
+    # Builds
+
+    async def _build_upload_url(self, org: str, region: Optional[str] = None) -> dict:
+        """Get a presigned URL for uploading build context."""
+        url = f"{self.construct_api_url('builds_path').format(org=org)}/upload-url"
+        payload = {}
+        if region:
+            payload["region"] = region
+        return await self._base_request("POST", url, json=payload) or {}
+
+    @property
+    def build_upload_url(self):
+        """Get presigned upload URL for build context.
+        Args:
+            org: Organization ID
+            region: Optional region for the build
+        Returns:
+            Dict with uploadId, uploadUrl, uploadFields, expiresAt
+        """
+        return self.create_api_method(self._build_upload_url)
+
+    async def _build_create(
+        self,
+        org: str,
+        upload_id: str,
+        region: Optional[str] = None,
+        dockerfile_path: str = "Dockerfile",
+    ) -> dict:
+        """Create a new build from uploaded context."""
+        url = self.construct_api_url("builds_path").format(org=org)
+        payload = {
+            "uploadId": upload_id,
+            "dockerfilePath": dockerfile_path,
+        }
+        if region:
+            payload["region"] = region
+        return await self._base_request("POST", url, json=payload) or {}
+
+    @property
+    def build_create(self):
+        """Create a build from uploaded context.
+        Args:
+            org: Organization ID
+            upload_id: ID from upload URL response
+            region: Optional region for the build
+            dockerfile_path: Path to Dockerfile within context
+        Returns:
+            Dict with build, contextHash, cached
+        """
+        return self.create_api_method(self._build_create)
+
+    async def _build_get(self, org: str, build_id: str) -> dict | None:
+        """Get build status by ID."""
+        url = f"{self.construct_api_url('builds_path').format(org=org)}/{build_id}"
+        return await self._base_request("GET", url, not_found_is_empty=True)
+
+    @property
+    def build_get(self):
+        """Get build by ID.
+        Args:
+            org: Organization ID
+            build_id: Build ID to lookup
+        Returns:
+            Dict with build data or None if not found
+        """
+        return self.create_api_method(self._build_get)
+
+    async def _build_list(
+        self,
+        org: str,
+        context_hash: Optional[str] = None,
+        region: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 20,
+    ) -> dict:
+        """List builds with optional filters."""
+        url = self.construct_api_url("builds_path").format(org=org)
+        params = {"limit": limit}
+        if context_hash:
+            params["contextHash"] = context_hash
+        if region:
+            params["region"] = region
+        if status:
+            params["status"] = status
+        return await self._base_request("GET", url, params=params) or {}
+
+    @property
+    def build_list(self):
+        """List builds with filters.
+        Args:
+            org: Organization ID
+            context_hash: Filter by context hash (for cache lookup)
+            region: Filter by region
+            status: Filter by status (pending, building, success, failed, timeout)
+            limit: Max results to return (default 20)
+        Returns:
+            Dict with builds, total, limit, offset
+        """
+        return self.create_api_method(self._build_list)
+
+    async def _build_logs(self, org: str, build_id: str, limit: int = 500) -> dict | None:
+        """Get build logs."""
+        url = f"{self.construct_api_url('builds_path').format(org=org)}/{build_id}/logs"
+        params = {"limit": limit}
+        return await self._base_request("GET", url, params=params, not_found_is_empty=True)
+
+    @property
+    def build_logs(self):
+        """Get logs for a build.
+        Args:
+            org: Organization ID
+            build_id: Build ID
+            limit: Max log lines to return (default 500)
+        Returns:
+            Dict with logs array or None if not found
+        """
+        return self.create_api_method(self._build_logs)
