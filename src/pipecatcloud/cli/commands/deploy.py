@@ -64,6 +64,17 @@ async def _cloud_build_flow(
     Returns:
         build_id on success, None on failure
     """
+    # Resolve region - fetch org default if not explicitly specified
+    if region:
+        region_display = f"[green]{region}[/green]"
+    else:
+        props, error = await API.properties(org)
+        if error:
+            console.error("Failed to fetch organization properties")
+            return None
+        region = props["defaultRegion"]
+        region_display = f"[green]{region}[/green] [dim](organization default)[/dim]"
+
     context_dir = Path(build_config.context_dir).resolve()
     dockerfile_path = context_dir / build_config.dockerfile
 
@@ -76,6 +87,23 @@ async def _cloud_build_flow(
             "  https://github.com/pipecat-ai/pipecat-quickstart"
         )
         return None
+
+    # Show build summary and confirm in interactive mode
+    if not auto_yes:
+        console.print(
+            Panel(
+                f"[bold white]Organization:[/bold white] [green]{org}[/green]\n"
+                f"[bold white]Region:[/bold white] {region_display}\n"
+                f"[bold white]Dockerfile:[/bold white] [green]{build_config.dockerfile}[/green]\n"
+                f"[bold white]Context:[/bold white] [green]{context_dir}[/green]",
+                title="Cloud Build",
+                title_align="left",
+                border_style="cyan",
+            )
+        )
+        if not typer.confirm("Proceed with cloud build?", default=True):
+            console.cancel()
+            return None
 
     # Create deterministic tarball
     console.print("[dim]Creating build context...[/dim]")
