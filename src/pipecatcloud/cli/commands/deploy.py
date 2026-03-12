@@ -238,7 +238,7 @@ async def _cloud_build_flow(
         error_msg = final_build.get("errorMessage", final_build.get("error", "Unknown error"))
         console.error(
             f"Build failed: {error_msg}\n\n"
-            f"[dim]View logs with:[/dim] [bold]pcc build logs {build_id}[/bold]"
+            f"[dim]View logs with:[/dim] [bold]{PIPECAT_CLI_NAME} build logs {build_id}[/bold]"
         )
         return None
 

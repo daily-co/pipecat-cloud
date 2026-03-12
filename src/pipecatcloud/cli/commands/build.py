@@ -20,6 +20,7 @@ from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.build_utils import BuildStatus, format_size
 from pipecatcloud._utils.console_utils import console, format_timestamp
+from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
@@ -90,7 +91,7 @@ async def logs(
         console.print("[dim]No logs available for this build yet[/dim]")
         console.print(
             f"\n[dim]The build may still be starting. "
-            f"Check status with:[/dim] [bold]pcc build status {build_id}[/bold]"
+            f"Check status with:[/dim] [bold]{PIPECAT_CLI_NAME} build status {build_id}[/bold]"
         )
         return
 
@@ -211,11 +212,13 @@ async def status(
 
     # Show helpful commands based on status
     if status_val in (BuildStatus.FAILED, BuildStatus.TIMEOUT):
-        console.print(f"\n[dim]View full logs:[/dim] [bold]pcc build logs {build_id}[/bold]")
+        console.print(
+            f"\n[dim]View full logs:[/dim] [bold]{PIPECAT_CLI_NAME} build logs {build_id}[/bold]"
+        )
     elif status_val in (BuildStatus.PENDING, BuildStatus.BUILDING):
         console.print("\n[dim]Build in progress. Check again or view logs:[/dim]")
-        console.print(f"  [bold]pcc build status {build_id}[/bold]")
-        console.print(f"  [bold]pcc build logs {build_id}[/bold]")
+        console.print(f"  [bold]{PIPECAT_CLI_NAME} build status {build_id}[/bold]")
+        console.print(f"  [bold]{PIPECAT_CLI_NAME} build logs {build_id}[/bold]")
 
 
 @build_cli.command(name="list", help="List recent cloud builds")
@@ -302,4 +305,6 @@ async def list_builds(
         title_extra=showing_text,
     )
 
-    console.print("\n[dim]View build details:[/dim] [bold]pcc build status <build-id>[/bold]")
+    console.print(
+        f"\n[dim]View build details:[/dim] [bold]{PIPECAT_CLI_NAME} build status <build-id>[/bold]"
+    )
