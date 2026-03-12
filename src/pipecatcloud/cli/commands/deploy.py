@@ -672,8 +672,8 @@ def create_deploy_command(app: typer.Typer):
             console.error("Agent name is required")
             return typer.Exit()
 
-        # Track if we're using cloud build
-        using_cloud_build = False
+        # Track if we're using cloud build (either from --build-id or interactive build)
+        using_cloud_build = bool(partial_config.build_id)
 
         # Handle image: if not provided, offer cloud build
         if not partial_config.image and not partial_config.build_id:
