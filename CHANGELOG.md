@@ -5,7 +5,7 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-03-12
 
 ### Added
 
@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `pcc build status <id>` — get detailed status of a build
   - `pcc build logs <id>` — view build logs
 
+### Changed
+
+- The `image` field in `pcc deploy` is now optional when using cloud builds
+- The CLI now uses `desiredDeploymentId` (with fallback to `activeDeploymentId`)
+  and compares it against `reconciledDeploymentId` to determine deployment status.
+
 ### Fixed
 
 - Fixed `deploy` command reporting success prematurely when updating an existing
@@ -28,12 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   readiness, preventing false "ready" status when the operator is slow to process
   the update.
 
-### Changed
-
-- The `image` field in `pcc deploy` is now optional when using cloud builds
-- The CLI now uses `desiredDeploymentId` (with fallback to `activeDeploymentId`)
-  and compares it against `reconciledDeploymentId` to determine deployment status.
-
 ## [0.2.20] - 2026-02-11
 
 ### Fixed
@@ -41,7 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `auth login --headless` to be fully non-interactive by using plain text
   output instead of Rich terminal widgets, enabling use in environments like
   Claude Code and CI/CD pipelines.
-
 
 ## [0.2.19] - 2026-01-27
 
@@ -98,7 +97,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added `pcc organizations properties` commands for managing organization-level
   configuration:
-
   - `properties list` - Display current property values
   - `properties set <name> <value>` - Update a property value
   - `properties schema` - Show available properties with metadata and allowed
@@ -283,13 +281,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Relaxed the package requirements for `python-dotenv` and `uvicorn` to make it
   easier to work with Pipecat Cloud. The new supported versions are:
-
   - `"python-dotenv>=1.0.1,<2.0.0"`
   - `"uvicorn>=0.32.0,<1.0.0"`
 
 - Updated all types to inherit from `RunnerArguments` to align the types with
   the Pipecat development runner types. This adds types:
-
   - `handle_sigint`
   - `handle_sigterm`
   - `pipeline_idle_timeout_secs`
