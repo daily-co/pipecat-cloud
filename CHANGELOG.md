@@ -5,6 +5,14 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added `.github`, `.claude`, `pcc-deploy.toml`, `.ipynb_checkpoints`, and
+  `.cache` to default cloud build context exclusions to reduce upload size and
+  avoid including non-runtime files in container images.
+
 ## [0.3.0] - 2026-03-12
 
 ### Added
