@@ -26,7 +26,6 @@ from typing import Callable, List, Optional, Set, Tuple
 import aiohttp
 from loguru import logger
 
-
 # Default patterns to exclude from build context
 DEFAULT_EXCLUSIONS: Set[str] = {
     # Version control
@@ -68,8 +67,22 @@ DEFAULT_EXCLUSIONS: Set[str] = {
     "dist",
     "build",
     "*.egg-info",
+    "*.egg",
+    ".eggs",
     # Node (if present)
     "node_modules",
+    # CI/CD
+    ".github",
+    # AI tools
+    ".claude",
+    ".codex",
+    ".cursor",
+    # Pipecat config
+    "pcc-deploy.toml",
+    # Jupyter
+    ".ipynb_checkpoints",
+    # Caches
+    ".cache",
     # Misc
     ".DS_Store",
     "Thumbs.db",
