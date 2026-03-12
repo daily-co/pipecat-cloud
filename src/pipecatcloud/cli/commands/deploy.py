@@ -657,11 +657,9 @@ def create_deploy_command(app: typer.Typer):
                 # Interactive mode: offer choice
                 console.print(
                     Panel(
-                        "No Docker image specified for deployment.\n\n"
-                        "You can either:\n"
-                        "  [bold]1.[/bold] Build with Pipecat Cloud (recommended)\n"
-                        "  [bold]2.[/bold] Specify an image with [bold]--image[/bold] or in pcc-deploy.toml\n"
-                        "  [bold]3.[/bold] Use an existing build with [bold]--build-id[/bold] or in pcc-deploy.toml",
+                        "Pipecat Cloud can build your image automatically.\n\n"
+                        "You can also provide a pre-built image with [bold]--image[/bold] or\n"
+                        "an existing build with [bold]--build-id[/bold] in pcc-deploy.toml.",
                         title="[yellow]Image Required[/yellow]",
                         title_align="left",
                         border_style="yellow",
