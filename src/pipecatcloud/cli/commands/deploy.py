@@ -712,7 +712,7 @@ def create_deploy_command(app: typer.Typer):
                 partial_config.build_id = build_id
                 using_cloud_build = True
             else:
-                console.error("Image is required for deployment")
+                console.cancel()
                 return typer.Exit()
 
         # Assert credentials are provided if not using --no-credentials / force flag
