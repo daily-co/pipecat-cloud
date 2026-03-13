@@ -6,7 +6,7 @@
 
 import os
 import stat
-import warnings
+import sys
 from typing import Optional
 
 import toml
@@ -50,17 +50,25 @@ def _read_user_config():
             if not all(isinstance(e, dict) for e in org_sections.values()):
                 config_problem = "Pipecat Cloud config file is not valid TOML. Organization sections must be dictionaries. Please log out and log back in."
 
-            # Warn if credentials file is readable by group or others (Unix only).
+            # Repair credentials file if readable by group or others (Unix only).
             if os.name != "nt":
                 file_mode = os.stat(user_config_path).st_mode
                 if file_mode & (stat.S_IRWXG | stat.S_IRWXO):
-                    warnings.warn(
-                        f"Credentials file '{user_config_path}' has overly permissive "
-                        f"permissions ({stat.filemode(file_mode)}). Other users on this "
-                        f"system may be able to read your token. Run "
-                        f"'chmod 600 {user_config_path}' to fix, or login again to repair automatically.",
-                        stacklevel=2,
-                    )
+                    try:
+                        os.chmod(user_config_path, stat.S_IRUSR | stat.S_IWUSR)
+                        print(
+                            f"Warning: Credentials file '{user_config_path}' had overly "
+                            f"permissive permissions ({stat.filemode(file_mode)}). "
+                            f"Permissions have been repaired to 600.",
+                            file=sys.stderr,
+                        )
+                    except OSError:
+                        config_problem = (
+                            f"Credentials file '{user_config_path}' has overly permissive "
+                            f"permissions ({stat.filemode(file_mode)}) and could not be "
+                            f"repaired. Your token may be compromised. Please run "
+                            f"'chmod 600 {user_config_path}' or login again."
+                        )
         if config_problem:
             raise ConfigError(config_problem)
 
