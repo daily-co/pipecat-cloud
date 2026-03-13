@@ -138,9 +138,9 @@ class TestProgressingAvailable:
         # Multi-line: headline + current + previous
         lines = status.status_message.split("\n")
         assert len(lines) == 3
-        assert "42 replicas" in lines[1]
+        assert "42 agents" in lines[1]
         assert "Validating" in lines[1]
-        assert "84 replicas" in lines[2]
+        assert "84 agents" in lines[2]
         assert "Draining" in lines[2]
         assert status.current_revision["readyReplicas"] == 42
         assert status.previous_revision["phase"] == "Draining"
@@ -167,7 +167,7 @@ class TestProgressingNew:
         assert not status.is_ready
         assert "Progressing" in status.status_message
 
-    def test_not_available_progressing_with_replicas(self):
+    def test_not_available_progressing_with_agents(self):
         status = interpret_deployment_status(
             {
                 "desiredDeploymentId": "deploy-1",
@@ -188,7 +188,7 @@ class TestProgressingNew:
         assert status.phase == DeploymentPhase.PROGRESSING_NEW
         lines = status.status_message.split("\n")
         assert len(lines) == 2
-        assert "3 replicas" in lines[1]
+        assert "3 agents" in lines[1]
         assert "Creating" in lines[1]
 
 
@@ -311,9 +311,9 @@ class TestBackwardCompatibility:
         )
         assert status.phase == DeploymentPhase.PROGRESSING_AVAILABLE
         assert status.current_revision is None
-        # No revision info → single line, no "replicas"
+        # No revision info → single line, no "agents"
         assert "\n" not in status.status_message
-        assert "replicas" not in status.status_message
+        assert "agents" not in status.status_message
 
     def test_legacy_ready_field_only(self):
         """Very old API that only has 'ready' field."""
@@ -353,7 +353,7 @@ class TestRevisionLines:
         )
         assert "73071caf" in line
         assert "Validating" in line
-        assert "42 replicas" in line
+        assert "42 agents" in line
 
     def test_previous_revision_line_format(self):
         line = _format_revision_line(
@@ -366,7 +366,7 @@ class TestRevisionLines:
         )
         assert "15122a6b" in line
         assert "Draining" in line
-        assert "68 replicas" in line
+        assert "68 agents" in line
 
     def test_revision_line_with_elapsed_time(self):
         from datetime import datetime, timezone
@@ -382,11 +382,11 @@ class TestRevisionLines:
             },
         )
         assert "Validating" in line
-        assert "10 replicas" in line
+        assert "10 agents" in line
         # Should have a time component (0s or 1s)
         assert "s" in line
 
-    def test_revision_line_without_replicas(self):
+    def test_revision_line_without_agents(self):
         """Revision with no readyReplicas field should omit replica count."""
         line = _format_revision_line(
             "Current ",
@@ -396,7 +396,7 @@ class TestRevisionLines:
             },
         )
         assert "Creating" in line
-        assert "replicas" not in line
+        assert "agents" not in line
 
     def test_multi_line_message_with_both_revisions(self):
         status = interpret_deployment_status(
@@ -426,11 +426,11 @@ class TestRevisionLines:
         # Line 1: current revision (deploymentID truncated to 8 chars)
         assert "Current" in lines[1]
         assert "deploy-2" in lines[1]
-        assert "42 replicas" in lines[1]
+        assert "42 agents" in lines[1]
         # Line 2: previous revision
         assert "Previous" in lines[2]
         assert "deploy-1" in lines[2]
-        assert "68 replicas" in lines[2]
+        assert "68 agents" in lines[2]
 
     def test_single_line_when_no_revisions(self):
         """Without revision data, message stays single-line."""

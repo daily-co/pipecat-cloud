@@ -296,7 +296,7 @@ async def status(
 
             current_parts = [f"  Current  [bold]({rev_id})[/bold] {rev_phase}"]
             if rev_replicas is not None:
-                current_parts.append(f"[dim]·[/dim] {rev_replicas} replicas")
+                current_parts.append(f"[dim]·[/dim] {rev_replicas} agents")
             health_lines.append(" ".join(current_parts))
 
             if previous_rev:
@@ -305,7 +305,7 @@ async def status(
                 prev_replicas = previous_rev.get("readyReplicas")
                 prev_parts = [f"  Previous [bold]({prev_id})[/bold] {prev_phase}"]
                 if prev_replicas is not None:
-                    prev_parts.append(f"[dim]·[/dim] {prev_replicas} replicas")
+                    prev_parts.append(f"[dim]·[/dim] {prev_replicas} agents")
                 health_lines.append(" ".join(prev_parts))
 
             health_content = "\n".join(health_lines)

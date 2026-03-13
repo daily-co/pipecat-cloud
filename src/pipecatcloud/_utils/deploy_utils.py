@@ -79,7 +79,7 @@ def _format_revision_line(label: str, rev: dict) -> str:
 
     parts = [f"    [dim]{label}[/dim] [bold]({deploy_id})[/bold] {phase}"]
     if ready_replicas is not None:
-        parts.append(f"[dim]·[/dim] {ready_replicas} replicas")
+        parts.append(f"[dim]·[/dim] {ready_replicas} agents")
 
     elapsed = _format_elapsed(rev.get("phaseStartedAt"))
     if elapsed:
