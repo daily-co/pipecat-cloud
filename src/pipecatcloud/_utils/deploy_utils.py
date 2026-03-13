@@ -6,6 +6,8 @@
 
 import functools
 import os
+from datetime import datetime, timezone
+from enum import Enum
 from typing import Callable, List, Optional
 
 import toml
@@ -20,6 +22,184 @@ DEPLOY_STATUS_MAP = {
     "True": "[green]Ready[/green]",
     "False": "[yellow]Creating[/yellow]",
 }
+
+
+class DeploymentPhase(Enum):
+    WAITING_FOR_OPERATOR = "waiting_for_operator"
+    PROGRESSING_AVAILABLE = "progressing_available"
+    PROGRESSING_NEW = "progressing_new"
+    DEGRADED_AVAILABLE = "degraded_available"
+    UNAVAILABLE = "unavailable"
+    READY = "ready"
+
+
+@dataclass
+class DeploymentStatus:
+    phase: DeploymentPhase
+    status_message: str
+    is_available: bool = False
+    is_ready: bool = False
+    degraded_reason: Optional[str] = None
+    current_revision: Optional[dict] = None
+    previous_revision: Optional[dict] = None
+
+
+def _find_condition(conditions: list, condition_type: str) -> Optional[dict]:
+    """Find a condition by type from the conditions array."""
+    for c in conditions:
+        if c.get("type") == condition_type:
+            return c
+    return None
+
+
+def _format_elapsed(phase_started_at: Optional[str]) -> str:
+    """Format elapsed time since phaseStartedAt as a human-readable string."""
+    if not phase_started_at:
+        return ""
+    try:
+        started = datetime.fromisoformat(phase_started_at.replace("Z", "+00:00"))
+        elapsed = datetime.now(timezone.utc) - started
+        total_seconds = int(elapsed.total_seconds())
+        if total_seconds < 0:
+            return ""
+        if total_seconds < 60:
+            return f"{total_seconds}s"
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        return f"{minutes}m {seconds}s"
+    except (ValueError, TypeError):
+        return ""
+
+
+def _format_revision_line(label: str, rev: dict) -> str:
+    """Format a single revision as an indented detail line."""
+    deploy_id = rev.get("deploymentID", "unknown")[:8]
+    phase = rev.get("phase", "Unknown")
+    ready_replicas = rev.get("readyReplicas")
+
+    parts = [f"    [dim]{label}[/dim] [bold]({deploy_id})[/bold] {phase}"]
+    if ready_replicas is not None:
+        parts.append(f"[dim]·[/dim] {ready_replicas} agents")
+
+    elapsed = _format_elapsed(rev.get("phaseStartedAt"))
+    if elapsed:
+        parts.append(f"[dim]·[/dim] [dim]{elapsed}[/dim]")
+
+    return " ".join(parts)
+
+
+def _build_status_message(headline: str, current_rev=None, previous_rev=None) -> str:
+    """Build a multi-line status message with optional revision detail lines."""
+    lines = [headline]
+    if current_rev:
+        lines.append(_format_revision_line("Current ", current_rev))
+    if previous_rev:
+        lines.append(_format_revision_line("Previous", previous_rev))
+    return "\n".join(lines)
+
+
+def interpret_deployment_status(
+    agent_status: dict,
+    desired_deployment_id: Optional[str] = None,
+) -> DeploymentStatus:
+    """Interpret the raw API response into a structured deployment status.
+
+    Examines reconciledDeploymentId, conditions array, available/ready booleans,
+    and revision info to determine the current deployment phase and build a
+    human-readable status message.
+    """
+    reconciled_id = agent_status.get("reconciledDeploymentId")
+    desired_id = desired_deployment_id or agent_status.get(
+        "desiredDeploymentId", agent_status.get("activeDeploymentId")
+    )
+    conditions = agent_status.get("conditions") or []
+    available = agent_status.get("available", agent_status.get("ready", False))
+    ready = agent_status.get("ready", False)
+    active_deployment_ready = agent_status.get("activeDeploymentReady", False)
+
+    current_rev = agent_status.get("currentRevision")
+    previous_rev = agent_status.get("previousRevision")
+
+    # 1. Check if operator has reconciled
+    if desired_id and reconciled_id != desired_id:
+        return DeploymentStatus(
+            phase=DeploymentPhase.WAITING_FOR_OPERATOR,
+            status_message="[dim]Waiting for operator to process deployment...[/dim]",
+            current_revision=current_rev,
+            previous_revision=previous_rev,
+        )
+
+    # 2. Fully ready
+    if available and (ready or active_deployment_ready):
+        return DeploymentStatus(
+            phase=DeploymentPhase.READY,
+            status_message="[green]Deployment is ready[/green]",
+            is_available=True,
+            is_ready=True,
+            current_revision=current_rev,
+            previous_revision=previous_rev,
+        )
+
+    # 3. Look at conditions for richer status
+    degraded = _find_condition(conditions, "Degraded")
+    progressing = _find_condition(conditions, "Progressing")
+
+    degraded_active = degraded and degraded.get("status") == "True"
+    degraded_reason = (
+        degraded.get("message", degraded.get("reason", "")) if degraded_active else None
+    )
+
+    # 4. Degraded but available — warning state
+    if degraded_active and available:
+        headline = f"[yellow]Degraded · Available[/yellow] [dim]— {degraded_reason}[/dim]"
+        return DeploymentStatus(
+            phase=DeploymentPhase.DEGRADED_AVAILABLE,
+            status_message=_build_status_message(headline, current_rev, previous_rev),
+            is_available=True,
+            degraded_reason=degraded_reason,
+            current_revision=current_rev,
+            previous_revision=previous_rev,
+        )
+
+    # 5. Available but not ready — rolling update in progress
+    if available and not ready:
+        headline = "[cyan]Progressing · Available[/cyan]"
+        return DeploymentStatus(
+            phase=DeploymentPhase.PROGRESSING_AVAILABLE,
+            status_message=_build_status_message(headline, current_rev, previous_rev),
+            is_available=True,
+            current_revision=current_rev,
+            previous_revision=previous_rev,
+        )
+
+    # 6. Not available, progressing — new service coming up
+    if not available and (progressing and progressing.get("status") == "True"):
+        headline = "[dim]Progressing[/dim]"
+        return DeploymentStatus(
+            phase=DeploymentPhase.PROGRESSING_NEW,
+            status_message=_build_status_message(headline, current_rev, previous_rev),
+            current_revision=current_rev,
+            previous_revision=previous_rev,
+        )
+
+    # 7. Not available, not progressing — broken
+    if not available and not ready:
+        reason_suffix = f" [dim]— {degraded_reason}[/dim]" if degraded_reason else ""
+        headline = f"[red]Unavailable[/red]{reason_suffix}"
+        return DeploymentStatus(
+            phase=DeploymentPhase.UNAVAILABLE,
+            status_message=_build_status_message(headline, current_rev, previous_rev),
+            current_revision=current_rev,
+            previous_revision=previous_rev,
+        )
+
+    # Fallback — shouldn't normally reach here
+    return DeploymentStatus(
+        phase=DeploymentPhase.PROGRESSING_NEW,
+        status_message="[dim]Waiting for deployment to become ready...[/dim]",
+        current_revision=current_rev,
+        previous_revision=previous_rev,
+    )
 
 
 @dataclass

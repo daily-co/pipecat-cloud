@@ -5,13 +5,33 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.1] - 2026-03-13
 
 ### Added
 
 - Added `.github`, `.claude`, `pcc-deploy.toml`, `.ipynb_checkpoints`, and
   `.cache` to default cloud build context exclusions to reduce upload size and
   avoid including non-runtime files in container images.
+
+### Changed
+
+- Increased deploy polling timeout from 90 seconds to 10 minutes to support
+  large deployments with big images, high replica counts, and cross-region pulls.
+
+- Deploy polling now shows rich, multi-line status using API conditions and
+  revision info instead of a static "Waiting for deployment to become ready..."
+  message. The headline shows condition state (e.g. "Progressing · Available"),
+  with per-revision detail lines showing phase, replica counts, and elapsed time
+  for both current and previous deployments during rolling updates.
+
+- Deploy timeout now differentiates exit behavior: services that are available
+  and serving traffic show a soft warning instead of a hard error, with guidance
+  to check status. Hard errors are reserved for services that are truly
+  unavailable.
+
+- `agent status` now shows per-revision details (phase, deployment ID, replica
+  counts) in the health panel when the API provides revision info, replacing the
+  binary "Health: Ready/Stopped" display.
 
 ## [0.3.0] - 2026-03-12
 
@@ -23,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `pcc deploy --build-id <id>` to reuse an existing build
   - `pcc deploy --yes` for non-interactive CI/CD usage
   - `[build]` section in `pcc-deploy.toml` for build configuration
+
 - New `pcc build` command group for managing cloud builds:
   - `pcc build list` — list recent builds with status and region filtering
   - `pcc build status <id>` — get detailed status of a build
@@ -31,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The `image` field in `pcc deploy` is now optional when using cloud builds
+
 - The CLI now uses `desiredDeploymentId` (with fallback to `activeDeploymentId`)
   and compares it against `reconciledDeploymentId` to determine deployment status.
 
