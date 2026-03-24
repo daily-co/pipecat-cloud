@@ -24,6 +24,7 @@ _SETTINGS = {
     "onboarding_path": _Setting("/v1/onboarding"),
     "login_path": _Setting("/auth/login"),
     "login_status_path": _Setting("/auth/status"),
+    "logout_path": _Setting("/auth/logout"),
     "whoami_path": _Setting("/v1/users"),
     "organization_path": _Setting("/v1/organizations"),
     "daily_key_path": _Setting("/v1/organizations/{org}/daily"),

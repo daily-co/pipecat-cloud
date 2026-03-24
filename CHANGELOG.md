@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- **OAuth2 authentication**: `pcc auth login` now uses industry-standard
+  OAuth2 Authorization Code + PKCE, replacing the custom device-code flow.
+  Tokens auto-refresh transparently — no more "please run `pcc auth login`"
+  interruptions.
+
+- `pcc auth logout` now revokes tokens server-side. Previously, logout only
+  deleted local credentials and the token remained valid until expiry.
+
+- `pcc auth whoami` now displays the user's email address instead of the
+  internal user ID.
+
 ### Fixed
 
 - Credentials file with overly permissive permissions is now automatically

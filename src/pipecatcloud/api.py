@@ -5,6 +5,7 @@
 #
 
 import json
+import time
 from functools import wraps
 from typing import Callable, List, Optional, Union
 
@@ -52,6 +53,55 @@ class _API:
             return {}
         return {"Authorization": f"Bearer {override_token or self.token}"}
 
+    def _is_token_expired(self) -> bool:
+        """Check if the current OAuth token is near expiry.
+
+        Returns False for non-OAuth tokens (no token_expires_at stored),
+        preserving backward compatibility with the old device-code flow.
+        """
+        from pipecatcloud.cli.config import config as cli_config
+
+        expires_at = cli_config.get("token_expires_at")
+        if expires_at is None:
+            return False
+        # Refresh 60 seconds before actual expiry to avoid race conditions
+        return time.time() > (float(expires_at) - 60)
+
+    async def _refresh_oauth_token(self) -> Optional[str]:
+        """Refresh the OAuth access token using the stored refresh token.
+
+        Updates both the on-disk config and the in-memory token on this API
+        instance. Returns the new access token, or None if refresh failed
+        (in which case the request will proceed with the expired token and
+        the server will return 401, prompting re-login).
+        """
+        from pipecatcloud.cli.config import config as cli_config, update_user_config
+
+        # Inline import: auth.py → cli/api.py → api.py creates a circular
+        # dependency at module load time. Importing here (at call time)
+        # breaks the cycle.
+        from pipecatcloud.cli.commands.auth import refresh_access_token
+
+        refresh_token = cli_config.get("refresh_token")
+        if not refresh_token:
+            return None
+
+        tokens = await refresh_access_token(refresh_token)
+        if not tokens:
+            return None
+
+        new_token = tokens["access_token"]
+        new_refresh = tokens.get("refresh_token", refresh_token)
+        expires_at = time.time() + tokens.get("expires_in", 86400)
+
+        update_user_config(
+            token=new_token,
+            refresh_token=new_refresh,
+            token_expires_at=expires_at,
+        )
+        self.token = new_token
+        return new_token
+
     async def _base_request(
         self,
         method: str,
@@ -61,6 +111,15 @@ class _API:
         not_found_is_empty: bool = False,
         override_token: Optional[str] = None,
     ) -> Optional[dict]:
+        # Auto-refresh expired OAuth tokens before making the request.
+        # Only runs for CLI usage (self.is_cli) and only when an OAuth
+        # refresh_token is stored (token_expires_at is set). Old device-code
+        # tokens are unaffected since _is_token_expired() returns False.
+        if self.is_cli and not override_token and self._is_token_expired():
+            new_token = await self._refresh_oauth_token()
+            if new_token is None:
+                logger.debug("Token refresh failed, proceeding with expired token")
+
         async with aiohttp.ClientSession() as session:
             logger.debug(f"Request: {method} {url} {params} {json}")
 
