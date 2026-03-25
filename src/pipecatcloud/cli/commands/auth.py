@@ -12,7 +12,7 @@ import secrets
 import time
 import urllib.parse
 import webbrowser
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import aiohttp
 import typer
@@ -33,18 +33,46 @@ from pipecatcloud.cli.config import (
 
 auth_cli = typer.Typer(name="auth", help="Manage Pipecat Cloud credentials", no_args_is_help=True)
 
-# Clerk OAuth configuration (PCC-675).
-# Uses Authorization Code + PKCE — the industry-standard flow for CLI tools.
-# The client_id is public per OAuth2 spec — safe to embed in client code.
-CLERK_DOMAIN = "https://tender-lamb-14.clerk.accounts.dev"
-CLERK_CLIENT_ID = "adc5vUqrz4E9pYg1"
-REDIRECT_URI = "http://localhost:8080/oauth_callback"
-SCOPES = "openid profile email offline_access"
 # Cloudflare blocks requests with default Python user-agent strings (error 1010).
 USER_AGENT = "PipecatCloudCLI/1.0"
 
-AUTHORIZE_URL = f"{CLERK_DOMAIN}/oauth/authorize"
-TOKEN_URL = f"{CLERK_DOMAIN}/oauth/token"
+# Ports to try for the localhost OAuth callback server.
+# Our audience is developers who may have services running on common ports.
+# We try a range and use the first available.
+CALLBACK_PORTS = [8400, 8401, 8402, 8403, 8404]
+CALLBACK_PATH = "/oauth_callback"
+
+
+async def _fetch_oauth_config() -> dict:
+    """Fetch OAuth configuration from the API server's discovery endpoint.
+
+    The CLI doesn't hardcode any Clerk-specific values — it discovers them
+    from the API server, which may differ between staging and production.
+    The API server is the single source of truth (PCC-699).
+    """
+    config_url = f"{API.construct_api_url('auth_config_path')}"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(config_url, headers={"User-Agent": USER_AGENT}) as resp:
+            if resp.status != 200:
+                raise RuntimeError(
+                    f"Failed to fetch auth configuration ({resp.status}). "
+                    "Is the API server reachable?"
+                )
+            return await resp.json()
+
+
+async def _fetch_oidc_discovery(issuer: str) -> dict:
+    """Fetch OIDC discovery document from the OAuth issuer (RFC 8414).
+
+    This gives us the authorization and token endpoints without
+    hardcoding any provider-specific URLs.
+    """
+    url = f"{issuer}/.well-known/openid-configuration"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers={"User-Agent": USER_AGENT}) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"OIDC discovery failed ({resp.status}) at {url}")
+            return await resp.json()
 
 
 # ---- Helpers ----
@@ -115,16 +143,17 @@ def _generate_code_challenge(verifier: str) -> str:
 # ---- Localhost callback server ----
 
 
-async def _wait_for_auth_code(timeout: float = 120.0) -> Tuple[Optional[str], Optional[str]]:
-    """Start a localhost HTTP server and wait for the OAuth callback.
+async def _start_callback_server() -> Tuple[Any, int, "asyncio.Future"]:
+    """Start a localhost HTTP server for the OAuth callback.
 
-    Returns (auth_code, state) or (None, None) on timeout/error.
+    Tries ports from CALLBACK_PORTS in order, using the first available.
+    Returns (runner, port, result_future).
     """
+    from aiohttp import web
+
     result_future: asyncio.Future[Tuple[Optional[str], Optional[str]]] = (
         asyncio.get_event_loop().create_future()
     )
-
-    from aiohttp import web
 
     async def handle_callback(request: web.Request) -> web.Response:
         code = request.query.get("code")
@@ -148,41 +177,43 @@ async def _wait_for_auth_code(timeout: float = 120.0) -> Tuple[Optional[str], Op
         )
 
     app = web.Application()
-    app.router.add_get("/oauth_callback", handle_callback)
+    app.router.add_get(CALLBACK_PATH, handle_callback)
 
     runner = web.AppRunner(app)
     await runner.setup()
-    try:
-        site = web.TCPSite(runner, "localhost", 8080)
-        await site.start()
-    except OSError as e:
-        await runner.cleanup()
-        raise RuntimeError(
-            f"Could not start local auth server on port 8080: {e}. "
-            "Is another process using that port?"
-        ) from e
 
-    try:
-        return await asyncio.wait_for(result_future, timeout=timeout)
-    except asyncio.TimeoutError:
-        return None, None
-    finally:
-        await runner.cleanup()
+    # Try each port in order. Developers often have services on common ports,
+    # so we use a less-common range and try multiple.
+    for port in CALLBACK_PORTS:
+        try:
+            site = web.TCPSite(runner, "localhost", port)
+            await site.start()
+            return runner, port, result_future
+        except OSError:
+            continue
+
+    await runner.cleanup()
+    raise RuntimeError(
+        f"Could not start local auth server on any port ({CALLBACK_PORTS[0]}-{CALLBACK_PORTS[-1]}). "
+        "Are these ports all in use?"
+    )
 
 
 # ---- Token exchange & refresh ----
 
 
-async def _exchange_code(code: str, code_verifier: str) -> dict:
-    """Exchange an authorization code for tokens at Clerk's token endpoint."""
+async def _exchange_code(
+    token_url: str, client_id: str, code: str, code_verifier: str, redirect_uri: str
+) -> dict:
+    """Exchange an authorization code for tokens at the OAuth token endpoint."""
     async with aiohttp.ClientSession() as session:
         async with session.post(
-            TOKEN_URL,
+            token_url,
             data={
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": REDIRECT_URI,
-                "client_id": CLERK_CLIENT_ID,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
                 "code_verifier": code_verifier,
             },
             headers={"User-Agent": USER_AGENT},
@@ -197,15 +228,26 @@ async def refresh_access_token(refresh_token: str) -> Optional[dict]:
     """Refresh an OAuth access token. Returns new token dict or None on failure.
 
     Called by the API client when it detects an expired token.
+    Fetches OAuth config from the discovery endpoint to get the token URL
+    and client ID — no hardcoded values.
     """
+    try:
+        oauth_config = await _fetch_oauth_config()
+        oidc = await _fetch_oidc_discovery(oauth_config["issuer"])
+        token_url = oidc["token_endpoint"]
+        client_id = oauth_config["client_id"]
+    except Exception as e:
+        logger.debug(f"Token refresh config fetch failed: {e}")
+        return None
+
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(
-                TOKEN_URL,
+                token_url,
                 data={
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
-                    "client_id": CLERK_CLIENT_ID,
+                    "client_id": client_id,
                 },
                 headers={"User-Agent": USER_AGENT},
             ) as resp:
@@ -226,60 +268,83 @@ async def refresh_access_token(refresh_token: str) -> Optional[dict]:
 async def login():
     active_org = config.get("org")
 
-    # Generate PKCE verifier + challenge
-    code_verifier = _generate_code_verifier()
-    code_challenge = _generate_code_challenge(code_verifier)
-    state = secrets.token_urlsafe(32)
-
-    # Build authorization URL
-    params = urllib.parse.urlencode(
-        {
-            "response_type": "code",
-            "client_id": CLERK_CLIENT_ID,
-            "redirect_uri": REDIRECT_URI,
-            "scope": SCOPES,
-            "code_challenge": code_challenge,
-            "code_challenge_method": "S256",
-            "state": state,
-        }
-    )
-    authorize_url = f"{AUTHORIZE_URL}?{params}"
-
-    # Start callback server + open browser
-    console.print("[dim]Opening browser for authentication...[/dim]")
-    callback_task = asyncio.ensure_future(_wait_for_auth_code())
-
-    if not _open_url(authorize_url):
-        console.print(
-            f"\nOpen this URL in your browser to authenticate:\n[blue]{authorize_url}[/blue]\n"
-        )
-
-    # Wait for callback
+    # Discover OAuth config from the API server — no hardcoded provider values.
     try:
-        auth_code, returned_state = await callback_task
+        oauth_config = await _fetch_oauth_config()
+        oidc = await _fetch_oidc_discovery(oauth_config["issuer"])
+    except Exception as e:
+        console.error(f"Failed to fetch authentication configuration: {e}")
+        return
+
+    authorize_url_base = oidc["authorization_endpoint"]
+    token_url = oidc["token_endpoint"]
+    client_id = oauth_config["client_id"]
+    scopes = oauth_config["scopes"]
+
+    # Start callback server on the first available port.
+    try:
+        runner, port, result_future = await _start_callback_server()
     except RuntimeError as e:
         console.error(str(e))
         return
-    except Exception as e:
-        logger.debug(e)
-        console.error("Authentication failed. Please try again.")
-        return
 
-    if not auth_code:
-        console.error("Authentication timed out or was cancelled.")
-        return
+    redirect_uri = f"http://localhost:{port}{CALLBACK_PATH}"
 
-    # Verify state to prevent CSRF
-    if returned_state != state:
-        console.error("Authentication failed: state mismatch (possible CSRF attack).")
-        return
-
-    # Exchange code for tokens
     try:
-        tokens = await _exchange_code(auth_code, code_verifier)
-    except RuntimeError as e:
-        console.error(f"Token exchange failed: {e}")
-        return
+        # Generate PKCE verifier + challenge
+        code_verifier = _generate_code_verifier()
+        code_challenge = _generate_code_challenge(code_verifier)
+        state = secrets.token_urlsafe(32)
+
+        # Build authorization URL
+        params = urllib.parse.urlencode(
+            {
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "scope": scopes,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+                "state": state,
+            }
+        )
+        authorize_url = f"{authorize_url_base}?{params}"
+
+        # Open browser
+        console.print("[dim]Opening browser for authentication...[/dim]")
+
+        if not _open_url(authorize_url):
+            console.print(
+                f"\nOpen this URL in your browser to authenticate:\n[blue]{authorize_url}[/blue]\n"
+            )
+
+        # Wait for callback
+        try:
+            auth_code, returned_state = await asyncio.wait_for(result_future, timeout=120.0)
+        except asyncio.TimeoutError:
+            console.error("Authentication timed out.")
+            return
+
+        if not auth_code:
+            console.error("Authentication was cancelled or failed.")
+            return
+
+        # Verify state to prevent CSRF
+        if returned_state != state:
+            console.error("Authentication failed: state mismatch (possible CSRF attack).")
+            return
+
+        # Exchange code for tokens
+        try:
+            tokens = await _exchange_code(
+                token_url, client_id, auth_code, code_verifier, redirect_uri
+            )
+        except RuntimeError as e:
+            console.error(f"Token exchange failed: {e}")
+            return
+
+    finally:
+        await runner.cleanup()
 
     access_token = tokens["access_token"]
     refresh_token = tokens.get("refresh_token")
