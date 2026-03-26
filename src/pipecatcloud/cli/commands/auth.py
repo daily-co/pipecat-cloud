@@ -152,18 +152,18 @@ def _callback_page(title: str, message: str, success: bool = True) -> str:
     logo_svg = (
         '<svg width="48" height="29" viewBox="0 0 158 96" fill="none" xmlns="http://www.w3.org/2000/svg">'
         '<path d="M15.97 28.56c1.63-.62 3.47-.15 4.62 1.16l14.97 17.12h44.7l14.97-17.12c1.15-1.31 2.99-1.78 4.62-1.16'
-        ' 1.63.62 2.71 2.18 2.71 3.93v37.8h13.26v8.4H94.2V43.65l-8.89 10.17c-.8.91-1.94 1.43-3.15 1.43H33.67'
+        " 1.63.62 2.71 2.18 2.71 3.93v37.8h13.26v8.4H94.2V43.65l-8.89 10.17c-.8.91-1.94 1.43-3.15 1.43H33.67"
         'c-1.2 0-2.35-.52-3.15-1.43l-8.89-10.17v35.05H0v-8.4h13.26V32.49c0-1.75 1.08-3.31 2.71-3.93Z" fill="#e5e5e5"/>'
         '<path d="M94.2 87.1h21.63v8.4H94.2v-8.4Z" fill="#e5e5e5"/>'
         '<path d="M0 87.1h21.63v8.4H0v-8.4Z" fill="#e5e5e5"/>'
         '<path d="M44.66 73.1a5.58 5.58 0 1 1-11.16 0 5.58 5.58 0 0 1 11.16 0Z" fill="#e5e5e5"/>'
         '<path d="M82.34 73.1a5.58 5.58 0 1 1-11.17 0 5.58 5.58 0 0 1 11.17 0Z" fill="#e5e5e5"/>'
         '<path fill-rule="evenodd" clip-rule="evenodd" d="M81.03 10.18c-10.3 3.39-17.9 11.85-20.04 22.13l-.93 4.49'
-        '-4.37-1.42c-6.03-1.96-12.45-.88-17.48 3.41l-5.35-6.23c6.13-5.24 13.77-7.17 21.17-5.99 3.74-11.35 12.8-20.36'
-        ' 24.47-24.19l.04-.01.05-.01c27.31-8.29 51.81 12.42 50.56 38.36h1.58c14.25 0 27.26 13.11 27.26 28.15'
-        ' 0 15.38-13.37 26.64-27.27 26.64h-7.66v-8.2h7.66c9.87 0 19.05-8.07 19.05-18.44 0-10.7-9.53-19.95-19.05-19.95'
+        "-4.37-1.42c-6.03-1.96-12.45-.88-17.48 3.41l-5.35-6.23c6.13-5.24 13.77-7.17 21.17-5.99 3.74-11.35 12.8-20.36"
+        " 24.47-24.19l.04-.01.05-.01c27.31-8.29 51.81 12.42 50.56 38.36h1.58c14.25 0 27.26 13.11 27.26 28.15"
+        " 0 15.38-13.37 26.64-27.27 26.64h-7.66v-8.2h7.66c9.87 0 19.05-8.07 19.05-18.44 0-10.7-9.53-19.95-19.05-19.95"
         'h-11l.81-4.78c3.73-22.15-16.46-40.92-39.51-33.96Z" fill="#e5e5e5"/>'
-        '</svg>'
+        "</svg>"
     )
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -213,14 +213,20 @@ async def _start_callback_server() -> Tuple[Any, int, "asyncio.Future"]:
             if not result_future.done():
                 result_future.set_result((None, None))
             return web.Response(
-                text=_callback_page("Authentication failed", "Something went wrong. Please try again.", success=False),
+                text=_callback_page(
+                    "Authentication failed",
+                    "Something went wrong. Please try again.",
+                    success=False,
+                ),
                 content_type="text/html",
             )
 
         if not result_future.done():
             result_future.set_result((code, state))
         return web.Response(
-            text=_callback_page("Authentication successful", "You can close this tab and return to your terminal."),
+            text=_callback_page(
+                "Authentication successful", "You can close this tab and return to your terminal."
+            ),
             content_type="text/html",
         )
 

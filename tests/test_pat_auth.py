@@ -61,6 +61,7 @@ class TestAPIPATDetection:
             # Need to mock the lazy import of cli config
             with patch.dict("sys.modules", {"pipecatcloud.cli.config": MagicMock()}):
                 from pipecatcloud.cli import config as cli_config_mod
+
                 cli_config_mod.config = MagicMock()
                 cli_config_mod.config.get.return_value = 0  # expired
                 # The method does a lazy import, so we patch at that level
@@ -69,7 +70,9 @@ class TestAPIPATDetection:
     @pytest.mark.asyncio
     async def test_pat_skips_refresh_in_base_request(self, pat_client):
         """PAT requests should never trigger OAuth token refresh."""
-        with patch.object(pat_client, "_refresh_oauth_token", new_callable=AsyncMock) as mock_refresh:
+        with patch.object(
+            pat_client, "_refresh_oauth_token", new_callable=AsyncMock
+        ) as mock_refresh:
             with patch("aiohttp.ClientSession") as mock_session_cls:
                 mock_response = AsyncMock()
                 mock_response.ok = True
@@ -112,10 +115,13 @@ class TestUsePATCommand:
         """use-pat should verify token against API and store credentials."""
         from pipecatcloud.cli.commands.auth import _use_pat_impl
 
-        with patch("pipecatcloud.cli.commands.auth._get_account_org", new_callable=AsyncMock) as mock_get_org, \
-             patch("pipecatcloud.cli.commands.auth.update_user_config") as mock_update, \
-             patch("pipecatcloud.cli.commands.auth.console") as mock_console:
-
+        with (
+            patch(
+                "pipecatcloud.cli.commands.auth._get_account_org", new_callable=AsyncMock
+            ) as mock_get_org,
+            patch("pipecatcloud.cli.commands.auth.update_user_config") as mock_update,
+            patch("pipecatcloud.cli.commands.auth.console") as mock_console,
+        ):
             mock_get_org.return_value = ("my-org", "My Organization")
 
             await _use_pat_impl("pcc_pat_60ee796dc5bade735a3b0ef1b5730618")
@@ -139,10 +145,13 @@ class TestUsePATCommand:
         """use-pat should show error for invalid/expired tokens."""
         from pipecatcloud.cli.commands.auth import _use_pat_impl
 
-        with patch("pipecatcloud.cli.commands.auth._get_account_org", new_callable=AsyncMock) as mock_get_org, \
-             patch("pipecatcloud.cli.commands.auth.update_user_config") as mock_update, \
-             patch("pipecatcloud.cli.commands.auth.console") as mock_console:
-
+        with (
+            patch(
+                "pipecatcloud.cli.commands.auth._get_account_org", new_callable=AsyncMock
+            ) as mock_get_org,
+            patch("pipecatcloud.cli.commands.auth.update_user_config") as mock_update,
+            patch("pipecatcloud.cli.commands.auth.console") as mock_console,
+        ):
             mock_get_org.side_effect = Exception("401 Unauthorized")
 
             await _use_pat_impl("pcc_pat_0000000000000000000000000000dead")
