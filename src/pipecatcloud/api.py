@@ -53,12 +53,19 @@ class _API:
             return {}
         return {"Authorization": f"Bearer {override_token or self.token}"}
 
+    def _is_pat(self) -> bool:
+        """Check if the current token is a Personal Access Token."""
+        return bool(self.token and self.token.startswith("pcc_pat_"))
+
     def _is_token_expired(self) -> bool:
         """Check if the current OAuth token is near expiry.
 
-        Returns False for non-OAuth tokens (no token_expires_at stored),
-        preserving backward compatibility with the old device-code flow.
+        Returns False for PATs (they don't expire via OAuth) and for
+        non-OAuth tokens (no token_expires_at stored).
         """
+        if self._is_pat():
+            return False
+
         from pipecatcloud.cli.config import config as cli_config
 
         expires_at = cli_config.get("token_expires_at")

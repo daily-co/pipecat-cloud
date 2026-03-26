@@ -431,6 +431,53 @@ async def logout():
         )
 
 
+# ----- Use PAT -----
+
+
+async def _use_pat_impl(token: str):
+    """Core logic for use-pat command, extracted for testability."""
+    if not token.startswith("pcc_pat_"):
+        console.error("Invalid token format. PATs must start with [bold]pcc_pat_[/bold]")
+        return
+
+    # Verify the PAT works by fetching the user's organizations
+    # Preserve the currently active org if set
+    active_org = config.get("org")
+    try:
+        with console.status("[dim]Verifying token...[/dim]", spinner="dots"):
+            account_name, account_name_verbose = await _get_account_org(token, active_org)
+            if account_name is None:
+                console.error(
+                    "Token is valid but account has no associated namespace. "
+                    "Have you completed the onboarding process?"
+                )
+                return
+    except Exception:
+        console.error("Invalid or expired token.")
+        return
+
+    # Store PAT — clear OAuth-specific fields since they don't apply
+    update_user_config(
+        token=token,
+        active_org=account_name,
+        refresh_token="",
+        token_expires_at=0,
+    )
+
+    console.success(
+        f"Authenticated via PAT. Active organization: [bold]{account_name}[/bold]\n"
+        f"[dim]Credentials stored to [magenta]{user_config_path}[/magenta][/dim]"
+    )
+
+
+@auth_cli.command(name="use-pat", help="Authenticate with a Personal Access Token")
+@synchronizer.create_blocking
+async def use_pat(
+    token: str = typer.Argument(help="Personal Access Token (pcc_pat_...)"),
+):
+    await _use_pat_impl(token)
+
+
 # ----- Whoami -----
 
 
@@ -480,13 +527,18 @@ async def whomai():
             emails = user_data.get("user", {}).get("emails", [])
             email = emails[0]["emailAddress"] if emails else user_data["user"]["userId"]
 
+            token = config.get("token", "")
+            auth_method = "PAT" if token.startswith("pcc_pat_") else "OAuth"
+
             message = Columns(
                 [
                     "[bold]User[/bold]\n"
                     "[bold]Active Organization[/bold]\n"
+                    "[bold]Auth Method[/bold]\n"
                     "[bold]Daily API Key[/bold]",
                     f"{email}\n"
                     f"{account['verbose_name']} [dim]({account['name']})[/dim]\n"
+                    f"{auth_method}\n"
                     f"{daily_api_key.get('apiKey', '[dim]N/A[/dim]') if daily_api_key else '[dim]N/A[/dim]'}",
                 ]
             )
