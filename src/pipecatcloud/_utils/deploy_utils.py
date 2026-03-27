@@ -10,10 +10,14 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable, List, Optional
 
+from typing import Optional
+
 import toml
+import typer
 from attr import dataclass, field
 from loguru import logger
 
+from pipecatcloud.cli import PIPECAT_DEPLOY_CONFIG_PATH
 from pipecatcloud.constants import KRISP_VIVA_MODELS, KrispVivaAudioFilter
 from pipecatcloud.exception import ConfigFileError
 
@@ -377,14 +381,32 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
         raise ConfigFileError(str(e))
 
 
+CONFIG_FILE_OPTION: Optional[str] = typer.Option(
+    None, "--config-file", help=f"Path to deploy config file (default: {PIPECAT_DEPLOY_CONFIG_PATH})"
+)
+
+
 def with_deploy_config(func: Callable) -> Callable:
     """
     Decorator that loads the deploy config file and injects it into the function.
     If the config file exists, it will be loaded and passed to the function as `deploy_config`.
+
+    If the wrapped function receives a `config_file` kwarg (from a --config-file typer option),
+    it will override the default deploy config path before loading.
     """
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+        config_file = kwargs.pop("config_file", None)
+        if config_file:
+            import pipecatcloud.cli.config as config_module
+
+            if not os.path.exists(config_file):
+                from pipecatcloud._utils.console_utils import console
+
+                console.error(f"Deploy config file not found: {config_file}")
+                raise typer.Exit(1)
+            config_module.deploy_config_path = config_file
         try:
             deploy_config = load_deploy_config_file()
             kwargs["deploy_config"] = deploy_config

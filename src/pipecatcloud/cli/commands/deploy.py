@@ -28,6 +28,7 @@ from pipecatcloud._utils.build_utils import (
 )
 from pipecatcloud._utils.console_utils import console
 from pipecatcloud._utils.deploy_utils import (
+    CONFIG_FILE_OPTION,
     BuildConfig,
     DeployConfigParams,
     KrispVivaConfig,
@@ -482,6 +483,7 @@ def create_deploy_command(app: typer.Typer):
     @with_deploy_config
     async def deploy(
         deploy_config=typer.Option(None, hidden=True),
+        config_file: Optional[str] = CONFIG_FILE_OPTION,
         agent_name: str = typer.Argument(
             None, help="Name of the agent to deploy e.g. 'my-agent'", show_default=False
         ),

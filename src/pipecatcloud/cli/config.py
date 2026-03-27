@@ -62,7 +62,11 @@ def _read_user_config():
                         stacklevel=2,
                     )
         if config_problem:
-            raise ConfigError(config_problem)
+            warnings.warn(
+                f"{config_problem} Run `pcc auth login` to fix.",
+                stacklevel=2,
+            )
+            return {}
 
     return config_data
 

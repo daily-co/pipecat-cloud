@@ -13,7 +13,7 @@ from rich.panel import Panel
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.console_utils import console
-from pipecatcloud._utils.deploy_utils import DeployConfigParams, with_deploy_config
+from pipecatcloud._utils.deploy_utils import CONFIG_FILE_OPTION, DeployConfigParams, with_deploy_config
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 
 docker_cli = typer.Typer(
@@ -180,6 +180,7 @@ def _build_image_name(
 @with_deploy_config
 async def build_push(
     deploy_config=typer.Option(None, hidden=True),
+    config_file: Optional[str] = CONFIG_FILE_OPTION,
     agent_name: str = typer.Argument(
         None, help="Name of the agent to build image for e.g. 'my-agent'", show_default=False
     ),
