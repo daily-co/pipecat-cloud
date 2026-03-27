@@ -13,7 +13,11 @@ from rich.panel import Panel
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.console_utils import console
-from pipecatcloud._utils.deploy_utils import CONFIG_FILE_OPTION, DeployConfigParams, with_deploy_config
+from pipecatcloud._utils.deploy_utils import (
+    CONFIG_FILE_OPTION,
+    DeployConfigParams,
+    with_deploy_config,
+)
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 
 docker_cli = typer.Typer(

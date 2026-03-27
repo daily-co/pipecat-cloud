@@ -72,7 +72,12 @@ entrypoint_cli_typer = typer.Typer(
 def cli(
     ctx: typer.Context,
     _version: bool = typer.Option(None, "--version", callback=version_callback, help="CLI version"),
-    _show_cli_config: bool = typer.Option(None, "--show-cli-config", callback=show_config_callback, help="Show CLI internal configuration (credentials, active org)"),
+    _show_cli_config: bool = typer.Option(
+        None,
+        "--show-cli-config",
+        callback=show_config_callback,
+        help="Show CLI internal configuration (credentials, active org)",
+    ),
 ):
     pass
 

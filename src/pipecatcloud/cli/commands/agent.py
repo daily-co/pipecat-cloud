@@ -28,7 +28,11 @@ from pipecatcloud._utils.console_utils import (
     format_duration,
     format_timestamp,
 )
-from pipecatcloud._utils.deploy_utils import CONFIG_FILE_OPTION, DeployConfigParams, with_deploy_config
+from pipecatcloud._utils.deploy_utils import (
+    CONFIG_FILE_OPTION,
+    DeployConfigParams,
+    with_deploy_config,
+)
 from pipecatcloud._utils.regions import get_region_codes, validate_region
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
@@ -328,7 +332,9 @@ async def status(
 @with_deploy_config
 async def sessions(
     deploy_config=typer.Option(None, hidden=True),
-    config_file: Optional[str] = typer.Option(None, "--config-file", help="Path to deploy config file"),
+    config_file: Optional[str] = typer.Option(
+        None, "--config-file", help="Path to deploy config file"
+    ),
     agent_name: str = typer.Argument(
         None, help="Name of the agent to list sessions for e.g. 'my-agent'", show_default=False
     ),
@@ -764,7 +770,9 @@ async def deployments(
 @with_deploy_config
 async def start(
     deploy_config=typer.Option(None, hidden=True),
-    config_file: Optional[str] = typer.Option(None, "--config-file", help="Path to deploy config file"),
+    config_file: Optional[str] = typer.Option(
+        None, "--config-file", help="Path to deploy config file"
+    ),
     agent_name: str = typer.Argument(None, help="Name of the agent to start e.g. 'my-agent'"),
     force: bool = typer.Option(
         False,

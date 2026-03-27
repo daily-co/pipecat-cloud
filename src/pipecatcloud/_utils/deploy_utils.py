@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable, List, Optional
 
-from typing import Optional
 
 import toml
 import typer
@@ -382,7 +381,9 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
 
 
 CONFIG_FILE_OPTION: Optional[str] = typer.Option(
-    None, "--config-file", help=f"Path to deploy config file (default: {PIPECAT_DEPLOY_CONFIG_PATH})"
+    None,
+    "--config-file",
+    help=f"Path to deploy config file (default: {PIPECAT_DEPLOY_CONFIG_PATH})",
 )
 
 
