@@ -280,7 +280,6 @@ class DeployConfigParams:
     region: Optional[str] = None
     scaling: ScalingParams = ScalingParams()
     enable_krisp: bool = False
-    enable_managed_keys: bool = False
     docker_config: dict = field(factory=dict)
     build_config: BuildConfig = field(factory=BuildConfig)  # Cloud build configuration
     agent_profile: Optional[str] = None
@@ -303,7 +302,6 @@ class DeployConfigParams:
             "region": self.region,
             "scaling": self.scaling.to_dict() if self.scaling else None,
             "enable_krisp": self.enable_krisp,
-            "enable_managed_keys": self.enable_managed_keys,
             "docker_config": self.docker_config,
             "build_config": self.build_config.to_dict() if self.build_config else None,
             "agent_profile": self.agent_profile,
@@ -363,7 +361,6 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "region",
             "scaling",
             "enable_krisp",
-            "enable_managed_keys",
             "docker",
             "build",
             "agent_profile",

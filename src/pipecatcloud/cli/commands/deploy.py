@@ -534,12 +534,6 @@ def create_deploy_command(app: typer.Typer):
             help="[DEPRECATED] Enable Krisp integration for this deployment. Use --krisp-viva-audio-filter instead",
             rich_help_panel="Deployment Configuration",
         ),
-        managed_keys: bool = typer.Option(
-            False,
-            "--enable-managed-keys",
-            help="Enable Managed Keys for this deployment",
-            rich_help_panel="Deployment Configuration",
-        ),
         krisp_viva_audio_filter: str = typer.Option(
             None,
             "--krisp-viva-audio-filter",
@@ -656,7 +650,6 @@ def create_deploy_command(app: typer.Typer):
             max_agents=max_agents if max_agents is not None else partial_config.scaling.max_agents,
         )
         partial_config.enable_krisp = krisp or partial_config.enable_krisp
-        partial_config.enable_managed_keys = managed_keys or partial_config.enable_managed_keys
         partial_config.agent_profile = profile or partial_config.agent_profile
 
         # Override build config from CLI args
@@ -797,7 +790,6 @@ def create_deploy_command(app: typer.Typer):
                 f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}",
                 f"[bold white]Krisp (deprecated):[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}",
                 f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}",
-                f"[bold white]Managed Keys:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_managed_keys else '[green]Enabled[/green]'}",
                 "\n[dim]Scaling configuration:[/dim]",
             ]
         )

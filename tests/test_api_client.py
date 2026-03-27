@@ -260,7 +260,6 @@ class TestAPIRegionWithOtherParameters:
             region="ap",
             secret_set="my-secrets",
             image_credentials="my-creds",
-            enable_managed_keys=True,
         )
 
         with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
@@ -274,7 +273,6 @@ class TestAPIRegionWithOtherParameters:
             assert payload["region"] == "ap"
             assert payload["secretSet"] == "my-secrets"
             assert payload["imagePullSecretSet"] == "my-creds"
-            assert payload["enableIntegratedKeysProxy"] is True
 
 
 class TestAPIProperties:
