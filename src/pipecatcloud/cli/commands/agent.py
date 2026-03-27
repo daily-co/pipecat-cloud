@@ -332,9 +332,7 @@ async def status(
 @with_deploy_config
 async def sessions(
     deploy_config=typer.Option(None, hidden=True),
-    config_file: Optional[str] = typer.Option(
-        None, "--config-file", help="Path to deploy config file"
-    ),
+    config_file: Optional[str] = CONFIG_FILE_OPTION,
     agent_name: str = typer.Argument(
         None, help="Name of the agent to list sessions for e.g. 'my-agent'", show_default=False
     ),
@@ -770,9 +768,7 @@ async def deployments(
 @with_deploy_config
 async def start(
     deploy_config=typer.Option(None, hidden=True),
-    config_file: Optional[str] = typer.Option(
-        None, "--config-file", help="Path to deploy config file"
-    ),
+    config_file: Optional[str] = CONFIG_FILE_OPTION,
     agent_name: str = typer.Argument(None, help="Name of the agent to start e.g. 'my-agent'"),
     force: bool = typer.Option(
         False,

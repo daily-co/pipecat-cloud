@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Removed `--enable-managed-keys` CLI option from `deploy` command.
+
 - Removed `enable_managed_keys` from `pcc-deploy.toml` configuration.
+
 - Removed "Managed Keys" status display from `agent status` output.
 
 ### Fixed
