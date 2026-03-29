@@ -7,11 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`--config-file` flag**: Specify an alternate deploy config file on any
+  command that uses a config file (`deploy`, `agent sessions`, `agent start`,
+  `agent stop`, `docker build-push`). Enables multi-environment workflows
+  without renaming files or setting environment variables.
+
+### Changed
+
+- Renamed `--config` to `--show-cli-config` for clarity — it displays internal
+  CLI state (credentials, active org), not deploy configuration.
+
 ### Removed
 
 - Removed `--enable-managed-keys` CLI option from `deploy` command.
+
 - Removed `enable_managed_keys` from `pcc-deploy.toml` configuration.
+
 - Removed "Managed Keys" status display from `agent status` output.
+
+### Fixed
+
+- CLI no longer crashes on a malformed credentials file. It warns and allows
+  `auth login` to run so the user can fix it.
 
 ## [0.3.1] - 2026-03-13
 

@@ -35,11 +35,12 @@ def version_callback(value: bool):
         raise typer.Exit()
 
 
-def config_callback(value: bool):
+def show_config_callback(value: bool):
     if value:
         from rich.pretty import pprint
 
         from pipecatcloud._utils.deploy_utils import load_deploy_config_file
+        from pipecatcloud.cli.config import deploy_config_path
 
         # Print local config
         pprint(config.to_dict())
@@ -48,11 +49,11 @@ def config_callback(value: bool):
         try:
             deploy_config = load_deploy_config_file()
             if deploy_config:
-                console.print("Deploy config [dim](pcc-deploy.toml)[/dim]:")
+                console.print(f"Deploy config [dim]({deploy_config_path})[/dim]:")
                 console.print_json(data=deploy_config.to_dict())
         except ConfigFileError as e:
             console.error(
-                f"Malformed pcc-deploy.toml - Please correct errors and try again.\n\n{e}"
+                f"Malformed {deploy_config_path} - Please correct errors and try again.\n\n{e}"
             )
 
         raise typer.Exit()
@@ -71,7 +72,12 @@ entrypoint_cli_typer = typer.Typer(
 def cli(
     ctx: typer.Context,
     _version: bool = typer.Option(None, "--version", callback=version_callback, help="CLI version"),
-    _config: bool = typer.Option(None, "--config", callback=config_callback, help="CLI config"),
+    _show_cli_config: bool = typer.Option(
+        None,
+        "--show-cli-config",
+        callback=show_config_callback,
+        help="Show CLI internal configuration (credentials, active org)",
+    ),
 ):
     pass
 
