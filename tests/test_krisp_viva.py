@@ -132,7 +132,6 @@ class TestDeployConfigIntegration:
             agent_name="test-agent",
             image="test:latest",
             enable_krisp=True,
-            enable_managed_keys=True,
             krisp_viva=KrispVivaConfig(audio_filter="tel"),
         )
 
@@ -143,7 +142,6 @@ class TestDeployConfigIntegration:
         assert result["agent_name"] == "test-agent"
         assert result["image"] == "test:latest"
         assert result["enable_krisp"] is True
-        assert result["enable_managed_keys"] is True
         assert result["krisp_viva"]["audio_filter"] == "tel"
 
 
@@ -237,7 +235,6 @@ class TestTOMLConfiguration:
         agent_name = "test-agent"
         image = "test:latest"
         enable_krisp = true
-        enable_managed_keys = true
         secret_set = "my-secrets"
 
         [scaling]
@@ -257,7 +254,6 @@ class TestTOMLConfiguration:
         assert config.agent_name == "test-agent"
         assert config.image == "test:latest"
         assert config.enable_krisp is True
-        assert config.enable_managed_keys is True
         assert config.secret_set == "my-secrets"
         assert config.scaling.min_agents == 2
         assert config.scaling.max_agents == 10
@@ -550,7 +546,6 @@ class TestBackwardCompatibility:
         agent_name = "legacy-agent"
         image = "legacy:latest"
         enable_krisp = true
-        enable_managed_keys = true
 
         [scaling]
         min_agents = 1
@@ -569,7 +564,6 @@ class TestBackwardCompatibility:
         assert config is not None
         assert config.agent_name == "legacy-agent"
         assert config.enable_krisp is True
-        assert config.enable_managed_keys is True
         assert config.krisp_viva.audio_filter is None
 
 
@@ -612,13 +606,12 @@ class TestErrorHandling:
         assert result["krisp_viva"]["audio_filter"] == "tel"
 
     def test_all_features_enabled_together(self):
-        """Krisp, Managed Keys, and Krisp VIVA can all be enabled together."""
+        """Krisp and Krisp VIVA can be enabled together."""
         # Arrange
         config = DeployConfigParams(
             agent_name="test-agent",
             image="test:latest",
             enable_krisp=True,
-            enable_managed_keys=True,
             krisp_viva=KrispVivaConfig(audio_filter="pro"),
         )
 
@@ -627,7 +620,6 @@ class TestErrorHandling:
 
         # Assert
         assert result["enable_krisp"] is True
-        assert result["enable_managed_keys"] is True
         assert result["krisp_viva"]["audio_filter"] == "pro"
 
 

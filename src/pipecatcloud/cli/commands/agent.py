@@ -206,24 +206,6 @@ async def status(
             str(data.get("updatedAt", "N/A")),
         )
 
-        # Check for Managed Keys status
-        # API returns integratedKeysProxy but we display as "Managed Keys"
-        integrated_keys = (
-            data.get("deployment", {})
-            .get("manifest", {})
-            .get("spec", {})
-            .get("integratedKeysProxy", {})
-        )
-        if isinstance(integrated_keys, dict):
-            integrated_keys_enabled = integrated_keys.get("enabled", False)
-        else:
-            integrated_keys_enabled = bool(integrated_keys)
-
-        deployment_table.add_row(
-            "[bold]Managed Keys:[/bold]",
-            "[green]Enabled[/green]" if integrated_keys_enabled else "[dim]Disabled[/dim]",
-        )
-
         # Check for Krisp VIVA status (reverse-mapped by API)
         krisp_viva = data.get("krispViva")
         krisp_viva_status = "[dim]Disabled[/dim]"
