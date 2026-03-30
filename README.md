@@ -74,6 +74,32 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+## Troubleshooting
+
+### SSL certificate errors on macOS
+
+If `pcc auth login` fails with an SSL certificate verification error, your Python
+installation may not have access to the macOS system certificate store. This is
+common with Python installed via pyenv, conda, or the python.org installer.
+
+To diagnose:
+
+```python
+import ssl, sys, os
+print(ssl.get_default_verify_paths())
+print(os.path.realpath(sys.executable))
+```
+
+To fix, install `certifi` and point Python to its certificates:
+
+```shell
+pip install certifi
+export SSL_CERT_FILE=$(python -c "import certifi; print(certifi.where())")
+```
+
+For the python.org installer, you can also run the bundled
+`Install Certificates.command` script found in `/Applications/Python X.Y/`.
+
 ## 🛠️ Contributing
 
 ### Setup Steps
