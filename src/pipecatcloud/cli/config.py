@@ -70,11 +70,7 @@ def _read_user_config():
                             f"'chmod 600 {user_config_path}' or login again."
                         )
         if config_problem:
-            warnings.warn(
-                f"{config_problem} Run `pcc auth login` to fix.",
-                stacklevel=2,
-            )
-            return {}
+            raise ConfigError(f"{config_problem} Run `pcc auth login` to fix.")
 
     return config_data
 
