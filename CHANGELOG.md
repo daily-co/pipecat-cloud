@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- **Personal Access Token (PAT) support**: Authenticate with the CLI using a
+  PAT instead of interactive OAuth login. Set `PIPECAT_TOKEN=pcc_pat_...` as an
+  environment variable, or run `pcc auth use-pat <token>` to store it to config.
+  PATs work with all CLI commands and inherit the user's org memberships.
+
+- `pcc auth use-pat` command: Validates a PAT against the API and stores it for
+  persistent use without needing an environment variable.
+
+- `pcc auth whoami` now shows the current auth method (PAT or OAuth).
+
+### Changed
+
+- **OAuth2 authentication**: `pcc auth login` now uses industry-standard
+  OAuth2 Authorization Code + PKCE, replacing the custom device-code flow.
+  Tokens auto-refresh transparently — no more "please run `pcc auth login`"
+  interruptions.
+
+- `pcc auth logout` now revokes tokens server-side. Previously, logout only
+  deleted local credentials and the token remained valid until expiry.
+
+- `pcc auth whoami` now displays the user's email address instead of the
+  internal user ID.
+
 ### Fixed
 
 - Credentials file with overly permissive permissions is now automatically

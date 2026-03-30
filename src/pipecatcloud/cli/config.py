@@ -44,7 +44,7 @@ def _read_user_config():
         except Exception as exc:
             config_problem = f"Error reading config file: {exc}"
         else:
-            top_level_keys = {"token", "org"}
+            top_level_keys = {"token", "org", "refresh_token", "token_expires_at"}
             org_sections = {k: v for k, v in config_data.items() if k not in top_level_keys}
 
             if not all(isinstance(e, dict) for e in org_sections.values()):
@@ -70,11 +70,7 @@ def _read_user_config():
                             f"'chmod 600 {user_config_path}' or login again."
                         )
         if config_problem:
-            warnings.warn(
-                f"{config_problem} Run `pcc auth login` to fix.",
-                stacklevel=2,
-            )
-            return {}
+            raise ConfigError(f"{config_problem} Run `pcc auth login` to fix.")
 
     return config_data
 
@@ -104,13 +100,22 @@ def update_user_config(
     token: Optional[str] = None,
     active_org: Optional[str] = None,
     additional_data: Optional[dict] = None,
+    refresh_token: Optional[str] = None,
+    token_expires_at: Optional[float] = None,
 ):
+    global user_config
+
     # Load the existing toml (if it exists)
     existing_config = _read_user_config()
 
     # Only update top level token if provided
     if token:
         existing_config["token"] = token
+
+    if refresh_token is not None:
+        existing_config["refresh_token"] = refresh_token
+    if token_expires_at is not None:
+        existing_config["token_expires_at"] = token_expires_at
 
     if active_org:
         existing_config["org"] = active_org
@@ -123,6 +128,9 @@ def update_user_config(
 
     try:
         _write_user_config(existing_config)
+        # Update in-memory config so subsequent reads (e.g. after token refresh)
+        # see the new values without re-reading from disk
+        user_config = existing_config
     except PermissionError:
         raise ConfigError(f"Permission denied when writing to {user_config_path}")
     except FileNotFoundError:
@@ -140,6 +148,8 @@ _CLI_SETTINGS = {
     "user_config_path": _Setting(user_config_path),
     "token": _Setting(),
     "org": _Setting(),
+    "refresh_token": _Setting(),
+    "token_expires_at": _Setting(),
     "default_public_key": _Setting(),
     "default_public_key_name": _Setting(),
     "cli_log_level": _Setting("INFO"),
