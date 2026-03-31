@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Container health diagnostics in `agent status` and `deploy`**: When a
+  deployment is failing, the CLI now shows the failure reason (e.g.,
+  CrashLoopBackOff, OOMKilled, ImagePullBackOff), exit code, restart count,
+  and the actual error output (e.g., Python tracebacks). This information
+  appears under the revision line in both `pcc agent status` and during
+  deploy monitoring.
+
 ### Changed
 
 - All API requests now include a `User-Agent: PipecatCloudCLI/<version>` header,

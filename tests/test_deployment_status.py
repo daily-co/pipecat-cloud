@@ -9,6 +9,7 @@ from pipecatcloud._utils.deploy_utils import (
     DeploymentPhase,
     _format_elapsed,
     _format_revision_line,
+    format_health_lines,
     interpret_deployment_status,
 )
 
@@ -476,3 +477,156 @@ class TestFormatElapsed:
         ts = (datetime.now(timezone.utc) - timedelta(seconds=45)).strftime("%Y-%m-%dT%H:%M:%SZ")
         result = _format_elapsed(ts)
         assert "s" in result
+
+
+class TestHealthLines:
+    """Tests for format_health_lines rendering."""
+
+    def test_crashloopbackoff_with_oomkilled(self):
+        lines = format_health_lines(
+            {
+                "reason": "CrashLoopBackOff",
+                "lastTerminationReason": "OOMKilled",
+                "lastExitCode": 137,
+                "restartCount": 42,
+                "replicasStarted": 3,
+            }
+        )
+        assert len(lines) >= 1
+        assert "CrashLoopBackOff" in lines[0]
+        assert "OOMKilled" in lines[0]
+        assert "exit 137" in lines[0]
+        assert "42 restarts" in lines[0]
+        assert "3 replicas" in lines[0]
+
+    def test_error_with_exit_code(self):
+        lines = format_health_lines(
+            {
+                "reason": "Error",
+                "lastExitCode": 1,
+                "restartCount": 4,
+                "replicasStarted": 2,
+            }
+        )
+        assert "Error" in lines[0]
+        assert "exit 1" in lines[0]
+        assert "4 restarts" in lines[0]
+
+    def test_message_shows_last_line(self):
+        lines = format_health_lines(
+            {
+                "reason": "Error",
+                "lastExitCode": 1,
+                "restartCount": 1,
+                "replicasStarted": 1,
+                "message": "Traceback (most recent call last):\n  File \"bot.py\"\nModuleNotFoundError: No module named 'foo'",
+            }
+        )
+        assert len(lines) == 2
+        assert "ModuleNotFoundError" in lines[1]
+        # Should NOT include the full traceback, just the last line
+        assert "Traceback" not in lines[1]
+
+    def test_image_pull_backoff(self):
+        lines = format_health_lines(
+            {
+                "reason": "ImagePullBackOff",
+                "restartCount": 0,
+                "replicasStarted": 2,
+                "message": 'Back-off pulling image "nonexistent:latest"',
+            }
+        )
+        assert "ImagePullBackOff" in lines[0]
+        # No restarts, so no restart text
+        assert "restarts" not in lines[0]
+        assert "nonexistent:latest" in lines[1]
+
+    def test_no_reason_no_restarts(self):
+        """Health with no reason and no restarts produces no lines."""
+        lines = format_health_lines(
+            {
+                "restartCount": 0,
+                "replicasStarted": 1,
+            }
+        )
+        assert len(lines) == 0
+
+    def test_same_reason_and_termination_reason(self):
+        """When reason == lastTerminationReason, don't duplicate."""
+        lines = format_health_lines(
+            {
+                "reason": "Error",
+                "lastTerminationReason": "Error",
+                "lastExitCode": 1,
+                "restartCount": 3,
+                "replicasStarted": 1,
+            }
+        )
+        # Should show "Error (exit 1)" not "Error (Error, exit 1)"
+        assert "Error (exit 1)" in lines[0]
+
+
+class TestRevisionLineWithHealth:
+    """Tests that _format_revision_line includes health details."""
+
+    def test_revision_with_crash_health(self):
+        output = _format_revision_line(
+            "Current ",
+            {
+                "deploymentID": "17baf1ed-1234",
+                "phase": "Validating",
+                "readyReplicas": 0,
+                "health": {
+                    "ready": False,
+                    "state": "terminated",
+                    "reason": "Error",
+                    "lastExitCode": 1,
+                    "lastTerminationReason": "Error",
+                    "restartCount": 4,
+                    "replicasStarted": 2,
+                    "message": "ModuleNotFoundError: No module named 'foo'",
+                },
+            },
+        )
+        lines = output.split("\n")
+        assert len(lines) >= 2
+        assert "Validating" in lines[0]
+        assert "Error" in lines[1]
+        assert "ModuleNotFoundError" in lines[2]
+
+    def test_revision_with_healthy_state_no_extra_lines(self):
+        output = _format_revision_line(
+            "Current ",
+            {
+                "deploymentID": "abc12345-5678",
+                "phase": "Active",
+                "readyReplicas": 3,
+                "health": {
+                    "ready": True,
+                    "state": "running",
+                    "restartCount": 0,
+                    "replicasStarted": 3,
+                },
+            },
+        )
+        lines = output.split("\n")
+        assert len(lines) == 1  # No health detail lines for healthy containers
+
+    def test_revision_with_infra_issue(self):
+        output = _format_revision_line(
+            "Current ",
+            {
+                "deploymentID": "abc12345-5678",
+                "phase": "Validating",
+                "readyReplicas": 0,
+                "health": {
+                    "ready": True,
+                    "state": "running",
+                    "restartCount": 0,
+                    "replicasStarted": 2,
+                },
+                "hasInfrastructureIssue": True,
+            },
+        )
+        assert "Infrastructure issue" in output
+        assert "contact support" in output

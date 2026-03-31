@@ -32,6 +32,7 @@ from pipecatcloud._utils.console_utils import (
 from pipecatcloud._utils.deploy_utils import (
     CONFIG_FILE_OPTION,
     DeployConfigParams,
+    format_health_lines,
     with_deploy_config,
 )
 from pipecatcloud._utils.regions import get_region_codes, validate_region
@@ -285,6 +286,18 @@ async def status(
             if rev_replicas is not None:
                 current_parts.append(f"[dim]·[/dim] {rev_replicas} agents")
             health_lines.append(" ".join(current_parts))
+
+            # Show health details when available (skip if healthy with no restarts)
+            rev_health = current_rev.get("health")
+            if rev_health and not (
+                rev_health.get("ready") and rev_health.get("restartCount", 0) == 0
+            ):
+                health_lines.extend(format_health_lines(rev_health))
+
+            if current_rev.get("hasInfrastructureIssue"):
+                health_lines.append(
+                    "    [yellow]Infrastructure issue detected — contact support[/yellow]"
+                )
 
             if previous_rev:
                 prev_phase = previous_rev.get("phase", "Unknown")
