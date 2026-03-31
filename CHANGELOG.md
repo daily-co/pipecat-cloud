@@ -5,6 +5,22 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Multi-environment credentials**: The CLI now stores credentials keyed by
+  API host, so you can be logged into multiple environments (e.g. production
+  and staging) simultaneously. Switching `PIPECAT_API_HOST` no longer
+  overwrites the other environment's credentials. The new format is fully
+  backwards and forwards compatible with older CLI versions.
+
+### Changed
+
+- `pcc auth logout` now only removes credentials for the active environment
+  (determined by `PIPECAT_API_HOST`). Logging out of staging no longer affects
+  your production session.
+
 ## [0.4.1] - 2026-03-30
 
 ### Added

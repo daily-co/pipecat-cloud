@@ -126,8 +126,10 @@ class TestUsePATCommand:
 
             await _use_pat_impl("pcc_pat_60ee796dc5bade735a3b0ef1b5730618")
 
-            # Should verify token
-            mock_get_org.assert_called_once_with("pcc_pat_60ee796dc5bade735a3b0ef1b5730618")
+            # Should verify token (second arg is the currently active org)
+            mock_get_org.assert_called_once()
+            call_args = mock_get_org.call_args
+            assert call_args[0][0] == "pcc_pat_60ee796dc5bade735a3b0ef1b5730618"
 
             # Should store to config with cleared OAuth fields
             mock_update.assert_called_once_with(

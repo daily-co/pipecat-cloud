@@ -24,6 +24,41 @@ deploy_config_path: str = os.environ.get("PIPECAT_DEPLOY_CONFIG_PATH") or os.pat
     PIPECAT_DEPLOY_CONFIG_PATH
 )
 
+_CREDENTIAL_KEYS = {"token", "refresh_token", "token_expires_at", "org"}
+_DEFAULT_API_HOST = _SETTINGS["api_host"].default
+
+
+def _get_active_api_host() -> str:
+    return os.environ.get("PIPECAT_API_HOST", _DEFAULT_API_HOST)
+
+
+def _resolve_environment(raw_config: dict) -> dict:
+    """Overlay the active environment's credentials onto top-level keys.
+
+    If the config contains an ``environments`` section with a sub-section
+    matching the active API host, those credential values are copied to the
+    top level of a shallow copy so that ``ConfigCLI.get()`` reads them
+    without any changes to its lookup logic.
+
+    If there is no ``environments`` section or no matching host, the config
+    is returned unchanged (backwards compat with the old single-env format).
+    """
+    envs = raw_config.get("environments")
+    if not isinstance(envs, dict):
+        return raw_config
+
+    host = _get_active_api_host()
+    env_section = envs.get(host)
+    if not isinstance(env_section, dict):
+        return raw_config
+
+    resolved = dict(raw_config)
+    for key in _CREDENTIAL_KEYS:
+        if key in env_section:
+            resolved[key] = env_section[key]
+    return resolved
+
+
 # ---- Config TOML methods
 
 
@@ -44,7 +79,7 @@ def _read_user_config():
         except Exception as exc:
             config_problem = f"Error reading config file: {exc}"
         else:
-            top_level_keys = {"token", "org", "refresh_token", "token_expires_at"}
+            top_level_keys = {"token", "org", "refresh_token", "token_expires_at", "environments"}
             org_sections = {k: v for k, v in config_data.items() if k not in top_level_keys}
 
             if not all(isinstance(e, dict) for e in org_sections.values()):
@@ -75,7 +110,7 @@ def _read_user_config():
     return config_data
 
 
-user_config = _read_user_config()
+user_config = _resolve_environment(_read_user_config())
 
 
 def _write_user_config(new_config):
@@ -93,7 +128,39 @@ def _write_user_config(new_config):
 
 
 def remove_user_config():
-    os.remove(user_config_path)
+    global user_config
+
+    existing_config = _read_user_config()
+    host = _get_active_api_host()
+    is_default = host == _DEFAULT_API_HOST
+
+    # Remove the active environment's section
+    envs = existing_config.get("environments", {})
+    envs.pop(host, None)
+
+    # If default host, clear top-level credential keys
+    if is_default:
+        for key in _CREDENTIAL_KEYS:
+            existing_config.pop(key, None)
+
+    # If no environments remain and no org-specific data, delete the file
+    remaining_envs = {k: v for k, v in envs.items() if isinstance(v, dict)}
+    top_level_org_sections = {
+        k: v
+        for k, v in existing_config.items()
+        if k not in (_CREDENTIAL_KEYS | {"environments"}) and isinstance(v, dict)
+    }
+
+    if not remaining_envs and not top_level_org_sections:
+        os.remove(user_config_path)
+        user_config = {}
+    else:
+        if remaining_envs:
+            existing_config["environments"] = remaining_envs
+        else:
+            existing_config.pop("environments", None)
+        _write_user_config(existing_config)
+        user_config = _resolve_environment(existing_config)
 
 
 def update_user_config(
@@ -108,21 +175,45 @@ def update_user_config(
     # Load the existing toml (if it exists)
     existing_config = _read_user_config()
 
-    # Only update top level token if provided
+    host = _get_active_api_host()
+    is_default = host == _DEFAULT_API_HOST
+
+    # Ensure the environments structure exists
+    if "environments" not in existing_config:
+        existing_config["environments"] = {}
+    if host not in existing_config["environments"]:
+        existing_config["environments"][host] = {}
+
+    env_section = existing_config["environments"][host]
+
+    # Update credential fields in the environment section
     if token:
-        existing_config["token"] = token
-
+        env_section["token"] = token
     if refresh_token is not None:
-        existing_config["refresh_token"] = refresh_token
+        env_section["refresh_token"] = refresh_token
     if token_expires_at is not None:
-        existing_config["token_expires_at"] = token_expires_at
-
+        env_section["token_expires_at"] = token_expires_at
     if active_org:
-        existing_config["org"] = active_org
-        if active_org not in existing_config:
-            existing_config[active_org] = {}
+        env_section["org"] = active_org
+
+    # Mirror to top-level keys when using the default host (forwards compat)
+    if is_default:
+        if token:
+            existing_config["token"] = token
+        if refresh_token is not None:
+            existing_config["refresh_token"] = refresh_token
+        if token_expires_at is not None:
+            existing_config["token_expires_at"] = token_expires_at
+        if active_org:
+            existing_config["org"] = active_org
+
+    # Org-specific additional_data stays at the top level
+    if active_org:
+        org_key = active_org
+        if org_key not in existing_config:
+            existing_config[org_key] = {}
         if additional_data:
-            existing_config[active_org].update(additional_data)
+            existing_config[org_key].update(additional_data)
     elif additional_data:
         raise ValueError("Attempt to store additional data without specifying namespace")
 
@@ -130,7 +221,7 @@ def update_user_config(
         _write_user_config(existing_config)
         # Update in-memory config so subsequent reads (e.g. after token refresh)
         # see the new values without re-reading from disk
-        user_config = existing_config
+        user_config = _resolve_environment(existing_config)
     except PermissionError:
         raise ConfigError(f"Permission denied when writing to {user_config_path}")
     except FileNotFoundError:
