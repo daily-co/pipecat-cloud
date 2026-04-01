@@ -75,7 +75,7 @@ def _format_elapsed(phase_started_at: Optional[str]) -> str:
 
 
 def _format_revision_line(label: str, rev: dict) -> str:
-    """Format a single revision as an indented detail line."""
+    """Format a single revision as an indented detail line, with health details if present."""
     deploy_id = rev.get("deploymentID", "unknown")[:8]
     phase = rev.get("phase", "Unknown")
     ready_replicas = rev.get("readyReplicas")
@@ -88,7 +88,53 @@ def _format_revision_line(label: str, rev: dict) -> str:
     if elapsed:
         parts.append(f"[dim]·[/dim] [dim]{elapsed}[/dim]")
 
-    return " ".join(parts)
+    lines = [" ".join(parts)]
+
+    # Append health details if present and unhealthy
+    health = rev.get("health")
+    if health and not (health.get("ready") and health.get("restartCount", 0) == 0):
+        lines.extend(format_health_lines(health))
+
+    if rev.get("hasInfrastructureIssue"):
+        lines.append("      [yellow]Infrastructure issue detected — contact support[/yellow]")
+
+    return "\n".join(lines)
+
+
+def format_health_lines(health: dict) -> list:
+    """Format health details as indented lines under a revision."""
+    lines = []
+    reason_parts = []
+    reason = health.get("reason", "")
+    term_reason = health.get("lastTerminationReason", "")
+    exit_code = health.get("lastExitCode")
+
+    if reason:
+        detail = reason
+        if term_reason and term_reason != reason:
+            detail += f" ({term_reason}"
+            if exit_code is not None:
+                detail += f", exit {exit_code}"
+            detail += ")"
+        elif exit_code is not None:
+            detail += f" (exit {exit_code})"
+        reason_parts.append(f"[red]{detail}[/red]")
+
+    restarts = health.get("restartCount", 0)
+    replicas_started = health.get("replicasStarted", 0)
+    if restarts > 0:
+        reason_parts.append(f"[dim]·[/dim] {restarts} restarts across {replicas_started} replicas")
+
+    if reason_parts:
+        lines.append("      " + " ".join(reason_parts))
+
+    message = health.get("message", "")
+    if message:
+        last_line = message.strip().split("\n")[-1].strip()
+        if last_line:
+            lines.append(f"      [dim]{last_line}[/dim]")
+
+    return lines
 
 
 def _build_status_message(headline: str, current_rev=None, previous_rev=None) -> str:
