@@ -12,6 +12,7 @@ from typing import Callable, List, Optional, Union
 import aiohttp
 from loguru import logger
 
+from pipecatcloud.__version__ import version
 from pipecatcloud._utils.deploy_utils import DeployConfigParams
 from pipecatcloud.config import config
 from pipecatcloud.exception import AgentStartError
@@ -49,9 +50,10 @@ class _API:
         return f"{config.get('api_host', '')}{config.get(path, '')}"
 
     def _configure_headers(self, override_token: Optional[str] = None) -> dict:
-        if not self.token and not override_token:
-            return {}
-        return {"Authorization": f"Bearer {override_token or self.token}"}
+        headers = {"User-Agent": f"PipecatCloudCLI/{version}"}
+        if self.token or override_token:
+            headers["Authorization"] = f"Bearer {override_token or self.token}"
+        return headers
 
     def _is_pat(self) -> bool:
         """Check if the current token is a Personal Access Token."""
@@ -109,6 +111,9 @@ class _API:
         self.token = new_token
         return new_token
 
+    # TODO: several auth.py and agent.py calls bypass _base_request() with their
+    # own aiohttp.ClientSession(). A longer-term cleanup could route all PCC API
+    # calls through _base_request() so headers (User-Agent, Auth) are set in one place.
     async def _base_request(
         self,
         method: str,

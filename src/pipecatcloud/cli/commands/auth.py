@@ -20,6 +20,7 @@ from loguru import logger
 from rich.columns import Columns
 from rich.live import Live
 
+from pipecatcloud.__version__ import version as _cli_version
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
@@ -34,7 +35,7 @@ from pipecatcloud.cli.config import (
 auth_cli = typer.Typer(name="auth", help="Manage Pipecat Cloud credentials", no_args_is_help=True)
 
 # Cloudflare blocks requests with default Python user-agent strings (error 1010).
-USER_AGENT = "PipecatCloudCLI/1.0"
+USER_AGENT = f"PipecatCloudCLI/{_cli_version}"
 
 # Ports to try for the localhost OAuth callback server.
 # Our audience is developers who may have services running on common ports.
@@ -105,7 +106,7 @@ async def _get_account_org(
     async with aiohttp.ClientSession() as session:
         async with session.get(
             f"{API.construct_api_url('organization_path')}",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "User-Agent": USER_AGENT},
         ) as resp:
             if resp.status == 200:
                 data = await resp.json()
