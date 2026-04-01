@@ -20,6 +20,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from pipecatcloud.__version__ import version as _cli_version
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import (
@@ -720,7 +721,10 @@ async def deployments(
             async with aiohttp.ClientSession() as session:
                 response = await session.get(
                     f"{API.construct_api_url('services_deployments_path').format(org=org, service=agent_name)}",
-                    headers={"Authorization": f"Bearer {token}"},
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "User-Agent": f"PipecatCloudCLI/{_cli_version}",
+                    },
                 )
             if response.status != 200:
                 error_code = str(response.status)

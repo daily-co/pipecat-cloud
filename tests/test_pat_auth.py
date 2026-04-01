@@ -94,7 +94,8 @@ class TestAPIPATDetection:
     async def test_pat_sends_bearer_header(self, pat_client):
         """PAT should be sent as Bearer token in Authorization header."""
         headers = pat_client._configure_headers()
-        assert headers == {"Authorization": "Bearer pcc_pat_60ee796dc5bade735a3b0ef1b5730618"}
+        assert headers["Authorization"] == "Bearer pcc_pat_60ee796dc5bade735a3b0ef1b5730618"
+        assert headers["User-Agent"].startswith("PipecatCloudCLI/")
 
 
 class TestUsePATCommand:
@@ -121,13 +122,14 @@ class TestUsePATCommand:
             ) as mock_get_org,
             patch("pipecatcloud.cli.commands.auth.update_user_config") as mock_update,
             patch("pipecatcloud.cli.commands.auth.console") as mock_console,
+            patch("pipecatcloud.cli.commands.auth.config", {"org": None}),
         ):
             mock_get_org.return_value = ("my-org", "My Organization")
 
             await _use_pat_impl("pcc_pat_60ee796dc5bade735a3b0ef1b5730618")
 
-            # Should verify token
-            mock_get_org.assert_called_once_with("pcc_pat_60ee796dc5bade735a3b0ef1b5730618")
+            # Should verify token (active_org=None when no org in config)
+            mock_get_org.assert_called_once_with("pcc_pat_60ee796dc5bade735a3b0ef1b5730618", None)
 
             # Should store to config with cleared OAuth fields
             mock_update.assert_called_once_with(
