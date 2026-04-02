@@ -8,6 +8,7 @@ import base64
 import os
 import re
 from typing import Optional
+from typing import List
 from xmlrpc.client import boolean
 
 import questionary
@@ -69,7 +70,7 @@ def validate_secret_name(name: str):
 @requires_login
 async def set(
     name: str = typer.Argument(help="Name of the secret set to create e.g. 'my-secret-set'"),
-    secrets: list[str] = typer.Argument(
+    secrets: List[str] = typer.Argument(
         None,
         help="List of secret key-value pairs e.g. 'KEY1=value1 KEY2=\"value with spaces\"'",
     ),
