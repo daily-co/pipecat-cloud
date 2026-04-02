@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   appears under the revision line in both `pcc agent status` and during
   deploy monitoring.
 
+### Fixed
+
+- **Default organization resolution for `PIPECAT_TOKEN` auth**: The CLI now
+  automatically resolves the user's default organization from the API when
+  a token is present but no org is configured locally. Previously,
+  `PIPECAT_TOKEN` required the org to be in the config file or `PIPECAT_ORG`
+  to be set as well.
+
 ### Changed
 
 - All API requests now include a `User-Agent: PipecatCloudCLI/<version>` header,
