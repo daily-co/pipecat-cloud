@@ -443,6 +443,7 @@ async def login():
 @requires_login
 async def logout():
     refresh_token = config.get("refresh_token")
+    revocation_succeeded = False
 
     # If this is an OAuth session, attempt server-side token revocation (PCC-678).
     # The /auth/logout endpoint proxies revocation to Clerk with the client_secret.
@@ -465,7 +466,7 @@ async def logout():
                                 "Token will expire within 24 hours.[/yellow]"
                             )
                         elif resp.ok:
-                            logger.debug("Server-side token revocation succeeded")
+                            revocation_succeeded = True
                         else:
                             logger.debug(f"Logout revocation returned {resp.status}")
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
@@ -478,8 +479,13 @@ async def logout():
     with console.status("[dim]Removing credentials...[/dim]", spinner="dots"):
         remove_user_config()
 
-    if refresh_token:
+    if revocation_succeeded:
         console.success("Logged out and session revoked.")
+    elif refresh_token:
+        console.success(
+            "Local credentials removed. Server-side revocation could not be confirmed.\n"
+            "[dim]The token will expire automatically within 24 hours.[/dim]"
+        )
     else:
         console.success(
             "User credentials for Pipecat Cloud removed. Please sign out via dashboard to fully revoke session.",

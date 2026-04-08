@@ -93,7 +93,10 @@ def _write_user_config(new_config):
 
 
 def remove_user_config():
-    os.remove(user_config_path)
+    try:
+        os.remove(user_config_path)
+    except FileNotFoundError:
+        pass
 
 
 def update_user_config(

@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OAuth callback server now binds to `127.0.0.1` instead of `localhost` to
   prevent DNS rebinding attacks.
 
+### Fixed
+
+- `pcc auth logout` no longer claims "session revoked" when server-side
+  revocation was not confirmed. It now accurately reports what succeeded.
+
+- `pcc auth logout` no longer crashes if the credentials file is already absent.
+
 ## [0.4.3] - 2026-04-02
 
 ### Fixed
