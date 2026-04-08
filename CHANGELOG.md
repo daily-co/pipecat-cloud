@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `pcc auth logout` no longer crashes if the credentials file is already absent.
 
+- Fixed `organizations_current()` fallback returning the wrong data shape when
+  no specific org is requested.
+
 ## [0.4.3] - 2026-04-02
 
 ### Fixed

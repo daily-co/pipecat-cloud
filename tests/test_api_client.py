@@ -345,3 +345,51 @@ class TestAPIProperties:
             # Verify payload
             payload = mock_request.call_args[1]["json"]
             assert payload == {"defaultRegion": "eu-central"}
+
+
+class TestOrganizationsCurrent:
+    """Test organizations_current fallback behavior."""
+
+    @pytest.fixture
+    def api_client(self):
+        return _API(token="test-token", is_cli=True)
+
+    @pytest.mark.asyncio
+    async def test_fallback_returns_first_org(self, api_client):
+        """Regression: fallback path must index into results['organizations'], not results."""
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = {
+                "organizations": [
+                    {"name": "my-org", "verboseName": "My Organization"},
+                    {"name": "other-org", "verboseName": "Other Org"},
+                ]
+            }
+
+            result = await api_client._organizations_current(org=None)
+
+            assert result == {"name": "my-org", "verbose_name": "My Organization"}
+
+    @pytest.mark.asyncio
+    async def test_matching_org_returned(self, api_client):
+        """When org is specified, the matching org should be returned."""
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = {
+                "organizations": [
+                    {"name": "first-org", "verboseName": "First Org"},
+                    {"name": "target-org", "verboseName": "Target Org"},
+                ]
+            }
+
+            result = await api_client._organizations_current(org="target-org")
+
+            assert result == {"name": "target-org", "verbose_name": "Target Org"}
+
+    @pytest.mark.asyncio
+    async def test_no_orgs_returns_none(self, api_client):
+        """When the user has no organizations, return None."""
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = {"organizations": []}
+
+            result = await api_client._organizations_current(org=None)
+
+            assert result is None
