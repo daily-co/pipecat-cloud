@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning (tokens passed as arguments are visible in shell history and process
   listings).
 
+- OAuth callback server now binds to `127.0.0.1` instead of `localhost` to
+  prevent DNS rebinding attacks.
+
 ## [0.4.3] - 2026-04-02
 
 ### Fixed

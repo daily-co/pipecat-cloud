@@ -40,6 +40,7 @@ USER_AGENT = f"PipecatCloudCLI/{_cli_version}"
 # Ports to try for the localhost OAuth callback server.
 # Our audience is developers who may have services running on common ports.
 # We try a range and use the first available.
+CALLBACK_HOST = "127.0.0.1"
 CALLBACK_PORTS = [8400, 8401, 8402, 8403, 8404]
 CALLBACK_PATH = "/oauth_callback"
 
@@ -241,7 +242,7 @@ async def _start_callback_server() -> Tuple[Any, int, "asyncio.Future"]:
     # so we use a less-common range and try multiple.
     for port in CALLBACK_PORTS:
         try:
-            site = web.TCPSite(runner, "localhost", port)
+            site = web.TCPSite(runner, CALLBACK_HOST, port)
             await site.start()
             return runner, port, result_future
         except OSError:
@@ -343,7 +344,7 @@ async def login():
         console.error(str(e))
         return
 
-    redirect_uri = f"http://localhost:{port}{CALLBACK_PATH}"
+    redirect_uri = f"http://{CALLBACK_HOST}:{port}{CALLBACK_PATH}"
 
     try:
         # Generate PKCE verifier + challenge
