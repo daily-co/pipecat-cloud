@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expected value, endpoints must use HTTPS, and PKCE S256 support is verified
   when advertised.
 
+- Credentials are now written atomically (write to temp file, fsync, rename)
+  to prevent corruption from interrupted writes. File permissions are
+  restrictive from creation.
+
 ## [0.4.3] - 2026-04-02
 
 ### Fixed

@@ -7,6 +7,7 @@
 import os
 import stat
 import sys
+import tempfile
 from typing import Optional
 
 import toml
@@ -80,16 +81,31 @@ user_config = _read_user_config()
 
 def _write_user_config(new_config):
     dir_path = os.path.dirname(user_config_path)
-    os.makedirs(dir_path, exist_ok=True)
+    os.makedirs(dir_path, mode=0o700, exist_ok=True)
 
-    with open(user_config_path, "w") as f:
-        toml.dump(new_config, f)
-
-    # Restrict permissions so only the file owner can access credentials.
-    # On Windows os.chmod is limited but home directories are already
-    # protected by ACLs, so this is effectively a Unix-only hardening.
-    os.chmod(dir_path, stat.S_IRWXU)  # 0o700
-    os.chmod(user_config_path, stat.S_IRUSR | stat.S_IWUSR)  # 0o600
+    # Atomic write: serialize to a temp file in the same directory, fsync,
+    # then rename into place.  This prevents a crash mid-write from leaving
+    # a truncated or empty credentials file (RFC 6749 §10.3).
+    fd = None
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=dir_path, prefix=".pipecatcloud_", suffix=".tmp")
+        # mkstemp opens with 0o600 by default — restrictive from creation.
+        with os.fdopen(fd, "w") as f:
+            fd = None  # os.fdopen takes ownership of the fd
+            toml.dump(new_config, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, user_config_path)
+        tmp_path = None  # rename succeeded, nothing to clean up
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def remove_user_config():
