@@ -64,17 +64,51 @@ async def _fetch_oauth_config() -> dict:
 
 
 async def _fetch_oidc_discovery(issuer: str) -> dict:
-    """Fetch OIDC discovery document from the OAuth issuer (RFC 8414).
+    """Fetch and validate OIDC discovery document from the OAuth issuer (RFC 8414).
 
     This gives us the authorization and token endpoints without
     hardcoding any provider-specific URLs.
+
+    Validates the discovery metadata per RFC 8414 §3.1 and RFC 9207 §2.4:
+    - issuer must exactly match the expected value
+    - authorization_endpoint and token_endpoint must use HTTPS
+    - code_challenge_methods_supported must include S256 (when present)
+    - response_types_supported must include "code" (when present)
     """
     url = f"{issuer}/.well-known/openid-configuration"
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers={"User-Agent": USER_AGENT}) as resp:
             if resp.status != 200:
                 raise RuntimeError(f"OIDC discovery failed ({resp.status}) at {url}")
-            return await resp.json()
+            doc = await resp.json()
+
+    # RFC 8414 §3.1: issuer in metadata MUST exactly match the expected issuer.
+    if doc.get("issuer") != issuer:
+        raise RuntimeError(
+            f"OIDC issuer mismatch: expected {issuer!r}, got {doc.get('issuer')!r}"
+        )
+
+    # Endpoints must use HTTPS to prevent credential interception.
+    for key in ("authorization_endpoint", "token_endpoint"):
+        endpoint = doc.get(key, "")
+        if not endpoint.startswith("https://"):
+            raise RuntimeError(f"OIDC {key} must use HTTPS, got {endpoint!r}")
+
+    # If the server advertises supported challenge methods, verify S256 is included.
+    challenge_methods = doc.get("code_challenge_methods_supported")
+    if challenge_methods is not None and "S256" not in challenge_methods:
+        raise RuntimeError(
+            f"OIDC server does not support S256 PKCE (supported: {challenge_methods})"
+        )
+
+    # If the server advertises supported response types, verify "code" is included.
+    response_types = doc.get("response_types_supported")
+    if response_types is not None and "code" not in response_types:
+        raise RuntimeError(
+            f"OIDC server does not support 'code' response type (supported: {response_types})"
+        )
+
+    return doc
 
 
 # ---- Helpers ----

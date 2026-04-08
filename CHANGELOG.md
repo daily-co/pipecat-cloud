@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `organizations_current()` fallback returning the wrong data shape when
   no specific org is requested.
 
+- OIDC discovery metadata is now validated before use: issuer must match
+  expected value, endpoints must use HTTPS, and PKCE S256 support is verified
+  when advertised.
+
 ## [0.4.3] - 2026-04-02
 
 ### Fixed
