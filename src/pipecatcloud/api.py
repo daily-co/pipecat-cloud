@@ -233,7 +233,10 @@ class _API:
                     return {"name": o["name"], "verbose_name": o["verboseName"]}
 
         # Default to first organization if active_org not found or not specified
-        return {"name": results["organizations"][0]["name"], "verbose_name": results["organizations"][0]["verboseName"]}
+        return {
+            "name": results["organizations"][0]["name"],
+            "verbose_name": results["organizations"][0]["verboseName"],
+        }
 
     @property
     def organizations_current(self):

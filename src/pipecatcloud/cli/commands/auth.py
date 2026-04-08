@@ -84,9 +84,7 @@ async def _fetch_oidc_discovery(issuer: str) -> dict:
 
     # RFC 8414 §3.1: issuer in metadata MUST exactly match the expected issuer.
     if doc.get("issuer") != issuer:
-        raise RuntimeError(
-            f"OIDC issuer mismatch: expected {issuer!r}, got {doc.get('issuer')!r}"
-        )
+        raise RuntimeError(f"OIDC issuer mismatch: expected {issuer!r}, got {doc.get('issuer')!r}")
 
     # Endpoints must use HTTPS to prevent credential interception.
     for key in ("authorization_endpoint", "token_endpoint"):
@@ -569,7 +567,9 @@ async def _use_pat_impl(token: str):
 @auth_cli.command(name="use-pat", help="Authenticate with a Personal Access Token")
 @synchronizer.create_blocking
 async def use_pat(
-    token: Optional[str] = typer.Argument(None, help="[deprecated] PAT as argument (leaks to shell history)"),
+    token: Optional[str] = typer.Argument(
+        None, help="[deprecated] PAT as argument (leaks to shell history)"
+    ),
 ):
     if token is not None:
         console.print(

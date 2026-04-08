@@ -66,9 +66,7 @@ class TestCallbackServer:
         runner, port, result_future = await _start_callback_server()
         try:
             async with __import__("aiohttp").ClientSession() as session:
-                await session.get(
-                    f"http://127.0.0.1:{port}/oauth_callback?error=access_denied"
-                )
+                await session.get(f"http://127.0.0.1:{port}/oauth_callback?error=access_denied")
             code, state = result_future.result()
             assert code is None
             assert state is None
@@ -81,9 +79,7 @@ class TestCallbackServer:
         runner, port, result_future = await _start_callback_server()
         try:
             async with __import__("aiohttp").ClientSession() as session:
-                await session.get(
-                    f"http://127.0.0.1:{port}/oauth_callback?state=test-state"
-                )
+                await session.get(f"http://127.0.0.1:{port}/oauth_callback?state=test-state")
             code, state = result_future.result()
             # code is None because query param "code" is absent
             assert code is None
@@ -145,7 +141,9 @@ class TestOIDCDiscoveryValidation:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        return patch("pipecatcloud.cli.commands.auth.aiohttp.ClientSession", return_value=mock_session)
+        return patch(
+            "pipecatcloud.cli.commands.auth.aiohttp.ClientSession", return_value=mock_session
+        )
 
     @pytest.mark.asyncio
     async def test_valid_document_passes(self):
@@ -217,14 +215,26 @@ class TestTokenRefresh:
             "token_endpoint": "https://auth.example.com/token",
         }
         return (
-            patch("pipecatcloud.cli.commands.auth._fetch_oauth_config", new_callable=AsyncMock, return_value=oauth_config),
-            patch("pipecatcloud.cli.commands.auth._fetch_oidc_discovery", new_callable=AsyncMock, return_value=oidc_doc),
+            patch(
+                "pipecatcloud.cli.commands.auth._fetch_oauth_config",
+                new_callable=AsyncMock,
+                return_value=oauth_config,
+            ),
+            patch(
+                "pipecatcloud.cli.commands.auth._fetch_oidc_discovery",
+                new_callable=AsyncMock,
+                return_value=oidc_doc,
+            ),
         )
 
     @pytest.mark.asyncio
     async def test_refresh_success(self):
         mock_oauth, mock_oidc = self._mock_oauth_and_oidc()
-        token_response = {"access_token": "new-token", "refresh_token": "new-refresh", "expires_in": 3600}
+        token_response = {
+            "access_token": "new-token",
+            "refresh_token": "new-refresh",
+            "expires_in": 3600,
+        }
 
         mock_resp = AsyncMock()
         mock_resp.status = 200
@@ -238,7 +248,9 @@ class TestTokenRefresh:
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
         with mock_oauth, mock_oidc:
-            with patch("pipecatcloud.cli.commands.auth.aiohttp.ClientSession", return_value=mock_session):
+            with patch(
+                "pipecatcloud.cli.commands.auth.aiohttp.ClientSession", return_value=mock_session
+            ):
                 result = await refresh_access_token("old-refresh-token")
 
         assert result["access_token"] == "new-token"
@@ -258,7 +270,9 @@ class TestTokenRefresh:
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
         with mock_oauth, mock_oidc:
-            with patch("pipecatcloud.cli.commands.auth.aiohttp.ClientSession", return_value=mock_session):
+            with patch(
+                "pipecatcloud.cli.commands.auth.aiohttp.ClientSession", return_value=mock_session
+            ):
                 result = await refresh_access_token("bad-refresh-token")
 
         assert result is None
