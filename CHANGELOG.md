@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `pcc secrets image-pull-secret` now supports updating existing image pull
+  secrets. Previously, updating required deleting and recreating the secret.
+  The command prompts for confirmation before overwriting; use `--skip` to
+  bypass the prompt in scripts.
+
 ### Changed
 
 - `--show-cli-config` now redacts `token` and `refresh_token` values in output.
