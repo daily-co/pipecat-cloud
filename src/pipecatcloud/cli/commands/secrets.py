@@ -15,7 +15,6 @@ import questionary
 import typer
 from loguru import logger
 from rich import box
-from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
@@ -492,7 +491,7 @@ async def delete(
 
 
 @secrets_cli.command(
-    name="image-pull-secret", help="Create an image pull secret for active organization."
+    name="image-pull-secret", help="Create or update an image pull secret for active organization."
 )
 @synchronizer.create_blocking
 @requires_login
@@ -508,6 +507,12 @@ async def image_pull_secret(
     ),
     base64encode: bool = typer.Option(
         True, "--encode", "-e", help="base64 encode credentials for added security"
+    ),
+    skip_confirm: boolean = typer.Option(
+        False,
+        "--skip",
+        "-s",
+        help="Skip confirmations / force creation or update",
     ),
     organization: str = typer.Option(
         None,
@@ -556,13 +561,10 @@ async def image_pull_secret(
         return typer.Exit(1)
 
     # Check if secret already exists
-    used_region = None
-    with Live(
-        console.status(
-            f"[dim]Checking if image pull secret '{name}' already exists[/dim]", spinner="dots"
-        ),
-        refresh_per_second=4,
-    ) as live:
+    existing_secret = None
+    with console.status(
+        f"[dim]Checking if image pull secret '{name}' already exists[/dim]", spinner="dots"
+    ):
         data, error = await API.secrets_list(org=org)
 
         if error:
@@ -572,19 +574,20 @@ async def image_pull_secret(
             existing_secret = next(
                 (s for s in data if s["name"] == name and s["type"] == "imagePullSecret"), None
             )
-            if existing_secret:
-                live.stop()
-                console.error(
-                    f"Image pull secret '[bold]{name}'[/bold] already exists. Please choose a different name or delete the existing one first."
-                )
-                return typer.Exit(1)
 
-        live.update(
-            console.status(
-                f"[dim]Creating image pull secret [bold]'{name}'[/bold][/dim]", spinner="dots"
-            )
-        )
+    if existing_secret and not skip_confirm:
+        confirm = await questionary.confirm(
+            f"Image pull secret '{name}' already exists. Update it?"
+        ).ask_async()
+        if not confirm:
+            console.print("[bold red]Update cancelled[/bold red]")
+            return typer.Exit(1)
 
+    used_region = None
+    with console.status(
+        f"[dim]{'Updating' if existing_secret else 'Creating'} image pull secret [bold]'{name}'[/bold][/dim]",
+        spinner="dots",
+    ):
         data, error = await API.secrets_upsert(
             data={"isImagePullSecret": True, "secretValue": credentials, "host": host},
             set_name=name,
@@ -600,6 +603,7 @@ async def image_pull_secret(
             used_region = data["region"]
 
     region_info = f" in [bold cyan]{used_region}[/bold cyan]" if used_region else ""
+    action = "updated" if existing_secret else "created"
     console.success(
-        f"Image pull secret [bold green]'{name}'[/bold green] for [bold green]{host}[/bold green] created successfully{region_info}.",
+        f"Image pull secret [bold green]'{name}'[/bold green] for [bold green]{host}[/bold green] {action} successfully{region_info}.",
     )
