@@ -42,8 +42,18 @@ def show_config_callback(value: bool):
         from pipecatcloud._utils.deploy_utils import load_deploy_config_file
         from pipecatcloud.cli.config import deploy_config_path
 
-        # Print local config
-        pprint(config.to_dict())
+        config_dict = config.to_dict()
+
+        # Redact credential values — users who need raw values can read the
+        # config file directly (~/.config/pipecatcloud/pipecatcloud.toml).
+        for key in ("token", "refresh_token"):
+            if config_dict.get(key):
+                val = str(config_dict[key])
+                # Show token type prefix (e.g. "pcc_pat_****") for diagnostics
+                prefix = val[:8] if len(val) > 12 else ""
+                config_dict[key] = f"{prefix}****"
+
+        pprint(config_dict)
 
         # Check for deploy config
         try:
@@ -76,7 +86,7 @@ def cli(
         None,
         "--show-cli-config",
         callback=show_config_callback,
-        help="Show CLI internal configuration (credentials, active org)",
+        help="Show CLI internal configuration (credentials redacted)",
     ),
 ):
     pass

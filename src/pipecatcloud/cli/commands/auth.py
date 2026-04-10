@@ -40,6 +40,7 @@ USER_AGENT = f"PipecatCloudCLI/{_cli_version}"
 # Ports to try for the localhost OAuth callback server.
 # Our audience is developers who may have services running on common ports.
 # We try a range and use the first available.
+CALLBACK_HOST = "127.0.0.1"
 CALLBACK_PORTS = [8400, 8401, 8402, 8403, 8404]
 CALLBACK_PATH = "/oauth_callback"
 
@@ -63,17 +64,49 @@ async def _fetch_oauth_config() -> dict:
 
 
 async def _fetch_oidc_discovery(issuer: str) -> dict:
-    """Fetch OIDC discovery document from the OAuth issuer (RFC 8414).
+    """Fetch and validate OIDC discovery document from the OAuth issuer (RFC 8414).
 
     This gives us the authorization and token endpoints without
     hardcoding any provider-specific URLs.
+
+    Validates the discovery metadata per RFC 8414 §3.1 and RFC 9207 §2.4:
+    - issuer must exactly match the expected value
+    - authorization_endpoint and token_endpoint must use HTTPS
+    - code_challenge_methods_supported must include S256 (when present)
+    - response_types_supported must include "code" (when present)
     """
     url = f"{issuer}/.well-known/openid-configuration"
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers={"User-Agent": USER_AGENT}) as resp:
             if resp.status != 200:
                 raise RuntimeError(f"OIDC discovery failed ({resp.status}) at {url}")
-            return await resp.json()
+            doc = await resp.json()
+
+    # RFC 8414 §3.1: issuer in metadata MUST exactly match the expected issuer.
+    if doc.get("issuer") != issuer:
+        raise RuntimeError(f"OIDC issuer mismatch: expected {issuer!r}, got {doc.get('issuer')!r}")
+
+    # Endpoints must use HTTPS to prevent credential interception.
+    for key in ("authorization_endpoint", "token_endpoint"):
+        endpoint = doc.get(key, "")
+        if not endpoint.startswith("https://"):
+            raise RuntimeError(f"OIDC {key} must use HTTPS, got {endpoint!r}")
+
+    # If the server advertises supported challenge methods, verify S256 is included.
+    challenge_methods = doc.get("code_challenge_methods_supported")
+    if challenge_methods is not None and "S256" not in challenge_methods:
+        raise RuntimeError(
+            f"OIDC server does not support S256 PKCE (supported: {challenge_methods})"
+        )
+
+    # If the server advertises supported response types, verify "code" is included.
+    response_types = doc.get("response_types_supported")
+    if response_types is not None and "code" not in response_types:
+        raise RuntimeError(
+            f"OIDC server does not support 'code' response type (supported: {response_types})"
+        )
+
+    return doc
 
 
 # ---- Helpers ----
@@ -241,7 +274,7 @@ async def _start_callback_server() -> Tuple[Any, int, "asyncio.Future"]:
     # so we use a less-common range and try multiple.
     for port in CALLBACK_PORTS:
         try:
-            site = web.TCPSite(runner, "localhost", port)
+            site = web.TCPSite(runner, CALLBACK_HOST, port)
             await site.start()
             return runner, port, result_future
         except OSError:
@@ -343,7 +376,7 @@ async def login():
         console.error(str(e))
         return
 
-    redirect_uri = f"http://localhost:{port}{CALLBACK_PATH}"
+    redirect_uri = f"http://{CALLBACK_HOST}:{port}{CALLBACK_PATH}"
 
     try:
         # Generate PKCE verifier + challenge
@@ -442,6 +475,7 @@ async def login():
 @requires_login
 async def logout():
     refresh_token = config.get("refresh_token")
+    revocation_succeeded = False
 
     # If this is an OAuth session, attempt server-side token revocation (PCC-678).
     # The /auth/logout endpoint proxies revocation to Clerk with the client_secret.
@@ -464,7 +498,7 @@ async def logout():
                                 "Token will expire within 24 hours.[/yellow]"
                             )
                         elif resp.ok:
-                            logger.debug("Server-side token revocation succeeded")
+                            revocation_succeeded = True
                         else:
                             logger.debug(f"Logout revocation returned {resp.status}")
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
@@ -477,8 +511,13 @@ async def logout():
     with console.status("[dim]Removing credentials...[/dim]", spinner="dots"):
         remove_user_config()
 
-    if refresh_token:
+    if revocation_succeeded:
         console.success("Logged out and session revoked.")
+    elif refresh_token:
+        console.success(
+            "Local credentials removed. Server-side revocation could not be confirmed.\n"
+            "[dim]The token will expire automatically within 24 hours.[/dim]"
+        )
     else:
         console.success(
             "User credentials for Pipecat Cloud removed. Please sign out via dashboard to fully revoke session.",
@@ -528,8 +567,23 @@ async def _use_pat_impl(token: str):
 @auth_cli.command(name="use-pat", help="Authenticate with a Personal Access Token")
 @synchronizer.create_blocking
 async def use_pat(
-    token: str = typer.Argument(help="Personal Access Token (pcc_pat_...)"),
+    token: Optional[str] = typer.Argument(
+        None, help="[deprecated] PAT as argument (leaks to shell history)"
+    ),
 ):
+    if token is not None:
+        console.print(
+            "[yellow]Warning: Passing tokens as arguments is deprecated — they are visible in "
+            "shell history and process listings. Next time, omit the argument to use the "
+            "secure prompt.[/yellow]"
+        )
+    else:
+        import getpass
+
+        token = getpass.getpass("Personal Access Token: ")
+        if not token:
+            console.error("No token provided.")
+            return
     await _use_pat_impl(token)
 
 

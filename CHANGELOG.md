@@ -5,6 +5,40 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `--show-cli-config` now redacts `token` and `refresh_token` values in output.
+  A type prefix (e.g. `pcc_pat_****`) is shown for diagnostics. Users who need
+  raw values can read the config file directly.
+
+- `pcc auth use-pat` now reads the token from a secure hidden prompt instead of
+  a positional argument. The positional form still works but emits a deprecation
+  warning (tokens passed as arguments are visible in shell history and process
+  listings).
+
+- OAuth callback server now binds to `127.0.0.1` instead of `localhost` to
+  prevent DNS rebinding attacks.
+
+### Fixed
+
+- `pcc auth logout` no longer claims "session revoked" when server-side
+  revocation was not confirmed. It now accurately reports what succeeded.
+
+- `pcc auth logout` no longer crashes if the credentials file is already absent.
+
+- Fixed `organizations_current()` fallback returning the wrong data shape when
+  no specific org is requested.
+
+- OIDC discovery metadata is now validated before use: issuer must match
+  expected value, endpoints must use HTTPS, and PKCE S256 support is verified
+  when advertised.
+
+- Credentials are now written atomically (write to temp file, fsync, rename)
+  to prevent corruption from interrupted writes. File permissions are
+  restrictive from creation.
+
 ## [0.4.3] - 2026-04-02
 
 ### Fixed
