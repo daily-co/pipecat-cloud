@@ -333,6 +333,7 @@ class DeployConfigParams:
     build_config: BuildConfig = field(factory=BuildConfig)  # Cloud build configuration
     agent_profile: Optional[str] = None
     krisp_viva: KrispVivaConfig = field(factory=KrispVivaConfig)
+    force_redeploy: bool = False
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:

@@ -346,6 +346,10 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         # Close the live display before starting the new polling phase
         live.stop()
 
+        # Surface API warning (e.g. when identical config was deployed without --force)
+        if result and result.get("warning"):
+            console.print(f"[yellow]Warning: {result['warning']}[/yellow]")
+
     """
     # 3. Poll status until healthy
     """
@@ -556,11 +560,11 @@ def create_deploy_command(app: typer.Typer):
             help="Region for service deployment",
             rich_help_panel="Deployment Configuration",
         ),
-        skip_confirm: bool = typer.Option(
+        force: bool = typer.Option(
             False,
             "--force",
             "-f",
-            help="Force deployment / skip confirmation",
+            help="Force a new deployment even if config hasn't changed",
             rich_help_panel="Additional Options",
         ),
         yes: bool = typer.Option(
@@ -632,7 +636,7 @@ def create_deploy_command(app: typer.Typer):
         org = organization or config.get("org")
 
         # Combine automation flags
-        auto_yes = yes or skip_confirm
+        auto_yes = yes or force
 
         # Compose deployment config from CLI options and config file (if provided)
         # Order of precedence:
@@ -653,6 +657,7 @@ def create_deploy_command(app: typer.Typer):
         )
         partial_config.enable_krisp = krisp or partial_config.enable_krisp
         partial_config.agent_profile = profile or partial_config.agent_profile
+        partial_config.force_redeploy = force
 
         # Override build config from CLI args
         if build_dir:
