@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+from typing import Optional
+
 import questionary
 import typer
 from loguru import logger
@@ -268,17 +270,12 @@ async def create_key(
     console.success(table, subtitle="Using as default in local config")
 
 
-@keys_cli.command(name="delete", help="Delete an API key for an organization.")
-@synchronizer.create_blocking
-@requires_login
-async def delete_key(
-    organization: str = typer.Option(
-        None,
-        "--organization",
-        "-o",
-        help="Organization to get tokens for",
-    ),
-):
+async def _revoke_key_flow(organization: Optional[str]) -> None:
+    """Shared implementation for the ``revoke`` command and its ``delete`` alias.
+
+    Prompts the user to pick an active API key, clears it from local config if
+    it was the default, and asks the server to revoke it.
+    """
     org = organization or config.get("org")
 
     with console.status(
@@ -298,12 +295,23 @@ async def delete_key(
             typer.Exit(1)
             return
 
-    # Prompt user to delete a key
+    # Only offer keys that are not already revoked — revoking a revoked key
+    # is a no-op on the server and confuses the interactive flow.
+    active_keys = [k for k in data["public"] if not k.get("revoked")]
+
+    if not active_keys:
+        console.error(
+            "[bold]No active API keys to revoke.[/bold]\n"
+            "[dim]All keys in this organization are already revoked.[/dim]"
+        )
+        return typer.Exit(1)
+
+    # Prompt user to revoke a key
     key = await questionary.select(
-        "Select API key to delete",
+        "Select API key to revoke",
         choices=[
             {"name": key["metadata"]["name"], "value": (key["id"], key["key"])}
-            for key in data["public"]
+            for key in active_keys
         ],
     ).ask_async()
 
@@ -328,13 +336,49 @@ async def delete_key(
             console.error("Unable to remove default key from local user config")
             return typer.Exit(1)
 
-    with console.status(f"[dim]Deleting API key with ID {key[0]}...[/dim]", spinner="dots"):
-        data, error = await API.api_key_delete(key[0], org)
+    with console.status(f"[dim]Revoking API key with ID {key[0]}...[/dim]", spinner="dots"):
+        data, error = await API.api_key_revoke(key[0], org)
 
         if error:
             return typer.Exit(1)
 
-    console.success(f"API key with ID: [bold]'{key[0]}'[/bold] deleted successfully.")
+    console.success(f"API key with ID: [bold]'{key[0]}'[/bold] revoked successfully.")
+
+
+@keys_cli.command(name="revoke", help="Revoke an API key for an organization.")
+@synchronizer.create_blocking
+@requires_login
+async def revoke_key(
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization the API key belongs to",
+    ),
+):
+    await _revoke_key_flow(organization)
+
+
+@keys_cli.command(
+    name="delete",
+    hidden=True,
+    help="Deprecated alias for 'revoke'.",
+)
+@synchronizer.create_blocking
+@requires_login
+async def delete_key(
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization the API key belongs to",
+    ),
+):
+    console.print(
+        "[yellow]'delete' is deprecated and will be removed in a future release; "
+        "use 'revoke' instead.[/yellow]"
+    )
+    await _revoke_key_flow(organization)
 
 
 @keys_cli.command(name="use", help="Set default API key for an organization in local config.")
