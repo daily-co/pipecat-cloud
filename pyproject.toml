@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pipecatcloud"
 dynamic = ["version"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 description = "Cloud hosting for Pipecat AI applications"
 license = { text = "BSD 2-Clause License" }
 readme = "README.md"
@@ -23,17 +23,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-pipecat = ["pipecat-ai>=0.0.79"]
+pipecat = ["pipecat-ai>=1.0.0"]
 
 [dependency-groups]
 dev = [
-    "build~=1.2.2",
-    "grpcio-tools~=1.67.1",
-    "pre-commit~=4.2.0",
-    "pyright~=1.1.402",
-    "pytest~=8.4.1",
-    "pytest-asyncio~=1.0.0",
-    "ruff~=0.12.1",
+    "build~=1.4.0",
+    "grpcio-tools~=1.78.0",
+    "pre-commit~=4.5.1",
+    "pyright>=1.1.404,<1.2",
+    "pytest>=9.0.0,<10",
+    "pytest-asyncio>=1.0.0,<2",
+    "ruff>=0.12.11,<1",
     "setuptools~=78.1.1",
     "setuptools_scm~=8.3.1",
 ]

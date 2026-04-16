@@ -5,6 +5,17 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-04-16
+
+### Changed
+
+- Minimum Python version bumped from 3.10 to 3.11, matching Pipecat 1.0's
+  supported range (3.11-3.14). Users on Python 3.10 will continue to receive
+  the previous release via pip/uv version resolution.
+
+- The `pipecatcloud[pipecat]` optional dependency now requires `pipecat-ai>=1.0.0`
+  (previously `>=0.0.79`).
+
 ## [0.4.4] - 2026-04-10
 
 ### Added
