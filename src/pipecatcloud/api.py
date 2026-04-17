@@ -427,6 +427,7 @@ class _API:
                 "audioFilter": deploy_config.krisp_viva.audio_filter,
             },
             "forceRedeploy": deploy_config.force_redeploy or None,
+            "websocketAuth": deploy_config.websocket_auth,
         }
 
         # Use either build_id (cloud build) or image (user-provided)
