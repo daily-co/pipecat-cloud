@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `pipecatcloud[pipecat]` optional dependency now requires `pipecat-ai>=1.0.0`
   (previously `>=0.0.79`).
 
+- **`pcc deploy --force` now forces a new deployment** even if your
+  configuration hasn't changed. Previously, `--force` only skipped the
+  confirmation prompt. Use this when you want to pick up a new image
+  behind the same tag (e.g. `:latest`) or restart your agent instances.
+  `--yes` remains available for non-interactive/CI usage.
+
 ## [0.4.4] - 2026-04-10
 
 ### Added

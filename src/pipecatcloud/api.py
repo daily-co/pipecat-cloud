@@ -414,6 +414,7 @@ class _API:
             "krispViva": {
                 "audioFilter": deploy_config.krisp_viva.audio_filter,
             },
+            "forceRedeploy": deploy_config.force_redeploy or None,
         }
 
         # Use either build_id (cloud build) or image (user-provided)
