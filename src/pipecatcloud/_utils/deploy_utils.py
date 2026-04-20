@@ -335,6 +335,7 @@ class DeployConfigParams:
     krisp_viva: KrispVivaConfig = field(factory=KrispVivaConfig)
     force_redeploy: bool = False
     websocket_auth: Optional[str] = None
+    max_session_duration: Optional[int] = None
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:
@@ -358,6 +359,7 @@ class DeployConfigParams:
             "agent_profile": self.agent_profile,
             "krisp_viva": self.krisp_viva.to_dict() if self.krisp_viva else None,
             "websocket_auth": self.websocket_auth,
+            "max_session_duration": self.max_session_duration,
         }
 
 
@@ -418,6 +420,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "agent_profile",
             "krisp_viva",
             "websocket_auth",
+            "max_session_duration",
         }
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:

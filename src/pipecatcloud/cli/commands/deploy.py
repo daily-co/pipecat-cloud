@@ -560,6 +560,14 @@ def create_deploy_command(app: typer.Typer):
             help="Region for service deployment",
             rich_help_panel="Deployment Configuration",
         ),
+        max_session_duration: Optional[int] = typer.Option(
+            None,
+            "--max-session-duration",
+            help="Maximum session duration in seconds (60-14400, default 7200). Sessions are terminated when this limit is reached.",
+            rich_help_panel="Deployment Configuration",
+            min=60,
+            max=14400,
+        ),
         force: bool = typer.Option(
             False,
             "--force",
@@ -658,6 +666,11 @@ def create_deploy_command(app: typer.Typer):
         partial_config.enable_krisp = krisp or partial_config.enable_krisp
         partial_config.agent_profile = profile or partial_config.agent_profile
         partial_config.force_redeploy = force
+        partial_config.max_session_duration = (
+            max_session_duration
+            if max_session_duration is not None
+            else partial_config.max_session_duration
+        )
 
         # Override build config from CLI args
         if build_dir:
@@ -807,6 +820,7 @@ def create_deploy_command(app: typer.Typer):
 
         content_items.extend(
             [
+                f"[bold white]Max session duration:[/bold white] {'[dim]Default[/dim]' if partial_config.max_session_duration is None else '[green]' + str(partial_config.max_session_duration) + 's[/green]'}",
                 "\n[dim]Scaling configuration:[/dim]",
             ]
         )
