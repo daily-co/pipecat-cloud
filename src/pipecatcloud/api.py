@@ -295,18 +295,30 @@ class _API:
         """
         return self.create_api_method(self._api_key_create)
 
-    async def _api_key_delete(self, api_key_id: str, org: str) -> dict:
+    async def _api_key_revoke(self, api_key_id: str, org: str) -> dict:
         url = f"{self.construct_api_url('api_keys_path').format(org=org)}/{api_key_id}"
         return await self._base_request("DELETE", url) or {}
 
     @property
-    def api_key_delete(self):
-        """Delete API keys for an organization.
+    def api_key_revoke(self):
+        """Revoke an API key for an organization.
+
+        The server soft-deletes the key by marking it revoked; the record is
+        preserved so audit fields (e.g. lastUsedAt) remain available.
+
         Args:
-            api_key_id: Human readable name for API key
+            api_key_id: ID of the API key to revoke
             org: Organization ID
         """
-        return self.create_api_method(self._api_key_delete)
+        return self.create_api_method(self._api_key_revoke)
+
+    @property
+    def api_key_delete(self):
+        """Deprecated: use :attr:`api_key_revoke` instead.
+
+        Kept as an alias so older CLI/library callers keep working.
+        """
+        return self.create_api_method(self._api_key_revoke)
 
     # Secret
 
