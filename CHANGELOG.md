@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--max-session-duration` flag on `pcc deploy` for configuring the
+  per-service maximum session duration in seconds. Accepts values
+  between 60 and 14400 (4 hours), defaulting to 7200 (2 hours) when
+  unset. Also exposed in `pcc agent status` output and as
+  `max_session_duration` in `pcc-deploy.toml`.
+
 ### Fixed
 
 - `.dockerignore` patterns written with Docker's conventional trailing

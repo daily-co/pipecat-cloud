@@ -226,6 +226,20 @@ async def status(
             krisp_viva_status,
         )
 
+        # Max session duration (read from deployment manifest spec).
+        # Absent from the manifest when the user never set an explicit value —
+        # the platform applies its default via the CRD in that case.
+        max_session_duration = (
+            data.get("deployment", {})
+            .get("manifest", {})
+            .get("spec", {})
+            .get("maxSessionDurationSeconds")
+        )
+        deployment_table.add_row(
+            "[bold]Max Session Duration:[/bold]",
+            f"{max_session_duration}s" if max_session_duration is not None else "[dim]Default[/dim]",
+        )
+
         # Autoscaling info
         autoscaling_data = data.get("autoScaling", None)
         if autoscaling_data:
