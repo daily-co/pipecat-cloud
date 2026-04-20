@@ -5,6 +5,18 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `.dockerignore` patterns written with Docker's conventional trailing
+  slash (e.g. `.venv/`, `node_modules/`) and leading `./` anchors
+  (e.g. `./dist`) now match correctly in cloud builds. Previously the
+  CLI compared patterns with `fnmatch`, which treats both forms as
+  literal text, so these entries silently excluded nothing and large
+  directories like `.venv/` could leak into the build context and
+  trip the 500 MB limit.
+
 ## [0.5.0] - 2026-04-17
 
 ### Changed

@@ -143,6 +143,26 @@ def _should_exclude(path: Path, exclusions: Set[str], base_path: Path) -> bool:
     return False
 
 
+def _normalize_pattern(pattern: str) -> str:
+    """Normalize a single ``.dockerignore`` pattern for ``fnmatch`` matching.
+
+    The matcher in ``_should_exclude`` walks the tree and compares each
+    path component against every pattern with ``fnmatch.fnmatch``, which
+    treats the pattern as literal text. ``.dockerignore`` (and the
+    companion ``.gitignore`` grammar users pattern after) allows a few
+    pieces of sugar that ``fnmatch`` does not understand: a trailing
+    slash meaning "directory only", and a leading ``./`` anchoring to
+    the context root. Both forms are common in the wild and routinely
+    silently match nothing under a raw ``fnmatch`` implementation, so
+    we strip them here to make the pattern intent actually take effect.
+    """
+    normalized = pattern.strip()
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    normalized = normalized.rstrip("/")
+    return normalized
+
+
 def load_dockerignore(context_dir: Path) -> Optional[Set[str]]:
     """
     Load patterns from .dockerignore file if it exists.
@@ -161,10 +181,13 @@ def load_dockerignore(context_dir: Path) -> Optional[Set[str]]:
     try:
         with open(dockerignore_path, "r") as f:
             for line in f:
-                line = line.strip()
+                stripped = line.strip()
                 # Skip comments and empty lines
-                if line and not line.startswith("#"):
-                    patterns.add(line)
+                if not stripped or stripped.startswith("#"):
+                    continue
+                normalized = _normalize_pattern(stripped)
+                if normalized:
+                    patterns.add(normalized)
     except Exception as e:
         logger.warning(f"Failed to read .dockerignore: {e}")
         return None
@@ -195,7 +218,10 @@ def get_exclusions(context_dir: Path, extra_patterns: Optional[List[str]] = None
     # Use defaults + extras
     exclusions = DEFAULT_EXCLUSIONS.copy()
     if extra_patterns:
-        exclusions.update(extra_patterns)
+        for extra in extra_patterns:
+            normalized = _normalize_pattern(extra)
+            if normalized:
+                exclusions.add(normalized)
     return exclusions
 
 
