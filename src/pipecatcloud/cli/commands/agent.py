@@ -237,7 +237,9 @@ async def status(
         )
         deployment_table.add_row(
             "[bold]Max Session Duration:[/bold]",
-            f"{max_session_duration}s" if max_session_duration is not None else "[dim]Default[/dim]",
+            f"{max_session_duration}s"
+            if max_session_duration is not None
+            else "[dim]Default[/dim]",
         )
 
         # Autoscaling info
