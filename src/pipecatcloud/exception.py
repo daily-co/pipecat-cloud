@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-from typing import Optional, Union
 
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 
@@ -50,7 +49,7 @@ class AgentNotHealthyError(Error):
     def __init__(
         self,
         message: str = "Agent deployment is not in a ready state and cannot be started.",
-        error_code: Optional[str] = None,
+        error_code: str | None = None,
     ):
         self.message = f"{message} (Error code: {error_code})"
         self.error_code = error_code
@@ -60,7 +59,7 @@ class AgentNotHealthyError(Error):
 class AgentStartError(Error):
     """Raised when agent start request fails."""
 
-    def __init__(self, error: Optional[Union[str, dict]] = None):
+    def __init__(self, error: str | dict | None = None):
         if isinstance(error, dict):
             error_message = error.get("error", "Unknown error. Please contact support.")
             code = error.get("code")

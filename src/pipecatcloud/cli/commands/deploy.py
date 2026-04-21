@@ -6,7 +6,6 @@
 
 import asyncio
 from pathlib import Path
-from typing import Optional
 
 import typer
 from loguru import logger
@@ -50,10 +49,10 @@ ALIVE_CHECK_SLEEP = 5
 
 async def _cloud_build_flow(
     build_config: BuildConfig,
-    region: Optional[str],
+    region: str | None,
     org: str,
     auto_yes: bool,
-) -> Optional[str]:
+) -> str | None:
     """
     Execute the cloud build flow.
 
@@ -487,7 +486,7 @@ def create_deploy_command(app: typer.Typer):
     @with_deploy_config
     async def deploy(
         deploy_config=typer.Option(None, hidden=True),
-        config_file: Optional[str] = CONFIG_FILE_OPTION,
+        config_file: str | None = CONFIG_FILE_OPTION,
         agent_name: str = typer.Argument(
             None, help="Name of the agent to deploy e.g. 'my-agent'", show_default=False
         ),
@@ -552,7 +551,7 @@ def create_deploy_command(app: typer.Typer):
             help="Agent profile to use for deployment",
             rich_help_panel="Deployment Configuration",
         ),
-        region: Optional[Region] = typer.Option(
+        region: Region | None = typer.Option(
             None,
             "--region",
             "-r",

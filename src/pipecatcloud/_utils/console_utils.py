@@ -6,7 +6,6 @@
 
 import statistics
 from datetime import datetime
-from typing import Optional, Union
 
 from rich.console import Console
 from rich.panel import Panel
@@ -18,9 +17,9 @@ class PipecatConsole(Console):
     def success(
         self,
         message,
-        title: Optional[str] = None,
-        title_extra: Optional[str] = None,
-        subtitle: Optional[str] = None,
+        title: str | None = None,
+        title_extra: str | None = None,
+        subtitle: str | None = None,
     ):
         if not title:
             title = f"{PANEL_TITLE_SUCCESS}{f' - {title_extra}' if title_extra is not None else ''}"
@@ -39,9 +38,9 @@ class PipecatConsole(Console):
     def error(
         self,
         message,
-        title: Optional[str] = None,
-        title_extra: Optional[str] = None,
-        subtitle: Optional[str] = None,
+        title: str | None = None,
+        title_extra: str | None = None,
+        subtitle: str | None = None,
     ):
         if not title:
             title = f"{PANEL_TITLE_ERROR}{f' - {title_extra}' if title_extra is not None else ''}"
@@ -74,8 +73,8 @@ class PipecatConsole(Console):
 
     def api_error(
         self,
-        error_code: Optional[Union[str, dict]] = None,
-        title: Optional[str] = "API Error",
+        error_code: str | dict | None = None,
+        title: str | None = "API Error",
         hide_subtitle: bool = False,
     ):
         DEFAULT_ERROR_MESSAGE = "Unknown error. Please contact support."

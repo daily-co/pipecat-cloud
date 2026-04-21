@@ -6,7 +6,6 @@
 
 import json
 from enum import Enum
-from typing import Optional
 
 import aiohttp
 import questionary
@@ -94,7 +93,7 @@ async def list(
     organization: str = typer.Option(
         None, "--organization", "-o", help="Organization to list agents for"
     ),
-    region: Optional[Region] = typer.Option(
+    region: Region | None = typer.Option(
         None,
         "--region",
         "-r",
@@ -362,7 +361,7 @@ async def status(
 @with_deploy_config
 async def sessions(
     deploy_config=typer.Option(None, hidden=True),
-    config_file: Optional[str] = CONFIG_FILE_OPTION,
+    config_file: str | None = CONFIG_FILE_OPTION,
     agent_name: str = typer.Argument(
         None, help="Name of the agent to list sessions for e.g. 'my-agent'", show_default=False
     ),
@@ -801,7 +800,7 @@ async def deployments(
 @with_deploy_config
 async def start(
     deploy_config=typer.Option(None, hidden=True),
-    config_file: Optional[str] = CONFIG_FILE_OPTION,
+    config_file: str | None = CONFIG_FILE_OPTION,
     agent_name: str = typer.Argument(None, help="Name of the agent to start e.g. 'my-agent'"),
     force: bool = typer.Option(
         False,
@@ -968,7 +967,7 @@ async def start(
 @with_deploy_config
 async def stop(
     deploy_config=typer.Option(None, hidden=True),
-    config_file: Optional[str] = CONFIG_FILE_OPTION,
+    config_file: str | None = CONFIG_FILE_OPTION,
     agent_name: str = typer.Argument(None, help="Name of the agent e.g. 'my-agent'"),
     session_id: str = typer.Option(
         ...,

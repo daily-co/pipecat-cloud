@@ -8,8 +8,6 @@
 Build commands for Pipecat Cloud CLI.
 """
 
-from typing import Optional
-
 import typer
 from rich import box
 from rich.panel import Panel
@@ -40,7 +38,7 @@ def _format_build_status(status: str) -> str:
     return f"[{color}]{status}[/{color}]"
 
 
-def _format_duration(seconds: Optional[int]) -> str:
+def _format_duration(seconds: int | None) -> str:
     """Format duration in seconds as human-readable string."""
     if seconds is None:
         return "[dim]N/A[/dim]"
@@ -67,7 +65,7 @@ async def logs(
         min=1,
         max=10000,
     ),
-    organization: Optional[str] = typer.Option(None, "--organization", "-o", help="Organization"),
+    organization: str | None = typer.Option(None, "--organization", "-o", help="Organization"),
 ):
     """View logs for a cloud build."""
     org = organization or config.get("org")
@@ -139,7 +137,7 @@ async def logs(
 @requires_login
 async def status(
     build_id: str = typer.Argument(help="Build ID to check"),
-    organization: Optional[str] = typer.Option(None, "--organization", "-o", help="Organization"),
+    organization: str | None = typer.Option(None, "--organization", "-o", help="Organization"),
 ):
     """Get status of a cloud build."""
     org = organization or config.get("org")
@@ -233,19 +231,19 @@ async def list_builds(
         min=1,
         max=100,
     ),
-    status_filter: Optional[str] = typer.Option(
+    status_filter: str | None = typer.Option(
         None,
         "--status",
         "-s",
         help="Filter by status (pending, building, success, failed, timeout)",
     ),
-    region_filter: Optional[str] = typer.Option(
+    region_filter: str | None = typer.Option(
         None,
         "--region",
         "-r",
         help="Filter by region",
     ),
-    organization: Optional[str] = typer.Option(None, "--organization", "-o", help="Organization"),
+    organization: str | None = typer.Option(None, "--organization", "-o", help="Organization"),
 ):
     """List recent cloud builds."""
     org = organization or config.get("org")

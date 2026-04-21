@@ -5,18 +5,17 @@ Tests follow AAA pattern and cover all API client methods including
 region support, error handling, and request construction.
 """
 
+# Import from source, not installed package
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-# Import from source, not installed package
-import sys
-from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from pipecatcloud.api import _API
 from pipecatcloud._utils.deploy_utils import DeployConfigParams
+from pipecatcloud.api import _API
 
 
 class TestAPISecretsRegions:

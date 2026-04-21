@@ -6,7 +6,6 @@
 
 import subprocess
 from enum import Enum
-from typing import Optional
 
 import typer
 from rich.panel import Panel
@@ -166,7 +165,7 @@ def run_docker_command(
 
 
 def _build_image_name(
-    registry_type: RegistryType, username: str, agent_name: str, registry_url: Optional[str] = None
+    registry_type: RegistryType, username: str, agent_name: str, registry_url: str | None = None
 ) -> str:
     """Build the full image name based on registry type."""
     if registry_type == RegistryType.DOCKERHUB:
@@ -184,7 +183,7 @@ def _build_image_name(
 @with_deploy_config
 async def build_push(
     deploy_config=typer.Option(None, hidden=True),
-    config_file: Optional[str] = CONFIG_FILE_OPTION,
+    config_file: str | None = CONFIG_FILE_OPTION,
     agent_name: str = typer.Argument(
         None, help="Name of the agent to build image for e.g. 'my-agent'", show_default=False
     ),

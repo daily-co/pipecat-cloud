@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-from typing import Optional
 
 import questionary
 import typer
@@ -270,7 +269,7 @@ async def create_key(
     console.success(table, subtitle="Using as default in local config")
 
 
-async def _revoke_key_flow(organization: Optional[str]) -> None:
+async def _revoke_key_flow(organization: str | None) -> None:
     """Shared implementation for the ``revoke`` command and its ``delete`` alias.
 
     Prompts the user to pick an active API key, clears it from local config if

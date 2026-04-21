@@ -6,9 +6,9 @@
 
 import functools
 import os
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Callable, List, Optional
 
 import toml
 import typer
@@ -41,12 +41,12 @@ class DeploymentStatus:
     status_message: str
     is_available: bool = False
     is_ready: bool = False
-    degraded_reason: Optional[str] = None
-    current_revision: Optional[dict] = None
-    previous_revision: Optional[dict] = None
+    degraded_reason: str | None = None
+    current_revision: dict | None = None
+    previous_revision: dict | None = None
 
 
-def _find_condition(conditions: list, condition_type: str) -> Optional[dict]:
+def _find_condition(conditions: list, condition_type: str) -> dict | None:
     """Find a condition by type from the conditions array."""
     for c in conditions:
         if c.get("type") == condition_type:
@@ -54,13 +54,13 @@ def _find_condition(conditions: list, condition_type: str) -> Optional[dict]:
     return None
 
 
-def _format_elapsed(phase_started_at: Optional[str]) -> str:
+def _format_elapsed(phase_started_at: str | None) -> str:
     """Format elapsed time since phaseStartedAt as a human-readable string."""
     if not phase_started_at:
         return ""
     try:
         started = datetime.fromisoformat(phase_started_at.replace("Z", "+00:00"))
-        elapsed = datetime.now(timezone.utc) - started
+        elapsed = datetime.now(UTC) - started
         total_seconds = int(elapsed.total_seconds())
         if total_seconds < 0:
             return ""
@@ -148,7 +148,7 @@ def _build_status_message(headline: str, current_rev=None, previous_rev=None) ->
 
 def interpret_deployment_status(
     agent_status: dict,
-    desired_deployment_id: Optional[str] = None,
+    desired_deployment_id: str | None = None,
 ) -> DeploymentStatus:
     """Interpret the raw API response into a structured deployment status.
 
@@ -252,12 +252,12 @@ def interpret_deployment_status(
 
 @dataclass
 class ScalingParams:
-    min_agents: Optional[int] = 0
-    max_agents: Optional[int] = None
+    min_agents: int | None = 0
+    max_agents: int | None = None
     # @deprecated
-    min_instances: Optional[int] = field(default=None, metadata={"deprecated": True})
+    min_instances: int | None = field(default=None, metadata={"deprecated": True})
     # @deprecated
-    max_instances: Optional[int] = field(default=None, metadata={"deprecated": True})
+    max_instances: int | None = field(default=None, metadata={"deprecated": True})
 
     def __attrs_post_init__(self):
         # Handle deprecated fields
@@ -287,7 +287,7 @@ class ScalingParams:
 
 @dataclass
 class KrispVivaConfig:
-    audio_filter: Optional[KrispVivaAudioFilter] = None
+    audio_filter: KrispVivaAudioFilter | None = None
 
     def __attrs_post_init__(self):
         # Validation against known models
@@ -308,7 +308,7 @@ class BuildConfig:
 
     context_dir: str = "."
     dockerfile: str = "Dockerfile"
-    exclude_patterns: List[str] = field(factory=list)
+    exclude_patterns: list[str] = field(factory=list)
 
     def to_dict(self):
         return {
@@ -320,17 +320,17 @@ class BuildConfig:
 
 @dataclass
 class DeployConfigParams:
-    agent_name: Optional[str] = None
-    image: Optional[str] = None
-    build_id: Optional[str] = None  # For cloud builds
-    image_credentials: Optional[str] = None
-    secret_set: Optional[str] = None
-    region: Optional[str] = None
+    agent_name: str | None = None
+    image: str | None = None
+    build_id: str | None = None  # For cloud builds
+    image_credentials: str | None = None
+    secret_set: str | None = None
+    region: str | None = None
     scaling: ScalingParams = ScalingParams()
     enable_krisp: bool = False
     docker_config: dict = field(factory=dict)
     build_config: BuildConfig = field(factory=BuildConfig)  # Cloud build configuration
-    agent_profile: Optional[str] = None
+    agent_profile: str | None = None
     krisp_viva: KrispVivaConfig = field(factory=KrispVivaConfig)
     force_redeploy: bool = False
     websocket_auth: Optional[str] = None
@@ -364,14 +364,14 @@ class DeployConfigParams:
         }
 
 
-def load_deploy_config_file() -> Optional[DeployConfigParams]:
+def load_deploy_config_file() -> DeployConfigParams | None:
     from pipecatcloud.cli.config import deploy_config_path
 
     logger.debug(f"Deploy config path: {deploy_config_path}")
     logger.debug(f"Deploy config path exists: {os.path.exists(deploy_config_path)}")
 
     try:
-        with open(deploy_config_path, "r") as f:
+        with open(deploy_config_path) as f:
             config_data = toml.load(f)
     except Exception:
         return None
@@ -434,7 +434,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
         raise ConfigFileError(str(e))
 
 
-CONFIG_FILE_OPTION: Optional[str] = typer.Option(
+CONFIG_FILE_OPTION: str | None = typer.Option(
     None,
     "--config-file",
     help=f"Path to deploy config file (default: {PIPECAT_DEPLOY_CONFIG_PATH})",

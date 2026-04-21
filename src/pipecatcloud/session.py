@@ -6,7 +6,7 @@
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -26,9 +26,9 @@ class SessionParams:
             https://docs.daily.co/reference/rest-api/rooms/config
     """
 
-    data: Optional[Dict[str, Any]] = None
-    use_daily: Optional[bool] = False
-    daily_room_properties: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
+    use_daily: bool | None = False
+    daily_room_properties: dict[str, Any] | None = None
 
 
 class Session:
@@ -49,7 +49,7 @@ class Session:
         self,
         agent_name: str,
         api_key: str,
-        params: Optional[SessionParams] = None,
+        params: SessionParams | None = None,
     ):
         self.agent_name = agent_name
         self.api_key = api_key

@@ -6,7 +6,7 @@
 
 import warnings
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import WebSocket
 
@@ -36,7 +36,7 @@ except ImportError:
         handle_sigint: bool = field(init=False, kw_only=True)
         handle_sigterm: bool = field(init=False, kw_only=True)
         pipeline_idle_timeout_secs: int = field(init=False, kw_only=True)
-        body: Optional[Any] = field(default_factory=dict, kw_only=True)
+        body: Any | None = field(default_factory=dict, kw_only=True)
 
         def __post_init__(self):
             self.handle_sigint = False
@@ -98,7 +98,7 @@ class SessionArguments:
             This is used to track the session across requests.
     """
 
-    session_id: Optional[str]
+    session_id: str | None
 
 
 @dataclass

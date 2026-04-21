@@ -7,8 +7,6 @@
 import base64
 import os
 import re
-from typing import Optional
-from typing import List
 from xmlrpc.client import boolean
 
 import questionary
@@ -69,7 +67,7 @@ def validate_secret_name(name: str):
 @requires_login
 async def set(
     name: str = typer.Argument(help="Name of the secret set to create e.g. 'my-secret-set'"),
-    secrets: List[str] = typer.Argument(
+    secrets: list[str] = typer.Argument(
         None,
         help="List of secret key-value pairs e.g. 'KEY1=value1 KEY2=\"value with spaces\"'",
     ),
@@ -91,7 +89,7 @@ async def set(
         "-o",
         help="Organization to create secret set in",
     ),
-    region: Optional[Region] = typer.Option(
+    region: Region | None = typer.Option(
         None,
         "--region",
         "-r",
@@ -124,7 +122,7 @@ async def set(
             return typer.Exit(1)
 
         try:
-            with open(from_file, "r") as f:
+            with open(from_file) as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -363,7 +361,7 @@ async def list(
         help="Filter results to show secret sets only (no image pull secrets)",
     ),
     organization: str = typer.Option(None, "--organization", "-o"),
-    region: Optional[Region] = typer.Option(
+    region: Region | None = typer.Option(
         None,
         "--region",
         "-r",
@@ -519,7 +517,7 @@ async def image_pull_secret(
         "--organization",
         "-o",
     ),
-    region: Optional[Region] = typer.Option(
+    region: Region | None = typer.Option(
         None,
         "--region",
         "-r",

@@ -5,6 +5,8 @@ Tests the interpret_deployment_status function which maps raw API responses
 to structured DeploymentStatus objects used for CLI display during deploy polling.
 """
 
+from datetime import UTC
+
 from pipecatcloud._utils.deploy_utils import (
     DeploymentPhase,
     _format_elapsed,
@@ -370,9 +372,9 @@ class TestRevisionLines:
         assert "68 agents" in line
 
     def test_revision_line_with_elapsed_time(self):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        recent = (datetime.now(timezone.utc)).isoformat()
+        recent = (datetime.now(UTC)).isoformat()
         line = _format_revision_line(
             "Current ",
             {
@@ -458,23 +460,23 @@ class TestFormatElapsed:
         assert _format_elapsed("not-a-date") == ""
 
     def test_recent_timestamp(self):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         result = _format_elapsed(now)
         assert result in ("0s", "1s")
 
     def test_minutes_ago(self):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        two_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=2, seconds=30)).isoformat()
+        two_min_ago = (datetime.now(UTC) - timedelta(minutes=2, seconds=30)).isoformat()
         result = _format_elapsed(two_min_ago)
         assert result.startswith("2m")
 
     def test_z_suffix(self):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        ts = (datetime.now(timezone.utc) - timedelta(seconds=45)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        ts = (datetime.now(UTC) - timedelta(seconds=45)).strftime("%Y-%m-%dT%H:%M:%SZ")
         result = _format_elapsed(ts)
         assert "s" in result
 

@@ -6,23 +6,21 @@ discovery validation, and logout resilience.
 """
 
 import asyncio
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import sys
-from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pipecatcloud.cli.commands.auth import (
+    _fetch_oidc_discovery,
     _generate_code_challenge,
     _generate_code_verifier,
-    _fetch_oidc_discovery,
     _start_callback_server,
     refresh_access_token,
 )
-
 
 # ---- PKCE (RFC 7636) ----
 
