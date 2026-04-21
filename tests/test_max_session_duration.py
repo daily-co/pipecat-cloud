@@ -60,6 +60,16 @@ class TestDeployConfigModel:
         assert result["image"] == "test:latest"
         assert result["max_session_duration"] == 600
 
+    @pytest.mark.parametrize("value", [59, 14401, 0, -1])
+    def test_rejects_out_of_range(self, value):
+        with pytest.raises(ValueError, match="max_session_duration"):
+            DeployConfigParams(max_session_duration=value)
+
+    @pytest.mark.parametrize("value", [60, 7200, 14400])
+    def test_accepts_boundary_values(self, value):
+        config = DeployConfigParams(max_session_duration=value)
+        assert config.max_session_duration == value
+
 
 class TestTOMLConfiguration:
     """max_session_duration can be loaded from pcc-deploy.toml."""

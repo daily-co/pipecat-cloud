@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable, List, Optional
 
-
 import toml
 import typer
 from attr import dataclass, field
@@ -343,6 +342,8 @@ class DeployConfigParams:
         # Cannot specify both image and build_id
         if self.image is not None and self.build_id is not None:
             raise ValueError("Cannot specify both 'image' and 'build_id'")
+        if self.max_session_duration is not None and not 60 <= self.max_session_duration <= 14400:
+            raise ValueError("max_session_duration must be between 60 and 14400 seconds")
 
     def to_dict(self):
         return {
@@ -465,8 +466,10 @@ def with_deploy_config(func: Callable) -> Callable:
             deploy_config = load_deploy_config_file()
             kwargs["deploy_config"] = deploy_config
         except Exception as e:
-            logger.error(f"Error loading deploy config: {e}")
-            raise ConfigFileError(str(e))
+            from pipecatcloud._utils.console_utils import console
+
+            console.error(f"Error loading deploy config: {e}")
+            raise typer.Exit(1)
         return func(*args, **kwargs)
 
     return wrapper
