@@ -514,10 +514,9 @@ def create_deploy_command(app: typer.Typer):
             None,
             "--max-agents",
             "-max",
-            help="Maximum number of allowed agents",
+            help="Maximum number of allowed agents (default cap 50, contact support to raise)",
             rich_help_panel="Deployment Configuration",
             min=1,
-            max=50,
         ),
         secret_set: str = typer.Option(
             None,
@@ -624,7 +623,6 @@ def create_deploy_command(app: typer.Typer):
             help="[Deprecated] Use --max-agents instead",
             hidden=True,
             min=1,
-            max=50,
         ),
     ):
         # Handle @deprecated options
