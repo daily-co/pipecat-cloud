@@ -226,11 +226,6 @@ async def status(
             krisp_viva_status,
         )
 
-        deployment_table.add_row(
-            "[bold]Krisp VIVA:[/bold]",
-            krisp_viva_status,
-        )
-
         # Autoscaling info
         autoscaling_data = data.get("autoScaling", None)
         if autoscaling_data:
