@@ -797,6 +797,16 @@ def create_deploy_command(app: typer.Typer):
                 f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}",
                 f"[bold white]Krisp (deprecated):[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}",
                 f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}",
+            ]
+        )
+
+        if partial_config.websocket_auth:
+            content_items.append(
+                f"[bold white]WebSocket auth:[/bold white] [green]{partial_config.websocket_auth}[/green]"
+            )
+
+        content_items.extend(
+            [
                 "\n[dim]Scaling configuration:[/dim]",
             ]
         )

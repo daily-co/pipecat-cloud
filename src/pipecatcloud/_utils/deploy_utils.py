@@ -334,6 +334,7 @@ class DeployConfigParams:
     agent_profile: Optional[str] = None
     krisp_viva: KrispVivaConfig = field(factory=KrispVivaConfig)
     force_redeploy: bool = False
+    websocket_auth: Optional[str] = None
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:
@@ -356,6 +357,7 @@ class DeployConfigParams:
             "build_config": self.build_config.to_dict() if self.build_config else None,
             "agent_profile": self.agent_profile,
             "krisp_viva": self.krisp_viva.to_dict() if self.krisp_viva else None,
+            "websocket_auth": self.websocket_auth,
         }
 
 
@@ -415,6 +417,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "build",
             "agent_profile",
             "krisp_viva",
+            "websocket_auth",
         }
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:

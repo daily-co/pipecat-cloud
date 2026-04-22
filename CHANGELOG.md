@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `websocket_auth` config option in `pcc-deploy.toml` to control authentication
+  mode for the generic WebSocket handler (`/ws/generic`). Valid values are
+  `"none"` (no authentication required) and `"token"` (requires a session token
+  obtained via `/start`). New services default to `"token"` if not specified.
+
 ### Fixed
 
 - `.dockerignore` patterns written with Docker's conventional trailing
