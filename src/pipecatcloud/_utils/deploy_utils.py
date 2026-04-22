@@ -333,8 +333,8 @@ class DeployConfigParams:
     agent_profile: str | None = None
     krisp_viva: KrispVivaConfig = field(factory=KrispVivaConfig)
     force_redeploy: bool = False
-    websocket_auth: Optional[str] = None
-    max_session_duration: Optional[int] = None
+    websocket_auth: str | None = None
+    max_session_duration: int | None = None
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:
