@@ -94,7 +94,7 @@ class SessionArguments:
     The arguments are received by the bot() entry point.
 
     Parameters:
-        session_id (Optional[str]): The unique identifier for the session.
+        session_id (str | None): The unique identifier for the session.
             This is used to track the session across requests.
     """
 

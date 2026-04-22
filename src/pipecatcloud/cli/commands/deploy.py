@@ -558,7 +558,7 @@ def create_deploy_command(app: typer.Typer):
             help="Region for service deployment",
             rich_help_panel="Deployment Configuration",
         ),
-        max_session_duration: Optional[int] = typer.Option(
+        max_session_duration: int | None = typer.Option(
             None,
             "--max-session-duration",
             help="Maximum session duration in seconds (60-14400, default 7200). Sessions are terminated when this limit is reached.",
