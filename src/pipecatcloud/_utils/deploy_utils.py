@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable, List, Optional
 
-
 import toml
 import typer
 from attr import dataclass, field
@@ -335,6 +334,7 @@ class DeployConfigParams:
     krisp_viva: KrispVivaConfig = field(factory=KrispVivaConfig)
     force_redeploy: bool = False
     websocket_auth: Optional[str] = None
+    max_session_duration: Optional[int] = None
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:
@@ -342,6 +342,8 @@ class DeployConfigParams:
         # Cannot specify both image and build_id
         if self.image is not None and self.build_id is not None:
             raise ValueError("Cannot specify both 'image' and 'build_id'")
+        if self.max_session_duration is not None and not 60 <= self.max_session_duration <= 14400:
+            raise ValueError("max_session_duration must be between 60 and 14400 seconds")
 
     def to_dict(self):
         return {
@@ -358,6 +360,7 @@ class DeployConfigParams:
             "agent_profile": self.agent_profile,
             "krisp_viva": self.krisp_viva.to_dict() if self.krisp_viva else None,
             "websocket_auth": self.websocket_auth,
+            "max_session_duration": self.max_session_duration,
         }
 
 
@@ -418,6 +421,7 @@ def load_deploy_config_file() -> Optional[DeployConfigParams]:
             "agent_profile",
             "krisp_viva",
             "websocket_auth",
+            "max_session_duration",
         }
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:
@@ -462,8 +466,10 @@ def with_deploy_config(func: Callable) -> Callable:
             deploy_config = load_deploy_config_file()
             kwargs["deploy_config"] = deploy_config
         except Exception as e:
-            logger.error(f"Error loading deploy config: {e}")
-            raise ConfigFileError(str(e))
+            from pipecatcloud._utils.console_utils import console
+
+            console.error(f"Error loading deploy config: {e}")
+            raise typer.Exit(1)
         return func(*args, **kwargs)
 
     return wrapper

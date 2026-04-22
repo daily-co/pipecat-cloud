@@ -428,6 +428,7 @@ class _API:
             },
             "forceRedeploy": deploy_config.force_redeploy or None,
             "websocketAuth": deploy_config.websocket_auth,
+            "maxSessionDuration": deploy_config.max_session_duration,
         }
 
         # Use either build_id (cloud build) or image (user-provided)
