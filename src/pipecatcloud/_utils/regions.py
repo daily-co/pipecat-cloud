@@ -10,16 +10,14 @@ Region utilities for Pipecat Cloud CLI.
 Provides functions to fetch and cache available regions from the API.
 """
 
-from typing import Dict, List, Optional
-
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
 # Module-level cache for regions
-_regions_cache: Optional[List[Dict[str, str]]] = None
+_regions_cache: list[dict[str, str]] | None = None
 
 
-async def get_regions() -> List[Dict[str, str]]:
+async def get_regions() -> list[dict[str, str]]:
     """
     Fetch available regions from the API with caching.
 
@@ -45,7 +43,7 @@ async def get_regions() -> List[Dict[str, str]]:
     return _regions_cache
 
 
-async def get_region_codes() -> List[str]:
+async def get_region_codes() -> list[str]:
     """
     Get list of region codes only.
 

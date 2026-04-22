@@ -8,7 +8,6 @@ import os
 import stat
 import sys
 import tempfile
-from typing import Optional
 
 import toml
 
@@ -40,7 +39,7 @@ def _read_user_config():
             config_problem = f"Invalid TOML syntax in config file: {exc}"
         except PermissionError:
             config_problem = f"Permission denied when reading config file: {user_config_path}"
-        except IOError as exc:
+        except OSError as exc:
             config_problem = f"I/O error when reading config file: {exc}"
         except Exception as exc:
             config_problem = f"Error reading config file: {exc}"
@@ -116,11 +115,11 @@ def remove_user_config():
 
 
 def update_user_config(
-    token: Optional[str] = None,
-    active_org: Optional[str] = None,
-    additional_data: Optional[dict] = None,
-    refresh_token: Optional[str] = None,
-    token_expires_at: Optional[float] = None,
+    token: str | None = None,
+    active_org: str | None = None,
+    additional_data: dict | None = None,
+    refresh_token: str | None = None,
+    token_expires_at: float | None = None,
 ):
     global user_config
 
@@ -154,7 +153,7 @@ def update_user_config(
         raise ConfigError(f"Permission denied when writing to {user_config_path}")
     except FileNotFoundError:
         raise ConfigError(f"Cannot create configuration directory for {user_config_path}")
-    except IOError as e:
+    except OSError as e:
         raise ConfigError(f"IO error when writing configuration: {str(e)}")
     except Exception as e:
         raise ConfigError(f"Unexpected error updating configuration: {str(e)}")

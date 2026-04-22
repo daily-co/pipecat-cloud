@@ -5,13 +5,12 @@ Tests follow AAA pattern and focus on behaviors/outcomes rather than implementat
 Covers data model, TOML parsing, CLI commands, API integration, and validation.
 """
 
-from unittest.mock import AsyncMock, patch
-
-import pytest
-
 # Import from source, not installed package
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 

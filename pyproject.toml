@@ -59,6 +59,19 @@ pipecatcloud = ["py.typed"]
 exclude = ["*_pb2.py"]
 line-length = 100
 
+[tool.ruff.lint]
+select = [
+    "I", # Import rules
+    "UP", # Modern Python
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Skip docstring checks for non-source code
+"tests/**/*.py" = ["D"]
+"scripts/**/*.py" = ["D"]
+# Skip D104 (missing docstring in public package) for __init__.py files
+"**/__init__.py" = ["D104"]
+
 [project.urls]
 Website = "https://docs.pipecat.daily.co/"
 

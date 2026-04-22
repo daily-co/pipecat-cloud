@@ -5,7 +5,6 @@
 #
 
 import functools
-from typing import Optional
 
 import aiohttp
 
@@ -15,7 +14,7 @@ from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.config import config
 
 
-async def _resolve_default_org(token: str) -> Optional[str]:
+async def _resolve_default_org(token: str) -> str | None:
     """Fetch the user's default organization using the given token."""
     from pipecatcloud.config import config as base_config
 

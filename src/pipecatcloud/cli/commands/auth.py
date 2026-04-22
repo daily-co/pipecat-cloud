@@ -12,7 +12,7 @@ import secrets
 import time
 import urllib.parse
 import webbrowser
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import aiohttp
 import typer
@@ -134,8 +134,8 @@ def _open_url(url: str) -> bool:
 
 
 async def _get_account_org(
-    token: str, active_org: Optional[str] = None
-) -> Tuple[Optional[str], Optional[str]]:
+    token: str, active_org: str | None = None
+) -> tuple[str | None, str | None]:
     async with aiohttp.ClientSession() as session:
         async with session.get(
             f"{API.construct_api_url('organization_path')}",
@@ -225,7 +225,7 @@ def _callback_page(title: str, message: str, success: bool = True) -> str:
 # ---- Localhost callback server ----
 
 
-async def _start_callback_server() -> Tuple[Any, int, "asyncio.Future"]:
+async def _start_callback_server() -> tuple[Any, int, "asyncio.Future"]:
     """Start a localhost HTTP server for the OAuth callback.
 
     Tries ports from CALLBACK_PORTS in order, using the first available.
@@ -233,7 +233,7 @@ async def _start_callback_server() -> Tuple[Any, int, "asyncio.Future"]:
     """
     from aiohttp import web
 
-    result_future: asyncio.Future[Tuple[Optional[str], Optional[str]]] = (
+    result_future: asyncio.Future[tuple[str | None, str | None]] = (
         asyncio.get_event_loop().create_future()
     )
 
@@ -312,7 +312,7 @@ async def _exchange_code(
             return await resp.json()
 
 
-async def refresh_access_token(refresh_token: str) -> Optional[dict]:
+async def refresh_access_token(refresh_token: str) -> dict | None:
     """Refresh an OAuth access token. Returns new token dict or None on failure.
 
     Called by the API client when it detects an expired token.
@@ -343,7 +343,7 @@ async def refresh_access_token(refresh_token: str) -> Optional[dict]:
                     logger.debug(f"Token refresh failed: {resp.status}")
                     return None
                 return await resp.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        except (TimeoutError, aiohttp.ClientError) as e:
             logger.debug(f"Token refresh error: {e}")
             return None
 
@@ -409,7 +409,7 @@ async def login():
         # Wait for callback
         try:
             auth_code, returned_state = await asyncio.wait_for(result_future, timeout=120.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             console.error("Authentication timed out.")
             return
 
@@ -501,7 +501,7 @@ async def logout():
                             revocation_succeeded = True
                         else:
                             logger.debug(f"Logout revocation returned {resp.status}")
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            except (TimeoutError, aiohttp.ClientError) as e:
                 logger.debug(f"Logout revocation failed: {e}")
                 console.print(
                     "[yellow]Warning: Could not reach logout endpoint. "
@@ -567,7 +567,7 @@ async def _use_pat_impl(token: str):
 @auth_cli.command(name="use-pat", help="Authenticate with a Personal Access Token")
 @synchronizer.create_blocking
 async def use_pat(
-    token: Optional[str] = typer.Argument(
+    token: str | None = typer.Argument(
         None, help="[deprecated] PAT as argument (leaks to shell history)"
     ),
 ):

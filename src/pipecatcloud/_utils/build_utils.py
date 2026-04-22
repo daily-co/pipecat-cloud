@@ -19,15 +19,15 @@ import io
 import os
 import tarfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional, Set, Tuple
 
 import aiohttp
 from loguru import logger
 
 # Default patterns to exclude from build context
-DEFAULT_EXCLUSIONS: Set[str] = {
+DEFAULT_EXCLUSIONS: set[str] = {
     # Version control
     ".git",
     ".gitignore",
@@ -116,7 +116,7 @@ class BuildStatus:
         return status in cls.TERMINAL_STATUSES
 
 
-def _should_exclude(path: Path, exclusions: Set[str], base_path: Path) -> bool:
+def _should_exclude(path: Path, exclusions: set[str], base_path: Path) -> bool:
     """
     Check if a path should be excluded from the build context.
 
@@ -163,7 +163,7 @@ def _normalize_pattern(pattern: str) -> str:
     return normalized
 
 
-def load_dockerignore(context_dir: Path) -> Optional[Set[str]]:
+def load_dockerignore(context_dir: Path) -> set[str] | None:
     """
     Load patterns from .dockerignore file if it exists.
 
@@ -179,7 +179,7 @@ def load_dockerignore(context_dir: Path) -> Optional[Set[str]]:
 
     patterns = set()
     try:
-        with open(dockerignore_path, "r") as f:
+        with open(dockerignore_path) as f:
             for line in f:
                 stripped = line.strip()
                 # Skip comments and empty lines
@@ -195,7 +195,7 @@ def load_dockerignore(context_dir: Path) -> Optional[Set[str]]:
     return patterns
 
 
-def get_exclusions(context_dir: Path, extra_patterns: Optional[List[str]] = None) -> Set[str]:
+def get_exclusions(context_dir: Path, extra_patterns: list[str] | None = None) -> set[str]:
     """
     Get the set of exclusion patterns to use.
 
@@ -227,7 +227,7 @@ def get_exclusions(context_dir: Path, extra_patterns: Optional[List[str]] = None
 
 def create_deterministic_tarball(
     context_dir: str,
-    exclusions: Set[str],
+    exclusions: set[str],
     dockerfile_path: str = "Dockerfile",
 ) -> BuildContext:
     """
@@ -261,7 +261,7 @@ def create_deterministic_tarball(
         raise FileNotFoundError(f"Dockerfile not found: {dockerfile_full}")
 
     # Collect all files, sorted alphabetically
-    files_to_add: List[Tuple[Path, str]] = []
+    files_to_add: list[tuple[Path, str]] = []
 
     for root, dirs, files in os.walk(base_path):
         root_path = Path(root)
@@ -389,8 +389,8 @@ async def poll_build_status(
     api_client,
     poll_interval: float = 3.0,
     max_duration: float = 600.0,  # 10 minutes
-    status_callback: Optional[Callable[[dict], None]] = None,
-) -> Tuple[bool, dict]:
+    status_callback: Callable[[dict], None] | None = None,
+) -> tuple[bool, dict]:
     """
     Poll build status until completion or timeout.
 

@@ -1,5 +1,4 @@
 import asyncio
-from typing import Optional
 
 
 class SmallWebRTCSessionManager:
@@ -13,8 +12,8 @@ class SmallWebRTCSessionManager:
     """
 
     def __init__(self, timeout_seconds: int = 120):
-        self._pending_future: Optional[asyncio.Future] = None
-        self._timeout_task: Optional[asyncio.Task] = None
+        self._pending_future: asyncio.Future | None = None
+        self._timeout_task: asyncio.Task | None = None
         self._timeout_seconds = timeout_seconds
 
     async def wait_for_webrtc(self) -> None:
