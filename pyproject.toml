@@ -56,7 +56,6 @@ include = ["pipecatcloud*"]
 pipecatcloud = ["py.typed"]
 
 [tool.ruff]
-exclude = ["*_pb2.py"]
 line-length = 100
 
 [tool.ruff.lint]
