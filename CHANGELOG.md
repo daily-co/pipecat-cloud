@@ -5,6 +5,23 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The legacy session-argument classes in `pipecatcloud.agent`
+  (`SessionArguments`, `PipecatSessionArguments`, `DailySessionArguments`,
+  `WebSocketSessionArguments`, `SmallWebRTCSessionArguments`) are now
+  deprecated aliases of the corresponding `*RunnerArguments` from
+  [pipecat-ai](https://pypi.org/project/pipecat-ai/). The `session_id`
+  field, previously contributed by `SessionArguments`, now lives on
+  `pipecat.runner.types.RunnerArguments` directly.
+
+  Existing imports keep working unchanged. `isinstance` checks against
+  the legacy names continue to resolve because each alias is the same
+  class object as its target. New code should import the canonical names
+  from `pipecat.runner.types`.
+
 ## [0.6.0] - 2026-04-22
 
 ### Added
