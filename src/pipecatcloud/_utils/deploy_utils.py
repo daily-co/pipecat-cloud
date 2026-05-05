@@ -104,25 +104,37 @@ def format_health_lines(health: dict) -> list:
     """Format health details as indented lines under a revision."""
     lines = []
     reason_parts = []
+
+    # Prefer the customer-friendly headline from the API when present. Older API
+    # responses don't include it, so fall back to constructing a string from raw
+    # k8s fields.
+    headline = health.get("headline")
     reason = health.get("reason", "")
     term_reason = health.get("lastTerminationReason", "")
     exit_code = health.get("lastExitCode")
 
-    if reason:
+    if headline:
+        reason_parts.append(f"[red]{headline}[/red]")
+    elif reason:
         detail = reason
         if term_reason and term_reason != reason:
             detail += f" ({term_reason}"
             if exit_code is not None:
-                detail += f", exit {exit_code}"
+                detail += f", exit code {exit_code}"
             detail += ")"
         elif exit_code is not None:
-            detail += f" (exit {exit_code})"
+            detail += f" (exit code {exit_code})"
         reason_parts.append(f"[red]{detail}[/red]")
 
     restarts = health.get("restartCount", 0)
     replicas_started = health.get("replicasStarted", 0)
     if restarts > 0:
         reason_parts.append(f"[dim]·[/dim] {restarts} restarts across {replicas_started} replicas")
+
+    # When using the headline, surface the exit code as its own subhead segment.
+    # The fallback path already includes the exit code inline with the reason.
+    if headline and exit_code is not None:
+        reason_parts.append(f"[dim]·[/dim] exit code {exit_code}")
 
     if reason_parts:
         lines.append("      " + " ".join(reason_parts))
