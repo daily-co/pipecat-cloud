@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `pcc secrets list` now shows a `Status` column for each secret set
+  (`ready`, `pending`, or `failed`). When a single set is requested
+  (`pcc secrets list <name>`), the readiness status is shown in the panel
+  title alongside the keys, and a follow-up message explains pending or
+  failed states. Backed by a new `secrets_get` API client method that
+  fetches a single secret set's full payload, including readiness fields.
+
 ### Changed
 
 - `pcc agent status` and the `pcc deploy` polling output now show

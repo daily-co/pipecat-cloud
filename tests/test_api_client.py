@@ -72,6 +72,41 @@ class TestAPISecretsRegions:
             assert call_args[1]["params"] == {"region": "ap"}
 
     @pytest.mark.asyncio
+    async def test_secrets_get_returns_full_response(self, api_client):
+        """secrets_get returns the whole single-set response, including readiness fields."""
+        # Arrange
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = {
+                "secrets": [{"fieldName": "API_KEY"}],
+                "region": "us-west",
+                "status": "ready",
+            }
+
+            # Act
+            result = await api_client._secrets_get(org="test-org", secret_set="my-secrets")
+
+            # Assert
+            mock_request.assert_called_once()
+            assert result == {
+                "secrets": [{"fieldName": "API_KEY"}],
+                "region": "us-west",
+                "status": "ready",
+            }
+
+    @pytest.mark.asyncio
+    async def test_secrets_get_returns_none_on_404(self, api_client):
+        """secrets_get returns None when the set does not exist."""
+        # Arrange
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = None
+
+            # Act
+            result = await api_client._secrets_get(org="test-org", secret_set="missing")
+
+            # Assert
+            assert result is None
+
+    @pytest.mark.asyncio
     async def test_secrets_upsert_with_region(self, api_client):
         """Secrets upsert with region should include region in payload."""
         # Arrange
