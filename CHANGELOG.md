@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed states. Backed by a new `secrets_get` API client method that
   fetches a single secret set's full payload, including readiness fields.
 
+### Changed
+
+- `pcc agent status` and the `pcc deploy` polling output now show
+  customer-friendly headlines for failed deployments when the API
+  supplies them. An OOM-killed container reads "Out of memory" instead
+  of "CrashLoopBackOff (OOMKilled, exit 137)"; an application crash
+  reads "Application Error" with the captured traceback on the next
+  line. Exit codes render as "exit code N" rather than "exit N" for
+  clarity. Older API responses without the new field continue to render
+  via the previous format.
+
 ## [0.6.0] - 2026-04-22
 
 ### Added
