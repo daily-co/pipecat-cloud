@@ -497,7 +497,7 @@ class TestHealthLines:
         assert len(lines) >= 1
         assert "CrashLoopBackOff" in lines[0]
         assert "OOMKilled" in lines[0]
-        assert "exit 137" in lines[0]
+        assert "exit code 137" in lines[0]
         assert "42 restarts" in lines[0]
         assert "3 replicas" in lines[0]
 
@@ -511,7 +511,7 @@ class TestHealthLines:
             }
         )
         assert "Error" in lines[0]
-        assert "exit 1" in lines[0]
+        assert "exit code 1" in lines[0]
         assert "4 restarts" in lines[0]
 
     def test_message_shows_last_line(self):
@@ -564,8 +564,86 @@ class TestHealthLines:
                 "replicasStarted": 1,
             }
         )
-        # Should show "Error (exit 1)" not "Error (Error, exit 1)"
-        assert "Error (exit 1)" in lines[0]
+        # Should show "Error (exit code 1)" not "Error (Error, exit code 1)"
+        assert "Error (exit code 1)" in lines[0]
+
+    def test_headline_replaces_reason_string(self):
+        """When the API supplies a customer-friendly headline, render it instead of
+        the raw k8s reason. Exit code is appended as its own segment so it stays
+        visible (today's format folded the exit code into the reason string)."""
+        lines = format_health_lines(
+            {
+                "reason": "CrashLoopBackOff",
+                "lastTerminationReason": "OOMKilled",
+                "lastExitCode": 137,
+                "restartCount": 5,
+                "replicasStarted": 2,
+                "headline": "Out of memory",
+            }
+        )
+        assert "Out of memory" in lines[0]
+        # Raw k8s vocabulary should NOT appear in the rendered line when we have a headline.
+        assert "CrashLoopBackOff" not in lines[0]
+        assert "OOMKilled" not in lines[0]
+        # Restart count and exit code are both visible.
+        assert "5 restarts across 2 replicas" in lines[0]
+        assert "exit code 137" in lines[0]
+
+    def test_headline_with_traceback_message(self):
+        """Application Error case: headline plus the last line of the captured traceback."""
+        lines = format_health_lines(
+            {
+                "reason": "CrashLoopBackOff",
+                "lastTerminationReason": "Error",
+                "lastExitCode": 1,
+                "restartCount": 3,
+                "replicasStarted": 2,
+                "headline": "Application Error",
+                "message": (
+                    "Traceback (most recent call last):\n"
+                    '  File "bot.py"\n'
+                    "ModuleNotFoundError: No module named 'nonexistentlibthiswillfail'"
+                ),
+            }
+        )
+        assert len(lines) == 2
+        assert "Application Error" in lines[0]
+        assert "exit code 1" in lines[0]
+        assert "ModuleNotFoundError" in lines[1]
+        assert "Traceback" not in lines[1]
+
+    def test_headline_without_exit_code(self):
+        """ImagePullBackOff and similar pre-start failures have no exit code; the
+        exit-code segment must be omitted, not rendered as 'exit None' or similar."""
+        lines = format_health_lines(
+            {
+                "reason": "ImagePullBackOff",
+                "restartCount": 0,
+                "replicasStarted": 2,
+                "headline": "Cannot pull image",
+                "message": 'Back-off pulling image "nonexistent:latest"',
+            }
+        )
+        assert "Cannot pull image" in lines[0]
+        assert "exit" not in lines[0]
+        assert "ImagePullBackOff" not in lines[0]
+        assert "nonexistent:latest" in lines[1]
+
+    def test_unmapped_reason_falls_back_to_raw_format(self):
+        """An older API response (or a future unmapped reason) has no headline;
+        rendering must continue to work via the fallback path."""
+        lines = format_health_lines(
+            {
+                "reason": "CrashLoopBackOff",
+                "lastTerminationReason": "OOMKilled",
+                "lastExitCode": 137,
+                "restartCount": 5,
+                "replicasStarted": 2,
+            }
+        )
+        # Existing format preserved exactly: parens, comma, k8s vocabulary.
+        assert "CrashLoopBackOff (OOMKilled, exit code 137)" in lines[0]
+        assert "5 restarts across 2 replicas" in lines[0]
 
 
 class TestRevisionLineWithHealth:
