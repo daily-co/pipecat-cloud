@@ -354,6 +354,27 @@ class _API:
         """
         return self.create_api_method(self._secrets_list)
 
+    async def _secrets_get(self, org: str, secret_set: str) -> dict | None:
+        """Fetch a single secret set, including its readiness status.
+
+        Returns the full response object: {secrets, region, status, errorMessage?}.
+        Use this when you need readiness; use _secrets_list when you only need
+        the existence check or the flat keys array.
+        """
+        url = f"{self.construct_api_url('secrets_path').format(org=org)}/{secret_set}"
+        result = await self._base_request("GET", url, not_found_is_empty=True)
+        return result or None
+
+    @property
+    def secrets_get(self):
+        """Get a single secret set with readiness status.
+
+        Args:
+            org: Organization ID
+            secret_set: Name of the secret set
+        """
+        return self.create_api_method(self._secrets_get)
+
     async def _secrets_upsert(
         self, data: dict, set_name: str, org: str, region: str | None = None
     ) -> dict:

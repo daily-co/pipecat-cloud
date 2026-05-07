@@ -5,6 +5,17 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `pcc secrets list` now shows a `Status` column for each secret set
+  (`ready`, `pending`, or `failed`). When a single set is requested
+  (`pcc secrets list <name>`), the readiness status is shown in the panel
+  title alongside the keys, and a follow-up message explains pending or
+  failed states. Backed by a new `secrets_get` API client method that
+  fetches a single secret set's full payload, including readiness fields.
+
 ## [0.6.0] - 2026-04-22
 
 ### Added

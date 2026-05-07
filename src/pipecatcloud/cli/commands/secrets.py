@@ -33,6 +33,17 @@ secrets_cli = typer.Typer(
 # ---- Methods ----
 
 
+def _format_status(status: str | None) -> str:
+    """Render a readiness status with Rich styling. Unknown values pass through."""
+    if status == "ready":
+        return "[green]ready[/green]"
+    if status == "pending":
+        return "[yellow]pending[/yellow]"
+    if status == "failed":
+        return "[red]failed[/red]"
+    return status or "[dim]unknown[/dim]"
+
+
 def validate_secrets(secrets: dict):
     valid_name_pattern = re.compile(r"^[a-zA-Z0-9_-]+$")
 
@@ -382,7 +393,10 @@ async def list(
     logger.debug(f"Secret set name to lookup: {name}")
 
     with console.status(f"[dim]{status_title}[/dim]", spinner="dots"):
-        data, error = await API.bubble_error().secrets_list(org=org, secret_set=name, region=region)
+        if name:
+            data, error = await API.bubble_error().secrets_get(org=org, secret_set=name)
+        else:
+            data, error = await API.bubble_error().secrets_list(org=org, region=region)
 
         if error:
             if error == 400:
@@ -401,19 +415,27 @@ async def list(
             return typer.Exit()
 
         if name:
-            # Match
+            secrets = data.get("secrets") or []
+            status = data.get("status")
+            error_message = data.get("errorMessage")
 
             table = Table(border_style="dim", show_header=False, show_edge=True, show_lines=True)
             table.add_column(name, style="white")
-            for s in data:
+            for s in secrets:
                 table.add_row(s["fieldName"])
-            console.print(
-                Panel(
-                    table,
-                    title=f"[bold]Secret keys for set [green]{name}[/green][/bold]",
-                    title_align="left",
-                )
+
+            title = (
+                f"[bold]Secret keys for set [green]{name}[/green][/bold] "
+                f"(status: {_format_status(status)})"
             )
+            console.print(Panel(table, title=title, title_align="left"))
+            if status == "failed" and error_message:
+                console.print(f"[red]{error_message}[/red]")
+            elif status == "pending":
+                console.print(
+                    "[yellow]This secret set is still being provisioned. "
+                    "Deploys that bind it will be rejected until it is ready.[/yellow]"
+                )
         else:
             # Filter out image pull secrets if show all is False
             filtered_sets = [s for s in data if show_all or s["type"] != "imagePullSecret"]
@@ -431,6 +453,7 @@ async def list(
             )
             table.add_column("Secret Set Name", style="white")
             table.add_column("Region", style="white")
+            table.add_column("Status", style="white")
             if show_all:
                 table.add_column("Type", style="white")
                 for secret_set in filtered_sets:
@@ -439,10 +462,19 @@ async def list(
                         if secret_set["type"] == "imagePullSecret"
                         else "Secret Set"
                     )
-                    table.add_row(secret_set["name"], secret_set["region"], set_type)
+                    table.add_row(
+                        secret_set["name"],
+                        secret_set["region"],
+                        _format_status(secret_set.get("status")),
+                        set_type,
+                    )
             else:
                 for secret_set in filtered_sets:
-                    table.add_row(secret_set["name"], secret_set["region"])
+                    table.add_row(
+                        secret_set["name"],
+                        secret_set["region"],
+                        _format_status(secret_set.get("status")),
+                    )
 
             console.success(table, title_extra=f"Secret sets for {org}")
 
