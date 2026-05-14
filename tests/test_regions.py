@@ -179,7 +179,7 @@ class TestCLIRegionValidation:
         """Secrets set should accept valid regions from API."""
         # Arrange
         from pipecatcloud._utils import regions
-        from pipecatcloud.cli.commands.secrets import set as secrets_set
+        from pipecatcloud.cli.commands.secrets import create_set as secrets_set
 
         regions._regions_cache = None
 

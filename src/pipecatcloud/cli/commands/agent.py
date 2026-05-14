@@ -89,7 +89,7 @@ def format_cpu(millicores: int) -> str:
 @agent_cli.command(name="list", help="List agents in an organization.")
 @synchronizer.create_blocking
 @requires_login
-async def list(
+async def list_agents(
     organization: str = typer.Option(
         None, "--organization", "-o", help="Organization to list agents for"
     ),

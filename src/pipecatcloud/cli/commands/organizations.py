@@ -96,7 +96,7 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
 @organization_cli.command(name="list", help="List organizations user is a member of.")
 @synchronizer.create_blocking
 @requires_login
-async def list():
+async def list_organizations():
     current_org = config.get("org")
 
     with console.status(

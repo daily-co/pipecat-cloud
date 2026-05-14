@@ -76,7 +76,7 @@ def validate_secret_name(name: str):
 @secrets_cli.command(name="set", help="Create a new secret set for active organization")
 @synchronizer.create_blocking
 @requires_login
-async def set(
+async def create_set(
     name: str = typer.Argument(help="Name of the secret set to create e.g. 'my-secret-set'"),
     secrets: list[str] = typer.Argument(
         None,
@@ -361,7 +361,7 @@ async def unset(
 @secrets_cli.command(name="list", help="List secret sets and set keys")
 @synchronizer.create_blocking
 @requires_login
-async def list(
+async def list_sets(
     name: str = typer.Argument(
         None, help="Name of the secret set to list secrets from e.g. 'my-secret-set'"
     ),
