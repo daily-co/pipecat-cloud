@@ -5,6 +5,21 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The `pcc` CLI now imports cleanly under Python 3.14. Previously, two
+  Typer command callbacks were defined with the names `list` and `set`,
+  shadowing the builtins. Under PEP 649's lazy annotation evaluation in
+  3.14, a separate command annotated `secrets: list[str]` then resolved
+  `list` to the decorated `FunctionWithAio` object and failed with
+  `TypeError: 'FunctionWithAio' object is not subscriptable` at import
+  time, breaking every CLI entrypoint. The callbacks have been renamed
+  (`create_set`, `list_sets`, `list_agents`, `list_organizations`); the
+  user-facing command names (`pcc secrets set`, `pcc secrets list`,
+  `pcc agent list`, `pcc organizations list`) are unchanged.
+
 ## [0.7.0] - 2026-05-07
 
 ### Added
