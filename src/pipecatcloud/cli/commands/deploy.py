@@ -43,6 +43,31 @@ from pipecatcloud.constants import KRISP_VIVA_MODELS, Region
 
 MAX_ALIVE_CHECKS = 120
 ALIVE_CHECK_SLEEP = 5
+# How many *consecutive* transient status-poll failures to tolerate before
+# giving up. A single successful poll resets this budget, so this only trips on
+# a sustained outage, not on isolated blips.
+MAX_CONSECUTIVE_POLL_FAILURES = 5
+
+
+def _poll_failure_is_transient(error: dict | None) -> bool:
+    """Decide whether a failed status poll should be retried rather than aborting.
+
+    A status poll can fail in a few ways, and only some are worth retrying:
+
+    - **No error payload** (``error is None``): the request never received a
+      response (connection reset, timeout) or the service object isn't visible
+      yet. Always transient.
+    - **5xx**: a server-side blip (e.g. the 502 from PCC-867). Transient.
+    - **4xx or a non-numeric application code**: a real client/auth/config
+      problem that won't clear on its own. Not transient — abort.
+    """
+    if not error:
+        return True
+    code = str(error.get("code", "")) if isinstance(error, dict) else ""
+    if code.isdigit():
+        return 500 <= int(code) <= 599
+    return False
+
 
 # ----- Cloud Build Flow
 
@@ -356,6 +381,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     is_ready = False
     last_status = None
     checks_performed = 0
+    consecutive_failures = 0
 
     console.print(
         f"[bold cyan]{'Updating' if existing_agent else 'Pushing'}[/bold cyan] deployment for agent '{params.agent_name}'"
@@ -375,6 +401,46 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
 
                 logger.debug(f"Deployment status: {agent_status}")
 
+                # A failed poll returns (None, error). Handle that here, *before*
+                # touching agent_status, so a transient blip can't crash the
+                # deploy with an AttributeError on None. Transient failures (5xx,
+                # network, not-yet-visible service) are retried up to a small
+                # consecutive cap; non-transient ones (4xx/auth) abort right away.
+                if error or agent_status is None:
+                    if _poll_failure_is_transient(error):
+                        consecutive_failures += 1
+                        if consecutive_failures <= MAX_CONSECUTIVE_POLL_FAILURES:
+                            logger.debug(
+                                "Transient status-poll failure "
+                                f"({consecutive_failures}/{MAX_CONSECUTIVE_POLL_FAILURES}): "
+                                f"{error}"
+                            )
+                            status.update(
+                                "[dim]Waiting for deployment status "
+                                "(retrying after a transient API error)...[/dim]"
+                            )
+                            await asyncio.sleep(ALIVE_CHECK_SLEEP)
+                            checks_performed += 1
+                            continue
+                        # Sustained failures — the deploy itself may well have
+                        # succeeded, so point the user at `agent status` rather
+                        # than implying it failed.
+                        status.stop()
+                        console.error(
+                            "Error checking deployment status: the API returned a "
+                            f"transient error {MAX_CONSECUTIVE_POLL_FAILURES} times in a row.\n"
+                            "Your deployment may still be in progress. Check it with "
+                            f"`{PIPECAT_CLI_NAME} agent status {params.agent_name}`"
+                        )
+                        return typer.Exit()
+                    # Non-transient error (4xx, auth, etc.) — abort immediately.
+                    status.stop()
+                    console.error("Error checking deployment status")
+                    return typer.Exit()
+
+                # Successful poll — reset the transient-failure budget.
+                consecutive_failures = 0
+
                 # Look for any error messages in the agent status
                 # Exit out of the polling loop if we find an error
                 status_errors = agent_status.get("errors", [])
@@ -386,11 +452,6 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                         console.api_error(error_message, "Agent deployment failed")
                     else:
                         console.error(f"Deployment failed with an unknown error: {status_errors}")
-                    return typer.Exit()
-
-                if error:
-                    status.stop()
-                    console.error("Error checking deployment status")
                     return typer.Exit()
 
                 # Capture the deployment ID for display

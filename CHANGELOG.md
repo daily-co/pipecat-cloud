@@ -5,6 +5,20 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-05-29
+
+### Fixed
+
+- `pcc deploy` no longer crashes with `AttributeError: 'NoneType' object has
+  no attribute 'get'` when a status poll hits a transient API error (e.g. a
+  502 from a briefly-unavailable API pod). The poll loop now checks for the
+  error before reading the status payload, and transient failures (5xx,
+  network blips, a not-yet-visible service) are retried for up to 5
+  consecutive attempts before giving up. A successful poll resets that
+  budget, so an isolated blip no longer surfaces as a traceback or fails an
+  otherwise-successful deploy. Non-transient errors (4xx, auth) still abort
+  immediately.
+
 ## [0.7.1] - 2026-05-14
 
 ### Fixed
