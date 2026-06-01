@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   benefit. *Migration:* `pip install pipecatcloud` now installs `pipecat-ai`
   automatically — drop the `[pipecat]` selector from install commands (see below).
 
+### Deprecated
+
+- **The agent `*SessionArguments` types** (`SessionArguments`,
+  `PipecatSessionArguments`, `DailySessionArguments`, `WebSocketSessionArguments`,
+  `SmallWebRTCSessionArguments`). They only added `session_id` on top of pipecat-ai's
+  runner argument types, which now provide `session_id` themselves. Use
+  `pipecat.runner.types.RunnerArguments` (and its `DailyRunnerArguments` /
+  `WebSocketRunnerArguments` / `SmallWebRTCRunnerArguments` subclasses) directly.
+  Constructing a `*SessionArguments` now emits a `DeprecationWarning`; these types
+  will be removed in 2.0.0.
+
 ### Fixed
 
 - **`pipecatcloud` now exports `SmallWebRTCSessionArguments`** (the SmallWebRTC agent
