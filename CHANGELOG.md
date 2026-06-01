@@ -5,7 +5,7 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [1.0.0] - TBD
 
 ### Added
 
@@ -19,9 +19,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     spend; pass `-y/--yes` to skip the prompt.
   - `pcc spend-limit clear` removes the limit, with the same confirmation
     behavior.
+
 - Any CLI command that surfaces an HTTP 402 `SPEND_LIMIT_REACHED` error now
   renders a wrapped remediation message that explains how to unblock new
   sessions, instead of a generic API error panel.
+
+### Changed
+
+- **`pipecat-ai` is now a required (core) dependency.** Previously it was an optional
+  `pipecatcloud[pipecat]` extra with a deprecated standalone fallback. `pipecatcloud`
+  is always used with `pipecat-ai`, so the fallback added complexity for no real
+  benefit. *Migration:* `pip install pipecatcloud` now installs `pipecat-ai`
+  automatically — drop the `[pipecat]` selector from install commands (see below).
+
+### Fixed
+
+- **`pipecatcloud` now exports `SmallWebRTCSessionArguments`** (the SmallWebRTC agent
+  session type), not `SmallWebRTCRunnerArguments`. The `SmallWebRTCSessionArguments`
+  dataclass existed but was unreachable from the top-level package, while a pipecat-ai
+  runner base type was exported in its place — inconsistent with the other transports'
+  `*SessionArguments` exports. `from pipecatcloud import SmallWebRTCRunnerArguments` no
+  longer works (import it from `pipecat.runner.types` if you need the base type).
+
+### Removed
+
+- **The `pipecatcloud[pipecat]` optional extra.** It is redundant now that `pipecat-ai`
+  is a core dependency. Replace `pip install pipecatcloud[pipecat]` with
+  `pip install pipecatcloud`. (Installers will report `[pipecat]` as an unknown extra.)
+
+- **The standalone (no `pipecat-ai`) fallback for agent session-argument types.**
+  `pipecatcloud.agent` no longer ships its own deprecated `RunnerArguments` /
+  `DailyRunnerArguments` / `WebSocketRunnerArguments` definitions; it imports the real
+  ones from `pipecat-ai`. The agent types (`PipecatSessionArguments`,
+  `DailySessionArguments`, `WebSocketSessionArguments`, `SmallWebRTCSessionArguments`,
+  `SessionArguments`) are now genuine `pipecat-ai` subclasses, so
+  `isinstance(args, pipecat.runner.types.RunnerArguments)` holds.
+
+- **`pcc deploy --min-instances` / `--max-instances`** (deprecated since 0.4.x).
+  Use `--min-agents` / `--max-agents`. The corresponding `min_instances` /
+  `max_instances` fields were removed from `ScalingParams`.
+
+- **Passing a Personal Access Token as a positional argument to `pcc auth use-pat`.**
+  The command now always reads the token from a secure hidden prompt (tokens on the
+  command line leak to shell history and process listings).
+
+- **The deprecated `pcc organization keys delete` alias.** Use `pcc organization
+  keys revoke`.
 
 ## [0.7.2] - 2026-05-29
 
