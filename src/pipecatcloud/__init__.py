@@ -13,7 +13,7 @@ from pipecatcloud.agent import (
     DailySessionArguments,
     PipecatSessionArguments,
     SessionArguments,
-    SmallWebRTCRunnerArguments,
+    SmallWebRTCSessionArguments,
     WebSocketSessionArguments,
 )
 from pipecatcloud.exception import (
@@ -37,7 +37,7 @@ __all__ = [
     "DailySessionArguments",
     "PipecatSessionArguments",
     "SessionArguments",
-    "SmallWebRTCRunnerArguments",
+    "SmallWebRTCSessionArguments",
     "WebSocketSessionArguments",
     # Session classes
     "Session",
