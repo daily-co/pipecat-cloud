@@ -54,6 +54,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Legacy Krisp (the `--enable-krisp` flag and the `enable_krisp` config/API field).**
+  The legacy Krisp model is no longer supported anywhere — use **Krisp VIVA**
+  (`--krisp-viva-audio-filter`, or the `[krisp_viva]` section in `pcc-deploy.toml`).
+  Removed the `--enable-krisp` CLI flag, the `enable_krisp` field on the deploy config,
+  its `pcc-deploy.toml` key, and the `enableKrisp` API payload. A `pcc-deploy.toml` that
+  still contains `enable_krisp` will now error as an unexpected key — remove it.
+
 - **The `pipecatcloud[pipecat]` optional extra.** It is redundant now that `pipecat-ai`
   is a core dependency. Replace `pip install pipecatcloud[pipecat]` with
   `pip install pipecatcloud`. (Installers will report `[pipecat]` as an unknown extra.)

@@ -130,7 +130,6 @@ class TestDeployConfigIntegration:
         config = DeployConfigParams(
             agent_name="test-agent",
             image="test:latest",
-            enable_krisp=True,
             krisp_viva=KrispVivaConfig(audio_filter="tel"),
         )
 
@@ -140,7 +139,6 @@ class TestDeployConfigIntegration:
         # Assert
         assert result["agent_name"] == "test-agent"
         assert result["image"] == "test:latest"
-        assert result["enable_krisp"] is True
         assert result["krisp_viva"]["audio_filter"] == "tel"
 
 
@@ -233,7 +231,6 @@ class TestTOMLConfiguration:
         config_content = """
         agent_name = "test-agent"
         image = "test:latest"
-        enable_krisp = true
         secret_set = "my-secrets"
 
         [scaling]
@@ -252,7 +249,6 @@ class TestTOMLConfiguration:
         # Assert
         assert config.agent_name == "test-agent"
         assert config.image == "test:latest"
-        assert config.enable_krisp is True
         assert config.secret_set == "my-secrets"
         assert config.scaling.min_agents == 2
         assert config.scaling.max_agents == 10
@@ -511,13 +507,12 @@ class TestBackwardCompatibility:
     def test_existing_config_without_krisp_viva_works(self):
         """Existing configs without Krisp VIVA field should work unchanged."""
         # Arrange
-        config = DeployConfigParams(agent_name="test-agent", image="test:latest", enable_krisp=True)
+        config = DeployConfigParams(agent_name="test-agent", image="test:latest")
 
         # Act
         result = config.to_dict()
 
         # Assert
-        assert result["enable_krisp"] is True
         assert result["krisp_viva"]["audio_filter"] is None
 
     def test_api_response_without_krisp_viva_doesnt_crash(self):
@@ -544,7 +539,6 @@ class TestBackwardCompatibility:
         config_content = """
         agent_name = "legacy-agent"
         image = "legacy:latest"
-        enable_krisp = true
 
         [scaling]
         min_agents = 1
@@ -562,7 +556,6 @@ class TestBackwardCompatibility:
         # Assert
         assert config is not None
         assert config.agent_name == "legacy-agent"
-        assert config.enable_krisp is True
         assert config.krisp_viva.audio_filter is None
 
 
@@ -586,40 +579,6 @@ class TestErrorHandling:
             # Act & Assert
             with pytest.raises(Exception, match="Network error"):
                 await api._deploy(config, "test-org", update=False)
-
-    def test_simultaneous_krisp_and_krisp_viva(self):
-        """Both Krisp and Krisp VIVA can be enabled simultaneously."""
-        # Arrange
-        config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            enable_krisp=True,
-            krisp_viva=KrispVivaConfig(audio_filter="tel"),
-        )
-
-        # Act
-        result = config.to_dict()
-
-        # Assert
-        assert result["enable_krisp"] is True
-        assert result["krisp_viva"]["audio_filter"] == "tel"
-
-    def test_all_features_enabled_together(self):
-        """Krisp and Krisp VIVA can be enabled together."""
-        # Arrange
-        config = DeployConfigParams(
-            agent_name="test-agent",
-            image="test:latest",
-            enable_krisp=True,
-            krisp_viva=KrispVivaConfig(audio_filter="pro"),
-        )
-
-        # Act
-        result = config.to_dict()
-
-        # Assert
-        assert result["enable_krisp"] is True
-        assert result["krisp_viva"]["audio_filter"] == "pro"
 
 
 class TestConstantsSynchronization:

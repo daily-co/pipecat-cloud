@@ -442,7 +442,6 @@ class _API:
                 "minAgents": deploy_config.scaling.min_agents,
                 "maxAgents": deploy_config.scaling.max_agents,
             },
-            "enableKrisp": deploy_config.enable_krisp,
             "agentProfile": deploy_config.agent_profile,
             "krispViva": {
                 "audioFilter": deploy_config.krisp_viva.audio_filter,
