@@ -14,10 +14,17 @@ from pipecatcloud.cli import PANEL_TITLE_ERROR, PANEL_TITLE_SUCCESS, PIPECAT_CLI
 
 
 def format_cents(cents: int | None) -> str:
-    """Render a cents value as a USD dollar string (e.g. 1234 -> "$12.34")."""
+    """Render a cents value as a USD dollar string (e.g. 1234 -> "$12.34").
+
+    Uses integer arithmetic so the rendered value is exact for any in-range
+    integer, even values float-division would round (e.g. very large cent
+    counts where `cents / 100` loses precision).
+    """
     if cents is None:
         return "no limit"
-    return f"${cents / 100:.2f}"
+    sign = "-" if cents < 0 else ""
+    abs_cents = abs(cents)
+    return f"{sign}${abs_cents // 100}.{abs_cents % 100:02d}"
 
 
 class PipecatConsole(Console):

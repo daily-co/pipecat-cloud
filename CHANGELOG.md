@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - New `pcc spend-limit` command group for managing the organization-level
-  spend cap added in PCC-801:
+  spend cap (PCC-807):
   - `pcc spend-limit show` prints the current limit, period spend, period
     boundaries, and blocked state. Pass `--json` for machine-readable output.
   - `pcc spend-limit set <amount>` sets a new limit. The amount is in

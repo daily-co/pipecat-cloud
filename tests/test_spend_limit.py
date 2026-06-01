@@ -122,6 +122,16 @@ class TestFormatCents:
     def test_none(self):
         assert format_cents(None) == "no limit"
 
+    def test_large_value_is_exact(self):
+        # Integer arithmetic must not lose precision the way float division
+        # could for very large cent counts.
+        assert format_cents(123_456_789_012_345) == "$1234567890123.45"
+
+    def test_negative(self):
+        # Not exercised in practice (parser rejects negatives), but the
+        # formatter should not produce something like "$-1.-23".
+        assert format_cents(-1234) == "-$12.34"
+
 
 # ---- SPEND_LIMIT_REACHED wrapping ----
 
