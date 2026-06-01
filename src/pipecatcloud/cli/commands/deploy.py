@@ -668,32 +668,7 @@ def create_deploy_command(app: typer.Typer):
             help="Use an existing cloud build ID",
             rich_help_panel="Cloud Build Options",
         ),
-        # @deprecated
-        min_instances: int = typer.Option(
-            None,
-            "--min-instances",
-            help="[Deprecated] Use --min-agents instead",
-            hidden=True,
-            min=0,
-        ),
-        # @deprecated
-        max_instances: int = typer.Option(
-            None,
-            "--max-instances",
-            help="[Deprecated] Use --max-agents instead",
-            hidden=True,
-            min=1,
-        ),
     ):
-        # Handle @deprecated options
-        if min_instances is not None:
-            logger.warning("min_instances is deprecated, use min_agents instead")
-            min_agents = min_instances
-
-        if max_instances is not None:
-            logger.warning("max_instances is deprecated, use max_agents instead")
-            max_agents = max_instances
-
         if krisp:
             logger.warning(
                 "--enable-krisp is deprecated, use --krisp-viva-audio-filter instead for the latest Krisp VIVA models."

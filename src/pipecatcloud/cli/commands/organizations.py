@@ -358,28 +358,6 @@ async def revoke_key(
     await _revoke_key_flow(organization)
 
 
-@keys_cli.command(
-    name="delete",
-    hidden=True,
-    help="Deprecated alias for 'revoke'.",
-)
-@synchronizer.create_blocking
-@requires_login
-async def delete_key(
-    organization: str = typer.Option(
-        None,
-        "--organization",
-        "-o",
-        help="Organization the API key belongs to",
-    ),
-):
-    console.print(
-        "[yellow]'delete' is deprecated and will be removed in a future release; "
-        "use 'revoke' instead.[/yellow]"
-    )
-    await _revoke_key_flow(organization)
-
-
 @keys_cli.command(name="use", help="Set default API key for an organization in local config.")
 @synchronizer.create_blocking
 @requires_login

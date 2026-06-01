@@ -266,21 +266,8 @@ def interpret_deployment_status(
 class ScalingParams:
     min_agents: int | None = 0
     max_agents: int | None = None
-    # @deprecated
-    min_instances: int | None = field(default=None, metadata={"deprecated": True})
-    # @deprecated
-    max_instances: int | None = field(default=None, metadata={"deprecated": True})
 
     def __attrs_post_init__(self):
-        # Handle deprecated fields
-        if self.min_instances is not None:
-            logger.warning("min_instances is deprecated, use min_agents instead")
-            self.min_agents = self.min_instances
-
-        if self.max_instances is not None:
-            logger.warning("max_instances is deprecated, use max_agents instead")
-            self.max_agents = self.max_instances
-
         # Validation
         if self.min_agents is not None:
             if self.min_agents < 0:
