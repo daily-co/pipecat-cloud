@@ -69,10 +69,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its `pcc-deploy.toml` key, and the `enableKrisp` API payload. A `pcc-deploy.toml` that
   still contains `enable_krisp` will now error as an unexpected key — remove it.
 
-- **The `pipecatcloud[pipecat]` optional extra.** It is redundant now that `pipecat-ai`
-  is a core dependency. Replace `pip install pipecatcloud[pipecat]` with
-  `pip install pipecatcloud`. (Installers will report `[pipecat]` as an unknown extra.)
-
 - **The standalone (no `pipecat-ai`) fallback for agent session-argument types.**
   `pipecatcloud.agent` no longer ships its own deprecated `RunnerArguments` /
   `DailyRunnerArguments` / `WebSocketRunnerArguments` definitions; it imports the real
