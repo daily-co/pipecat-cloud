@@ -4,10 +4,10 @@ Guidance for Claude Code working in this repo.
 
 ## What this is
 
-**Pipecat Cloud** is the Python SDK and `pcc` CLI for deploying and managing Pipecat voice agents on Pipecat Cloud infrastructure. It ships to PyPI as `pipecatcloud`. Users install it to authenticate, build and push container images, deploy agents, manage secrets and scaling, and open sessions against running agents.
+**Pipecat Cloud** is the Python SDK and CLI for deploying and managing Pipecat voice agents on Pipecat Cloud infrastructure. It ships to PyPI as `pipecatcloud`. Users authenticate, build and push container images, deploy agents, manage secrets and scaling, and open sessions against running agents. The CLI is not a standalone command — its commands are exposed through the Pipecat CLI as `pipecat cloud ...`.
 
 - Package root: `src/pipecatcloud/`
-- CLI entry points: `pcc` and `pipecatcloud` (also registered as a Pipecat CLI extension via the `pipecat_cli.extensions:cloud` entry point)
+- CLI: registered as a Pipecat CLI extension via the `pipecat_cli.extensions:cloud` entry point (surfaced as `pipecat cloud`). There is no standalone entry point — no `[project.scripts]` and no `__main__`; the CLI runs only through the Pipecat CLI.
 - Public docs: https://docs.pipecat.daily.co
 
 ## Toolchain

@@ -1,5 +1,5 @@
 """
-Unit tests for the --max-session-duration flag on `pcc deploy`.
+Unit tests for the --max-session-duration flag on `pipecat cloud deploy`.
 
 Covers the data model, TOML parsing, and API payload construction.
 """

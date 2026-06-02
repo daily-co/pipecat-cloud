@@ -102,5 +102,3 @@ entrypoint_cli_typer.add_typer(regions_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(spend_limit_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(agent_cli, rich_help_panel="Commands")
-
-entrypoint_cli = typer.main.get_command(entrypoint_cli_typer)

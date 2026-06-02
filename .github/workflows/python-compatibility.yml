@@ -42,4 +42,4 @@ jobs:
       - name: Verify CLI loads
         run: |
           uv run python --version
-          uv run pcc --help
+          uv run python -c "from pipecatcloud.cli.entry_point import entrypoint_cli_typer"

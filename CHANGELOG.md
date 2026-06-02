@@ -54,6 +54,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **The standalone CLI** (`pcc` / `pipecatcloud` console scripts and `python -m
+  pipecatcloud`). Pipecat Cloud is no longer a directly-invocable CLI; its commands are
+  exposed through the **Pipecat CLI** as `pipecat cloud ...` (the same commands that have
+  been available there for some time). *Migration:* install the Pipecat CLI with
+  `uv tool install pipecat-ai-cli` and replace `pcc <command>` with
+  `pipecat cloud <command>` (e.g. `pcc auth login` → `pipecat cloud auth login`). The
+  Python SDK (`pip install pipecatcloud`) is unchanged.
+
 - **Legacy Krisp (the `--enable-krisp` flag and the `enable_krisp` config/API field).**
   The legacy Krisp model is no longer supported anywhere — use **Krisp VIVA**
   (`--krisp-viva-audio-filter`, or the `[krisp_viva]` section in `pcc-deploy.toml`).

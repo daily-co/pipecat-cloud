@@ -22,31 +22,30 @@ Documentation for Pipecat Cloud is available [here](https://docs.pipecat.daily.c
 
 ### Installation
 
+The Pipecat Cloud CLI ships as part of the [Pipecat CLI](https://github.com/pipecat-ai/pipecat-cli) — its commands are available under `pipecat cloud`. Install the Pipecat CLI:
+
 ```shell
-pip install pipecatcloud
+uv tool install pipecat-ai-cli
+```
 
-pcc --version
-pcc --help
-
-# Note: you can use `pcc` or `pipecatcloud` interchangeably
-pcc auth login
+```shell
+pipecat cloud --help
+pipecat cloud auth login
 ```
 
 ! All CLI commands have a `--help` flag that will display the command usage and options.
+
+To use Pipecat Cloud programmatically (without the CLI), install the package directly with `uv add pipecatcloud` and see [Usage in Python scripts](#usage-in-python-scripts).
 
 ## Usage
 
 1. Create an account at [Pipecat Cloud](https://pipecat.daily.co)
 
-2. Login to your account `pcc auth login`
+2. Login to your account `pipecat cloud auth login`
 
-3. (Optional): Clone the quickstart repo [here](https://github.com/pipecat-ai/pipecat-quickstart)
+3. Generate secrets `pipecat cloud secrets set`
 
-4. Build your agent `docker build --platform linux/arm64 -t your-agent-name .`
-
-5. Push your Docker image to your repository `docker push your-repository/your-agent-name:0.1`
-
-6. Deploy your agent `pcc deploy starter-agent your-repository/your-agent-name:0.1`
+4. Build and deploy your agent `pipecat cloud deploy`
 
 ### Usage in Python scripts
 
@@ -78,7 +77,7 @@ if __name__ == "__main__":
 
 ### SSL certificate errors on macOS
 
-If `pcc auth login` fails with an SSL certificate verification error, your Python
+If `pipecat cloud auth login` fails with an SSL certificate verification error, your Python
 installation may not have access to the macOS system certificate store. This is
 common with Python installed via pyenv, conda, or the python.org installer.
 
