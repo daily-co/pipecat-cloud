@@ -26,22 +26,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`pipecat-ai` is now a required (core) dependency.** Previously it was an optional
-  `pipecatcloud[pipecat]` extra with a deprecated standalone fallback. `pipecatcloud`
-  is always used with `pipecat-ai`, so the fallback added complexity for no real
-  benefit. *Migration:* `pip install pipecatcloud` now installs `pipecat-ai`
-  automatically — drop the `[pipecat]` selector from install commands (see below).
+- **The agent `*SessionArguments` types are now thin subclasses of pipecat-ai's
+  runner argument types** (`SessionArguments`, `PipecatSessionArguments`,
+  `DailySessionArguments`, `WebSocketSessionArguments`, `SmallWebRTCSessionArguments`).
+  Because each is a subclass of the matching `pipecat.runner.types.*RunnerArguments`,
+  it interoperates with pipecat's runner machinery — `create_transport(args)` and
+  `isinstance(args, DailyRunnerArguments)` both work — so a bot's `bot()` may type
+  the argument as either the `*SessionArguments` type or the underlying
+  `*RunnerArguments` type. The types are **not** deprecated; they remain Pipecat
+  Cloud's stable session-argument API.
 
-### Deprecated
-
-- **The agent `*SessionArguments` types** (`SessionArguments`,
-  `PipecatSessionArguments`, `DailySessionArguments`, `WebSocketSessionArguments`,
-  `SmallWebRTCSessionArguments`). They only added `session_id` on top of pipecat-ai's
-  runner argument types, which now provide `session_id` themselves. Use
-  `pipecat.runner.types.RunnerArguments` (and its `DailyRunnerArguments` /
-  `WebSocketRunnerArguments` / `SmallWebRTCRunnerArguments` subclasses) directly.
-  Constructing a `*SessionArguments` now emits a `DeprecationWarning`; these types
-  will be removed in 2.0.0.
+- **`pipecat-ai` is an optional dependency (`pipecatcloud[pipecat]`).** Only the
+  agent session-argument types need it; the SDK (`Session`, the API client) and the
+  CLI do not. The types are now lazily imported, so plain `import pipecatcloud`
+  works without pipecat-ai installed. *Migration:* if you use the `*SessionArguments`
+  types, install `pip install "pipecatcloud[pipecat]"` (or otherwise have pipecat-ai
+  in your environment); accessing them without pipecat-ai raises a clear `ImportError`.
 
 ### Fixed
 
