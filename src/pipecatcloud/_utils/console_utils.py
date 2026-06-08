@@ -13,6 +13,20 @@ from rich.panel import Panel
 from pipecatcloud.cli import PANEL_TITLE_ERROR, PANEL_TITLE_SUCCESS, PIPECAT_CLI_NAME
 
 
+def format_cents(cents: int | None) -> str:
+    """Render a cents value as a USD dollar string (e.g. 1234 -> "$12.34").
+
+    Uses integer arithmetic so the rendered value is exact for any in-range
+    integer, even values float-division would round (e.g. very large cent
+    counts where `cents / 100` loses precision).
+    """
+    if cents is None:
+        return "no limit"
+    sign = "-" if cents < 0 else ""
+    abs_cents = abs(cents)
+    return f"{sign}${abs_cents // 100}.{abs_cents % 100:02d}"
+
+
 class PipecatConsole(Console):
     def success(
         self,
@@ -90,6 +104,11 @@ class PipecatConsole(Console):
             error_message = str(error_code) if error_code else DEFAULT_ERROR_MESSAGE
             code = None
 
+        if code == "SPEND_LIMIT_REACHED":
+            # Safe to pass through: code is only set when error_code is a dict.
+            self._spend_limit_reached(error_code)  # type: ignore[arg-type]
+            return
+
         if not error_message:
             hide_subtitle = True
 
@@ -102,6 +121,48 @@ class PipecatConsole(Console):
                 else None,
                 title_align="left",
                 subtitle_align="left",
+                border_style="red",
+            )
+        )
+
+    def _spend_limit_reached(self, error: dict):
+        """Render the wrapped remediation message for HTTP 402 SPEND_LIMIT_REACHED.
+
+        Falls back gracefully if the error body omits the spend fields: in that
+        case we render the remediation message without the usage line.
+        """
+        from pipecatcloud.config import config as base_config
+
+        current = error.get("currentSpendCents")
+        limit = error.get("limitCents")
+
+        if current is not None and limit is not None:
+            usage_line = (
+                f"Your organization has reached its spend limit "
+                f"({format_cents(current)} of {format_cents(limit)} used in this billing period)."
+            )
+        else:
+            usage_line = (
+                "Your organization has reached its spend limit for the current billing period."
+            )
+
+        # Fall back to the documented default if the host is unset or empty,
+        # so the rendered link is never `[link=][/link]` or `[link=None]None[/link]`.
+        dashboard = base_config.get("dashboard_host") or "https://pipecat.daily.co"
+        body = (
+            f"{usage_line}\n"
+            "New sessions are being rejected. In-flight sessions continue to run.\n\n"
+            "To unblock new sessions:\n"
+            f"  [bold cyan]{PIPECAT_CLI_NAME} spend-limit set <new amount>[/bold cyan]\n"
+            f"  [bold cyan]{PIPECAT_CLI_NAME} spend-limit clear[/bold cyan]\n\n"
+            f"Or visit [link={dashboard}]{dashboard}[/link]"
+        )
+
+        self.print(
+            Panel(
+                body,
+                title=f"[bold red]{PANEL_TITLE_ERROR} - Spend limit reached (402)[/bold red]",
+                title_align="left",
                 border_style="red",
             )
         )

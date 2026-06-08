@@ -38,6 +38,7 @@ _SETTINGS = {
     "secrets_path": _Setting("/v1/organizations/{org}/secrets"),
     "regions_path": _Setting("/v1/organizations/{org}/regions"),
     "properties_path": _Setting("/v1/organizations/{org}/properties"),
+    "spend_limit_path": _Setting("/v1/organizations/{org}/spend-limit"),
     "builds_path": _Setting("/v1/organizations/{org}/builds"),
 }
 

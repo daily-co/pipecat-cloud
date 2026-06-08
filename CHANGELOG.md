@@ -5,6 +5,24 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- New `pcc spend-limit` command group for managing the organization-level
+  spend cap (PCC-807):
+  - `pcc spend-limit show` prints the current limit, period spend, period
+    boundaries, and blocked state. Pass `--json` for machine-readable output.
+  - `pcc spend-limit set <amount>` sets a new limit. The amount is in
+    dollars with at most two decimal places (e.g. `50` or `12.34`). The
+    command prompts before setting the limit to `$0` or below current
+    spend; pass `-y/--yes` to skip the prompt.
+  - `pcc spend-limit clear` removes the limit, with the same confirmation
+    behavior.
+- Any CLI command that surfaces an HTTP 402 `SPEND_LIMIT_REACHED` error now
+  renders a wrapped remediation message that explains how to unblock new
+  sessions, instead of a generic API error panel.
+
 ## [0.7.2] - 2026-05-29
 
 ### Fixed
