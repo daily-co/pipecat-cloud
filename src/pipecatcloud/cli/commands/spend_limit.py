@@ -73,7 +73,7 @@ def _render_show(data: dict) -> None:
 
     spend_display = format_cents(spend_cents)
     # Skip the percentage when no limit is set, and when the limit is exactly
-    # $0 (which is a valid "block everything" state — guard against div-by-zero).
+    # $0 (a valid "block everything" state). Guards against div-by-zero.
     if limit_cents is not None and limit_cents > 0:
         pct = (spend_cents / limit_cents) * 100
         spend_display += f" [dim]({pct:.1f}%)[/dim]"
