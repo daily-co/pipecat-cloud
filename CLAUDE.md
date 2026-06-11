@@ -73,7 +73,7 @@ src/pipecatcloud/
     session_manager.py   SmallWebRTC support for non-Pipecat agents
 tests/                   Pytest suite, parallel to src/
 .github/workflows/       tests.yml, format.yml, publish-pypi.yml, publish-test.yml
-pcc-deploy.toml          Example deployment config consumed by `pcc deploy`
+pcc-deploy.toml          Example deployment config consumed by `pipecat cloud deploy`
 ```
 
 ## Testing conventions

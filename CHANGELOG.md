@@ -9,15 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- New `pcc spend-limit` command group for managing the organization-level
-  spend cap (PCC-807):
-  - `pcc spend-limit show` prints the current limit, period spend, period
+- New `pipecat cloud spend-limit` command group for managing the organization-level
+  spend cap:
+  - `pipecat cloud spend-limit show` prints the current limit, period spend, period
     boundaries, and blocked state. Pass `--json` for machine-readable output.
-  - `pcc spend-limit set <amount>` sets a new limit. The amount is in
+  - `pipecat cloud spend-limit set <amount>` sets a new limit. The amount is in
     dollars with at most two decimal places (e.g. `50` or `12.34`). The
     command prompts before setting the limit to `$0` or below current
     spend; pass `-y/--yes` to skip the prompt.
-  - `pcc spend-limit clear` removes the limit, with the same confirmation
+  - `pipecat cloud spend-limit clear` removes the limit, with the same confirmation
     behavior.
 
 - Any CLI command that surfaces an HTTP 402 `SPEND_LIMIT_REACHED` error now
@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   agent session-argument types need it; the SDK (`Session`, the API client) and the
   CLI do not. The types are now lazily imported, so plain `import pipecatcloud`
   works without pipecat-ai installed. *Migration:* if you use the `*SessionArguments`
-  types, install `pip install "pipecatcloud[pipecat]"` (or otherwise have pipecat-ai
+  types, install `uv add "pipecatcloud[pipecat]"` (or otherwise have pipecat-ai
   in your environment); accessing them without pipecat-ai raises a clear `ImportError`.
 
 ### Fixed
@@ -77,16 +77,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SessionArguments`) are now genuine `pipecat-ai` subclasses, so
   `isinstance(args, pipecat.runner.types.RunnerArguments)` holds.
 
-- **`pcc deploy --min-instances` / `--max-instances`** (deprecated since 0.4.x).
-  Use `--min-agents` / `--max-agents`. The corresponding `min_instances` /
-  `max_instances` fields were removed from `ScalingParams`.
+- **`pipecat cloud deploy --min-instances` / `--max-instances`** (deprecated
+  since 0.4.x). Use `--min-agents` / `--max-agents`. The corresponding
+  `min_instances` / `max_instances` fields were removed from `ScalingParams`.
 
-- **Passing a Personal Access Token as a positional argument to `pcc auth use-pat`.**
+- **Passing a Personal Access Token as a positional argument to `pipecat cloud auth use-pat`.**
   The command now always reads the token from a secure hidden prompt (tokens on the
   command line leak to shell history and process listings).
 
-- **The deprecated `pcc organization keys delete` alias.** Use `pcc organization
-  keys revoke`.
+- **The deprecated `pipecat cloud organization keys delete` alias.** Use
+  `pipecat cloud organization keys revoke`.
 
 ## [0.7.2] - 2026-05-29
 
