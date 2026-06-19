@@ -11,7 +11,7 @@ Python module and CLI for interacting with [Pipecat Cloud](https://pipecat.daily
 
 ### Requirements
 
-- Python 3.10+
+- Python 3.11+
 - Docker and a Docker repository (e.g. Docker Hub)
 - Active [Pipecat Cloud](https://pipecat.daily.co)
   account
