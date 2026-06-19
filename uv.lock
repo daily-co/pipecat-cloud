@@ -1267,7 +1267,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.11.12,<4.0.0" },
     { name = "fastapi", specifier = ">=0.115.6,<1.0.0" },
     { name = "loguru", specifier = "~=0.7.3" },
-    { name = "pipecat-ai", marker = "extra == 'pipecat'", specifier = ">=0.0.91" },
+    { name = "pipecat-ai", marker = "extra == 'pipecat'", specifier = ">=1.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.1,<2.0.0" },
     { name = "questionary", specifier = "~=2.1.0" },
     { name = "synchronicity", specifier = ">=0.11,<1.0.0" },
@@ -1281,7 +1281,7 @@ provides-extras = ["pipecat"]
 dev = [
     { name = "build", specifier = "~=1.4.0" },
     { name = "grpcio-tools", specifier = "~=1.78.0" },
-    { name = "pipecat-ai", specifier = ">=0.0.91" },
+    { name = "pipecat-ai", specifier = ">=1.0.0" },
     { name = "pre-commit", specifier = "~=4.5.1" },
     { name = "pyright", specifier = ">=1.1.404,<1.2" },
     { name = "pytest", specifier = ">=9.0.0,<10" },

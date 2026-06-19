@@ -12,7 +12,7 @@ thin subclass of the matching pipecat-ai runner argument type
 runner machinery (``create_transport``, ``isinstance`` checks) while giving
 Pipecat Cloud a stable, branded session-argument API.
 
-These types require **pipecat-ai** (>= 0.0.91). pipecat-ai is an optional
+These types require **pipecat-ai** (>= 1.0.0). pipecat-ai is an optional
 dependency of pipecatcloud (the SDK and CLI do not need it), so a bot environment
 must provide it — install with ``pip install "pipecatcloud[pipecat]"`` or bring
 your own ``pipecat-ai``. Importing this module without pipecat-ai raises a clear
@@ -30,7 +30,7 @@ try:
     )
 except ImportError as e:  # pragma: no cover - exercised only without pipecat-ai
     raise ImportError(
-        "pipecatcloud's agent session-argument types require pipecat-ai>=0.0.91. "
+        "pipecatcloud's agent session-argument types require pipecat-ai>=1.0.0. "
         'Install it with `pip install "pipecatcloud[pipecat]"`, or add pipecat-ai '
         "to your environment."
     ) from e
@@ -49,15 +49,15 @@ class SessionArguments:
 
     # ``session_id`` is intentionally declared here as a compatibility shim:
     # pipecat-ai only added ``session_id`` to the base ``RunnerArguments`` in
-    # v1.2.0, but the *RunnerArguments types have existed since v0.0.91. For
-    # pipecat-ai in the [0.0.91, 1.2.0) range, this mixin supplies ``session_id``.
-    # When pipecat-ai *does* define it on the base, that field overrides this one
-    # because ``RunnerArguments`` appears later than ``SessionArguments`` in the
-    # MRO of the subclasses below. That is why every subclass must list the
-    # ``*RunnerArguments`` base FIRST — e.g. ``(DailyRunnerArguments,
-    # SessionArguments)``. Do not reorder the bases. (No default here on purpose:
-    # giving it one would order a defaulted field before ``room_url`` on older
-    # pipecat-ai and raise "non-default argument follows default argument".)
+    # v1.2.0. For pipecat-ai in the [1.0.0, 1.2.0) range, this mixin supplies
+    # ``session_id``. When pipecat-ai *does* define it on the base, that field
+    # overrides this one because ``RunnerArguments`` appears later than
+    # ``SessionArguments`` in the MRO of the subclasses below. That is why every
+    # subclass must list the ``*RunnerArguments`` base FIRST — e.g.
+    # ``(DailyRunnerArguments, SessionArguments)``. Do not reorder the bases.
+    # (No default here on purpose: giving it one would order a defaulted field
+    # before ``room_url`` on older pipecat-ai and raise "non-default argument
+    # follows default argument".)
     session_id: str | None
 
 
