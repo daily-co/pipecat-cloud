@@ -81,12 +81,11 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 - Layout mirrors `src/`. New tests go in `tests/test_<module>.py`.
 - `tests/conftest.py` sets `PIPECAT_CONFIG_PATH` to an isolated temp file **before imports**, pre-populated with `token = "test-token"` and `org = "test-org"`. This prevents tests from reading or clobbering real credentials. Do not bypass it.
 - Async tests use `@pytest.mark.asyncio`. Mock async calls with `unittest.mock.AsyncMock`.
-- `tests/test_agent_sessions.py` is **skipped in CI** because it needs real auth or heavier mocking. Run it locally if you touch session code.
 - `pytest.ini` uses `--import-mode=importlib`. Some tests manually insert `src/` onto `sys.path`, which is expected.
 
 ## CI
 
-- `tests.yml` runs on push to main and PRs. It currently runs `uv run pytest tests/test_docker_commands.py -v` rather than the full suite, so green CI does not guarantee the whole suite passes. Run `uv run pytest` locally before opening PRs.
+- `tests.yml` runs the full suite (`uv run pytest -v`) on push to main and PRs.
 - `format.yml` runs `ruff format --diff` and `ruff check`. Both must pass.
 - `publish-pypi.yml` and `publish-test.yml` are manual dispatches that build and publish a specific git tag.
 
