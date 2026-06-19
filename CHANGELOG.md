@@ -5,23 +5,83 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [1.0.0] - 2026-06-19
 
 ### Added
 
-- New `pcc spend-limit` command group for managing the organization-level
-  spend cap (PCC-807):
-  - `pcc spend-limit show` prints the current limit, period spend, period
+- New `pipecat cloud spend-limit` command group for managing the organization-level
+  spend cap:
+  - `pipecat cloud spend-limit show` prints the current limit, period spend, period
     boundaries, and blocked state. Pass `--json` for machine-readable output.
-  - `pcc spend-limit set <amount>` sets a new limit. The amount is in
+  - `pipecat cloud spend-limit set <amount>` sets a new limit. The amount is in
     dollars with at most two decimal places (e.g. `50` or `12.34`). The
     command prompts before setting the limit to `$0` or below current
     spend; pass `-y/--yes` to skip the prompt.
-  - `pcc spend-limit clear` removes the limit, with the same confirmation
+  - `pipecat cloud spend-limit clear` removes the limit, with the same confirmation
     behavior.
+
 - Any CLI command that surfaces an HTTP 402 `SPEND_LIMIT_REACHED` error now
   renders a wrapped remediation message that explains how to unblock new
   sessions, instead of a generic API error panel.
+
+### Changed
+
+- **The agent `*SessionArguments` types are now thin subclasses of pipecat-ai's
+  runner argument types** (`SessionArguments`, `PipecatSessionArguments`,
+  `DailySessionArguments`, `WebSocketSessionArguments`, `SmallWebRTCSessionArguments`).
+  Because each is a subclass of the matching `pipecat.runner.types.*RunnerArguments`,
+  it interoperates with pipecat's runner machinery — `create_transport(args)` and
+  `isinstance(args, DailyRunnerArguments)` both work — so a bot's `bot()` may type
+  the argument as either the `*SessionArguments` type or the underlying
+  `*RunnerArguments` type.
+
+- **`pipecat-ai` is an optional dependency (`pipecatcloud[pipecat]`).** Only the
+  agent session-argument types need it; the SDK (`Session`, the API client) and the
+  CLI do not. The types are now lazily imported, so plain `import pipecatcloud`
+  works without pipecat-ai installed. *Migration:* if you use the `*SessionArguments`
+  types, install `uv add "pipecatcloud[pipecat]"` (or otherwise have pipecat-ai
+  in your environment); accessing them without pipecat-ai raises a clear `ImportError`.
+  This also removes the old standalone fallback `*RunnerArguments` definitions
+  (deprecated since 0.2.1); `pipecatcloud.agent` now imports the real types from
+  pipecat-ai.
+
+### Fixed
+
+- **`pipecatcloud` now exports `SmallWebRTCSessionArguments`** (the SmallWebRTC agent
+  session type), not `SmallWebRTCRunnerArguments`. The `SmallWebRTCSessionArguments`
+  dataclass existed but was unreachable from the top-level package, while a pipecat-ai
+  runner base type was exported in its place — inconsistent with the other transports'
+  `*SessionArguments` exports. `from pipecatcloud import SmallWebRTCRunnerArguments` no
+  longer works (import it from `pipecat.runner.types` if you need the base type).
+
+### Removed
+
+- **The standalone CLI** (`pcc` / `pipecatcloud` console scripts and `python -m
+  pipecatcloud`). Pipecat Cloud is no longer a directly-invocable CLI; its commands are
+  exposed through the **Pipecat CLI** as `pipecat cloud ...` (the same commands that have
+  been available there for some time). *Migration:* install the Pipecat CLI with
+  `uv tool install pipecat-ai-cli` and replace `pcc <command>` with
+  `pipecat cloud <command>` (e.g. `pcc auth login` → `pipecat cloud auth login`). The
+  Python SDK (`pip install pipecatcloud`) is unchanged.
+
+- **Legacy Krisp (the `--enable-krisp` flag and the `enable_krisp` config/API field).**
+  The legacy Krisp model is no longer supported anywhere — use **Krisp VIVA**
+  (`--krisp-viva-audio-filter`, or the `[krisp_viva]` section in `pcc-deploy.toml`).
+  Removed the `--enable-krisp` CLI flag, the `enable_krisp` field on the deploy config,
+  its `pcc-deploy.toml` key, and the `enableKrisp` API payload. A `pcc-deploy.toml` that
+  still contains `enable_krisp` will now error with a message pointing to `[krisp_viva]` —
+  remove it.
+
+- **`pipecat cloud deploy --min-instances` / `--max-instances`** (deprecated
+  since 0.4.x). Use `--min-agents` / `--max-agents`. The corresponding
+  `min_instances` / `max_instances` fields were removed from `ScalingParams`.
+
+- **Passing a Personal Access Token as a positional argument to `pipecat cloud auth use-pat`.**
+  The command now always reads the token from a secure hidden prompt (tokens on the
+  command line leak to shell history and process listings).
+
+- **The deprecated `pipecat cloud organization keys delete` alias.** Use
+  `pipecat cloud organization keys revoke`.
 
 ## [0.7.2] - 2026-05-29
 

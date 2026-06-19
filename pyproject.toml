@@ -19,11 +19,18 @@ dependencies = [
     "typer>=0.20.0,<1",
     "synchronicity>=0.11,<1.0.0",
     "toml~=0.10.2",
-    "questionary~=2.1.0"
+    "questionary~=2.1.0",
 ]
 
 [project.optional-dependencies]
+# The agent session-argument types (pipecatcloud.agent) subclass pipecat-ai's
+# runner argument types. pipecat-ai is optional so the SDK and CLI surface stay
+# lightweight — e.g. so the pipecat-base image doesn't pull pipecat-ai into its
+# layer (the bot provides it). Floor is 1.0.0; `session_id` on the base
+# RunnerArguments came later (v1.2.0) but is supplied by the SessionArguments
+# mixin for pipecat-ai in [1.0.0, 1.2.0).
 pipecat = ["pipecat-ai>=1.0.0"]
+
 
 [dependency-groups]
 dev = [
@@ -36,11 +43,9 @@ dev = [
     "ruff>=0.12.11,<1",
     "setuptools~=78.1.1",
     "setuptools_scm~=8.3.1",
+    # Needed to import/test pipecatcloud.agent (the optional pipecat surface).
+    "pipecat-ai>=1.0.0",
 ]
-
-[project.scripts]
-pcc = "pipecatcloud.__main__:main"
-pipecatcloud = "pipecatcloud.__main__:main"
 
 [project.entry-points."pipecat_cli.extensions"]
 cloud = "pipecatcloud.cli.entry_point:entrypoint_cli_typer"

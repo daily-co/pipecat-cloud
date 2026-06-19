@@ -1,5 +1,5 @@
 """
-Unit tests for the 'pcc agent stop' command.
+Unit tests for the 'pipecat cloud agent stop' command.
 
 Tests focus on core behaviors and edge cases, not implementation details.
 """
@@ -22,7 +22,7 @@ TEST_SESSION_ID = "session-123"
 
 
 class TestAgentStopCommand:
-    """Test the 'pcc agent stop' command behaviors."""
+    """Test the 'pipecat cloud agent stop' command behaviors."""
 
     def test_stop_respects_force_flag(self):
         """Verify force flag skips confirmation when set to True."""

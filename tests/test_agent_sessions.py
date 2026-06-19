@@ -1,5 +1,5 @@
 """
-Unit tests for the 'pcc agent sessions' command.
+Unit tests for the 'pipecat cloud agent sessions' command.
 
 Tests focus on core behaviors and edge cases, not implementation details.
 """
@@ -22,7 +22,7 @@ TEST_AGENT = "test-agent"
 
 
 class TestAgentSessionsCommand:
-    """Test the 'pcc agent sessions' command behaviors."""
+    """Test the 'pipecat cloud agent sessions' command behaviors."""
 
     @pytest.fixture
     def mock_api(self):

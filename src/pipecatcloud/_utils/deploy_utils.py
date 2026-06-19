@@ -266,21 +266,8 @@ def interpret_deployment_status(
 class ScalingParams:
     min_agents: int | None = 0
     max_agents: int | None = None
-    # @deprecated
-    min_instances: int | None = field(default=None, metadata={"deprecated": True})
-    # @deprecated
-    max_instances: int | None = field(default=None, metadata={"deprecated": True})
 
     def __attrs_post_init__(self):
-        # Handle deprecated fields
-        if self.min_instances is not None:
-            logger.warning("min_instances is deprecated, use min_agents instead")
-            self.min_agents = self.min_instances
-
-        if self.max_instances is not None:
-            logger.warning("max_instances is deprecated, use max_agents instead")
-            self.max_agents = self.max_instances
-
         # Validation
         if self.min_agents is not None:
             if self.min_agents < 0:
@@ -339,7 +326,6 @@ class DeployConfigParams:
     secret_set: str | None = None
     region: str | None = None
     scaling: ScalingParams = ScalingParams()
-    enable_krisp: bool = False
     docker_config: dict = field(factory=dict)
     build_config: BuildConfig = field(factory=BuildConfig)  # Cloud build configuration
     agent_profile: str | None = None
@@ -366,7 +352,6 @@ class DeployConfigParams:
             "secret_set": self.secret_set,
             "region": self.region,
             "scaling": self.scaling.to_dict() if self.scaling else None,
-            "enable_krisp": self.enable_krisp,
             "docker_config": self.docker_config,
             "build_config": self.build_config.to_dict() if self.build_config else None,
             "agent_profile": self.agent_profile,
@@ -409,16 +394,8 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             exclude_patterns=exclude_data.get("patterns", []),
         )
 
-        # Create DeployConfigParams with validated data
-        validated_config = DeployConfigParams(
-            **config_data,
-            scaling=scaling_params,
-            docker_config=docker_data,
-            build_config=build_config,
-            krisp_viva=krisp_viva_config,
-        )
-
-        # Check for unexpected keys
+        # Check for unexpected keys before constructing the config, so users get a clear
+        # message instead of a raw constructor TypeError.
         expected_keys = {
             "agent_name",
             "image",
@@ -427,7 +404,6 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             "secret_set",
             "region",
             "scaling",
-            "enable_krisp",
             "docker",
             "build",
             "agent_profile",
@@ -435,9 +411,25 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             "websocket_auth",
             "max_session_duration",
         }
+
+        # TODO: Remove this enable_krisp migration hint in the 2.0.0 release.
+        if "enable_krisp" in config_data:
+            raise ConfigFileError(
+                "'enable_krisp' is no longer supported. Krisp is now configured via the "
+                "[krisp_viva] section in pcc-deploy.toml. Remove 'enable_krisp' from your config."
+            )
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:
             raise ConfigFileError(f"Unexpected keys in config file: {unexpected_keys}")
+
+        # Create DeployConfigParams with validated data
+        validated_config = DeployConfigParams(
+            **config_data,
+            scaling=scaling_params,
+            docker_config=docker_data,
+            build_config=build_config,
+            krisp_viva=krisp_viva_config,
+        )
 
         return validated_config
 

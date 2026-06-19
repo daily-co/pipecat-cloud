@@ -4,10 +4,10 @@ Guidance for Claude Code working in this repo.
 
 ## What this is
 
-**Pipecat Cloud** is the Python SDK and `pcc` CLI for deploying and managing Pipecat voice agents on Pipecat Cloud infrastructure. It ships to PyPI as `pipecatcloud`. Users install it to authenticate, build and push container images, deploy agents, manage secrets and scaling, and open sessions against running agents.
+**Pipecat Cloud** is the Python SDK and CLI for deploying and managing Pipecat voice agents on Pipecat Cloud infrastructure. It ships to PyPI as `pipecatcloud`. Users authenticate, build and push container images, deploy agents, manage secrets and scaling, and open sessions against running agents. The CLI is not a standalone command — its commands are exposed through the Pipecat CLI as `pipecat cloud ...`.
 
 - Package root: `src/pipecatcloud/`
-- CLI entry points: `pcc` and `pipecatcloud` (also registered as a Pipecat CLI extension via the `pipecat_cli.extensions:cloud` entry point)
+- CLI: registered as a Pipecat CLI extension via the `pipecat_cli.extensions:cloud` entry point (surfaced as `pipecat cloud`). There is no standalone entry point — no `[project.scripts]` and no `__main__`; the CLI runs only through the Pipecat CLI.
 - Public docs: https://docs.pipecat.daily.co
 
 ## Toolchain
@@ -73,7 +73,7 @@ src/pipecatcloud/
     session_manager.py   SmallWebRTC support for non-Pipecat agents
 tests/                   Pytest suite, parallel to src/
 .github/workflows/       tests.yml, format.yml, publish-pypi.yml, publish-test.yml
-pcc-deploy.toml          Example deployment config consumed by `pcc deploy`
+pcc-deploy.toml          Example deployment config consumed by `pipecat cloud deploy`
 ```
 
 ## Testing conventions
@@ -81,12 +81,11 @@ pcc-deploy.toml          Example deployment config consumed by `pcc deploy`
 - Layout mirrors `src/`. New tests go in `tests/test_<module>.py`.
 - `tests/conftest.py` sets `PIPECAT_CONFIG_PATH` to an isolated temp file **before imports**, pre-populated with `token = "test-token"` and `org = "test-org"`. This prevents tests from reading or clobbering real credentials. Do not bypass it.
 - Async tests use `@pytest.mark.asyncio`. Mock async calls with `unittest.mock.AsyncMock`.
-- `tests/test_agent_sessions.py` is **skipped in CI** because it needs real auth or heavier mocking. Run it locally if you touch session code.
 - `pytest.ini` uses `--import-mode=importlib`. Some tests manually insert `src/` onto `sys.path`, which is expected.
 
 ## CI
 
-- `tests.yml` runs on push to main and PRs. It currently runs `uv run pytest tests/test_docker_commands.py -v` rather than the full suite, so green CI does not guarantee the whole suite passes. Run `uv run pytest` locally before opening PRs.
+- `tests.yml` runs the full suite (`uv run pytest -v`) on push to main and PRs.
 - `format.yml` runs `ruff format --diff` and `ruff check`. Both must pass.
 - `publish-pypi.yml` and `publish-test.yml` are manual dispatches that build and publish a specific git tag.
 

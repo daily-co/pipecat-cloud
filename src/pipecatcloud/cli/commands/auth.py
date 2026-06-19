@@ -566,24 +566,13 @@ async def _use_pat_impl(token: str):
 
 @auth_cli.command(name="use-pat", help="Authenticate with a Personal Access Token")
 @synchronizer.create_blocking
-async def use_pat(
-    token: str | None = typer.Argument(
-        None, help="[deprecated] PAT as argument (leaks to shell history)"
-    ),
-):
-    if token is not None:
-        console.print(
-            "[yellow]Warning: Passing tokens as arguments is deprecated — they are visible in "
-            "shell history and process listings. Next time, omit the argument to use the "
-            "secure prompt.[/yellow]"
-        )
-    else:
-        import getpass
+async def use_pat():
+    import getpass
 
-        token = getpass.getpass("Personal Access Token: ")
-        if not token:
-            console.error("No token provided.")
-            return
+    token = getpass.getpass("Personal Access Token: ")
+    if not token:
+        console.error("No token provided.")
+        return
     await _use_pat_impl(token)
 
 

@@ -592,13 +592,6 @@ def create_deploy_command(app: typer.Typer):
             help="Organization to deploy to",
             rich_help_panel="Deployment Configuration",
         ),
-        krisp: bool = typer.Option(
-            False,
-            "--enable-krisp",
-            "-krisp",
-            help="[DEPRECATED] Enable Krisp integration for this deployment. Use --krisp-viva-audio-filter instead",
-            rich_help_panel="Deployment Configuration",
-        ),
         krisp_viva_audio_filter: str = typer.Option(
             None,
             "--krisp-viva-audio-filter",
@@ -668,37 +661,7 @@ def create_deploy_command(app: typer.Typer):
             help="Use an existing cloud build ID",
             rich_help_panel="Cloud Build Options",
         ),
-        # @deprecated
-        min_instances: int = typer.Option(
-            None,
-            "--min-instances",
-            help="[Deprecated] Use --min-agents instead",
-            hidden=True,
-            min=0,
-        ),
-        # @deprecated
-        max_instances: int = typer.Option(
-            None,
-            "--max-instances",
-            help="[Deprecated] Use --max-agents instead",
-            hidden=True,
-            min=1,
-        ),
     ):
-        # Handle @deprecated options
-        if min_instances is not None:
-            logger.warning("min_instances is deprecated, use min_agents instead")
-            min_agents = min_instances
-
-        if max_instances is not None:
-            logger.warning("max_instances is deprecated, use max_agents instead")
-            max_agents = max_instances
-
-        if krisp:
-            logger.warning(
-                "--enable-krisp is deprecated, use --krisp-viva-audio-filter instead for the latest Krisp VIVA models."
-            )
-
         org = organization or config.get("org")
 
         # Combine automation flags
@@ -721,7 +684,6 @@ def create_deploy_command(app: typer.Typer):
             min_agents=min_agents if min_agents is not None else partial_config.scaling.min_agents,
             max_agents=max_agents if max_agents is not None else partial_config.scaling.max_agents,
         )
-        partial_config.enable_krisp = krisp or partial_config.enable_krisp
         partial_config.agent_profile = profile or partial_config.agent_profile
         partial_config.force_redeploy = force
         partial_config.max_session_duration = (
@@ -866,7 +828,6 @@ def create_deploy_command(app: typer.Typer):
         content_items.extend(
             [
                 f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}",
-                f"[bold white]Krisp (deprecated):[/bold white] {'[dim]Disabled[/dim]' if not partial_config.enable_krisp else '[green]Enabled[/green]'}",
                 f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}",
             ]
         )
