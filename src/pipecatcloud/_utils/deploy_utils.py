@@ -394,16 +394,8 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             exclude_patterns=exclude_data.get("patterns", []),
         )
 
-        # Create DeployConfigParams with validated data
-        validated_config = DeployConfigParams(
-            **config_data,
-            scaling=scaling_params,
-            docker_config=docker_data,
-            build_config=build_config,
-            krisp_viva=krisp_viva_config,
-        )
-
-        # Check for unexpected keys
+        # Check for unexpected keys before constructing the config, so users get a clear
+        # message instead of a raw constructor TypeError.
         expected_keys = {
             "agent_name",
             "image",
@@ -419,9 +411,25 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             "websocket_auth",
             "max_session_duration",
         }
+
+        # TODO: Remove this enable_krisp migration hint in the 2.0.0 release.
+        if "enable_krisp" in config_data:
+            raise ConfigFileError(
+                "'enable_krisp' is no longer supported. Krisp is now configured via the "
+                "[krisp_viva] section in pcc-deploy.toml. Remove 'enable_krisp' from your config."
+            )
         unexpected_keys = set(config_data.keys()) - expected_keys
         if unexpected_keys:
             raise ConfigFileError(f"Unexpected keys in config file: {unexpected_keys}")
+
+        # Create DeployConfigParams with validated data
+        validated_config = DeployConfigParams(
+            **config_data,
+            scaling=scaling_params,
+            docker_config=docker_data,
+            build_config=build_config,
+            krisp_viva=krisp_viva_config,
+        )
 
         return validated_config
 

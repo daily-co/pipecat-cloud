@@ -67,7 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`--krisp-viva-audio-filter`, or the `[krisp_viva]` section in `pcc-deploy.toml`).
   Removed the `--enable-krisp` CLI flag, the `enable_krisp` field on the deploy config,
   its `pcc-deploy.toml` key, and the `enableKrisp` API payload. A `pcc-deploy.toml` that
-  still contains `enable_krisp` will now error as an unexpected key — remove it.
+  still contains `enable_krisp` will now error with a message pointing to `[krisp_viva]` —
+  remove it.
 
 - **The standalone (no `pipecat-ai`) fallback for agent session-argument types.**
   `pipecatcloud.agent` no longer ships its own deprecated `RunnerArguments` /
