@@ -33,8 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it interoperates with pipecat's runner machinery — `create_transport(args)` and
   `isinstance(args, DailyRunnerArguments)` both work — so a bot's `bot()` may type
   the argument as either the `*SessionArguments` type or the underlying
-  `*RunnerArguments` type. The types are **not** deprecated; they remain Pipecat
-  Cloud's stable session-argument API.
+  `*RunnerArguments` type.
 
 - **`pipecat-ai` is an optional dependency (`pipecatcloud[pipecat]`).** Only the
   agent session-argument types need it; the SDK (`Session`, the API client) and the
@@ -42,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   works without pipecat-ai installed. *Migration:* if you use the `*SessionArguments`
   types, install `uv add "pipecatcloud[pipecat]"` (or otherwise have pipecat-ai
   in your environment); accessing them without pipecat-ai raises a clear `ImportError`.
+  This also removes the old standalone fallback `*RunnerArguments` definitions
+  (deprecated since 0.2.1); `pipecatcloud.agent` now imports the real types from
+  pipecat-ai.
 
 ### Fixed
 
@@ -69,14 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its `pcc-deploy.toml` key, and the `enableKrisp` API payload. A `pcc-deploy.toml` that
   still contains `enable_krisp` will now error with a message pointing to `[krisp_viva]` —
   remove it.
-
-- **The standalone (no `pipecat-ai`) fallback for agent session-argument types.**
-  `pipecatcloud.agent` no longer ships its own deprecated `RunnerArguments` /
-  `DailyRunnerArguments` / `WebSocketRunnerArguments` definitions; it imports the real
-  ones from `pipecat-ai`. The agent types (`PipecatSessionArguments`,
-  `DailySessionArguments`, `WebSocketSessionArguments`, `SmallWebRTCSessionArguments`,
-  `SessionArguments`) are now genuine `pipecat-ai` subclasses, so
-  `isinstance(args, pipecat.runner.types.RunnerArguments)` holds.
 
 - **`pipecat cloud deploy --min-instances` / `--max-instances`** (deprecated
   since 0.4.x). Use `--min-agents` / `--max-agents`. The corresponding
