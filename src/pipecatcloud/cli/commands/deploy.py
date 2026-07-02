@@ -332,22 +332,24 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     f"[dim]Verifying image pull secret {params.image_credentials} exists...[/dim]"
                 )
             )
-            creds_exist, error = await API.bubble_error().secrets_list(
-                secret_set=params.image_credentials, org=org, live=live
-            )
+            sets, error = await API.secrets_list(org=org, live=live)
 
             if error:
-                if error.get("code") == "400":
-                    creds_exist = True
-                else:
-                    API.print_error()
-                    return typer.Exit()
+                return typer.Exit()
+
+            # Image pull secrets are globally unique by name (region is validated
+            # server-side at deploy), so match on name + type without region filter.
+            creds_exist = any(
+                s.get("name") == params.image_credentials and s.get("type") == "imagePullSecret"
+                for s in (sets or [])
+            )
 
             if not creds_exist:
                 live.stop()
                 console.error(
                     f"Image pull secret with name [bold]'{params.image_credentials}'[/bold] not found in namespace [bold]'{org}'[/bold]"
                 )
+                return typer.Exit()
 
         live.update(
             console.status(
