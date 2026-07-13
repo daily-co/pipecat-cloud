@@ -8,7 +8,7 @@ Guidance for Claude Code working in this repo.
 
 - Package root: `src/pipecatcloud/`
 - CLI: registered as a Pipecat CLI extension via the `pipecat_cli.extensions:cloud` entry point (surfaced as `pipecat cloud`). There is no standalone entry point — no `[project.scripts]` and no `__main__`; the CLI runs only through the Pipecat CLI.
-- Public docs: https://docs.pipecat.daily.co
+- Public docs: https://docs.pipecat.ai/pipecat-cloud
 
 ## Toolchain
 

@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   link redirected to a generic landing page). The deploy and image pull
   secret prompts now link to
   `https://docs.pipecat.ai/pipecat-cloud/fundamentals/secrets#image-pull-secrets`.
+  The README docs badge and link, the `pyproject.toml` project Website URL,
+  and the `CLAUDE.md` public docs pointer now use
+  `https://docs.pipecat.ai/pipecat-cloud` as well.
 
 ## [1.0.0] - 2026-06-19
 

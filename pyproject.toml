@@ -77,7 +77,7 @@ select = [
 "**/__init__.py" = ["D104"]
 
 [project.urls]
-Website = "https://docs.pipecat.daily.co/"
+Website = "https://docs.pipecat.ai/pipecat-cloud"
 
 [tool.setuptools_scm]
 local_scheme = "no-local-version"
