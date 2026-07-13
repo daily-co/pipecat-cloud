@@ -567,7 +567,7 @@ async def image_pull_secret(
     if not credentials:
         console.print(
             "[cyan]For more information about image pull secrets, see: "
-            "https://docs.pipecat.daily.co/agents/secrets#image-pull-secrets[/cyan]\n"
+            "https://docs.pipecat.ai/pipecat-cloud/fundamentals/secrets#image-pull-secrets[/cyan]\n"
         )
         username = await questionary.text(f"Username for image repository '{host}'").ask_async()
         password = await questionary.password(
