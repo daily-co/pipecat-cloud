@@ -5,21 +5,21 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.1] - 2026-07-13
 
 ### Fixed
 
-- Updated stale documentation links that pointed at the retired
-  `docs.pipecat.daily.co` domain. The API error panel now links to the
-  error codes reference at
-  `https://docs.pipecat.ai/pipecat-cloud/fundamentals/error-codes#<code>`,
-  with the code lowercased to match the page's heading anchors (the old
-  link redirected to a generic landing page). The deploy and image pull
-  secret prompts now link to
-  `https://docs.pipecat.ai/pipecat-cloud/fundamentals/secrets#image-pull-secrets`.
-  The README docs badge and link, the `pyproject.toml` project Website URL,
-  and the `CLAUDE.md` public docs pointer now use
-  `https://docs.pipecat.ai/pipecat-cloud` as well.
+- `pipecat cloud deploy` now verifies the image pull secret passed via
+  `--credentials` by looking it up in the secrets list, matching on both name
+  and type. Previously the check misread an API error response as "secret
+  exists", and a regular secret set with the same name also passed. A deploy
+  referencing a missing image pull secret now aborts with a clear error
+  instead of proceeding.
+
+- Documentation links in CLI output now point to `docs.pipecat.ai` instead of
+  the retired `docs.pipecat.daily.co` domain. API error panels link directly
+  to the matching entry in the error codes reference, and the deploy and
+  image pull secret prompts link to the image pull secrets guide.
 
 ## [1.0.0] - 2026-06-19
 
