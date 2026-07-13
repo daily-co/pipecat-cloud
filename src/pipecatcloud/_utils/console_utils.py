@@ -116,7 +116,7 @@ class PipecatConsole(Console):
             Panel(
                 f"[red]{title}[/red]\n\n[dim]Error message:[/dim]\n{error_message}",
                 title=f"[bold red]{PANEL_TITLE_ERROR}{f' - {code}' if code else ''}[/bold red]",
-                subtitle="[dim]Docs: https://docs.pipecat.ai/pipecat-cloud/fundamentals/error-codes[/dim]"
+                subtitle=f"[dim]Docs: https://docs.pipecat.ai/pipecat-cloud/fundamentals/error-codes#{str(code).lower()}[/dim]"
                 if not hide_subtitle and code
                 else None,
                 title_align="left",

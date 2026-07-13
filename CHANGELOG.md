@@ -12,10 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated stale documentation links that pointed at the retired
   `docs.pipecat.daily.co` domain. The API error panel now links to the
   error codes reference at
-  `https://docs.pipecat.ai/pipecat-cloud/fundamentals/error-codes` (the old
-  link redirected to a generic landing page, and the `#<code>` anchor never
-  resolved for plain HTTP status codes). The deploy and image pull secret
-  prompts now link to
+  `https://docs.pipecat.ai/pipecat-cloud/fundamentals/error-codes#<code>`,
+  with the code lowercased to match the page's heading anchors (the old
+  link redirected to a generic landing page). The deploy and image pull
+  secret prompts now link to
   `https://docs.pipecat.ai/pipecat-cloud/fundamentals/secrets#image-pull-secrets`.
 
 ## [1.0.0] - 2026-06-19
