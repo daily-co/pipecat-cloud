@@ -777,7 +777,7 @@ def create_deploy_command(app: typer.Typer):
             console.error(
                 "Deployments require an image pull secret [bold](--credentials)[/bold] to securely pull images from private repositories."
                 "\nPlease provide an image pull secret name or use [bold][--no-credentials][/bold] to deploy without one.",
-                subtitle="Learn more:https://docs.pipecat.daily.co/agents/secrets#image-pull-secrets",
+                subtitle="Learn more: https://docs.pipecat.ai/pipecat-cloud/fundamentals/secrets#image-pull-secrets",
                 title_extra="Attempt to deploy without repository credentials",
             )
             return typer.Exit()
