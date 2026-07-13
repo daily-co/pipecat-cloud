@@ -2,7 +2,7 @@
  <img alt="pipecat cloud" width="500px" height="auto" src="https://raw.githubusercontent.com/daily-co/pipecat-cloud/main/pipecat-cloud.png">
 </div></h1>
 
-[![Docs](https://img.shields.io/badge/documentation-blue)](https://docs.pipecat.daily.co)
+[![Docs](https://img.shields.io/badge/documentation-blue)](https://docs.pipecat.ai/pipecat-cloud)
 [![PyPI](https://img.shields.io/pypi/v/pipecatcloud)](https://pypi.org/project/pipecatcloud)
 
 # Pipecat Cloud
@@ -18,7 +18,7 @@ Python module and CLI for interacting with [Pipecat Cloud](https://pipecat.daily
 
 ### Documentation
 
-Documentation for Pipecat Cloud is available [here](https://docs.pipecat.daily.co).
+Documentation for Pipecat Cloud is available [here](https://docs.pipecat.ai/pipecat-cloud).
 
 ### Installation
 
