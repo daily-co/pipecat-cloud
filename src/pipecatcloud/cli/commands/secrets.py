@@ -681,3 +681,60 @@ async def image_pull_secret(
     console.success(
         f"Image pull secret [bold green]'{name}'[/bold green] for [bold green]{host}[/bold green] {action} successfully{region_info}.",
     )
+
+
+@secrets_cli.command(
+    name="reference",
+    help="Reference an existing Kubernetes Secret in a self-hosted region (enterprise)",
+)
+@synchronizer.create_blocking
+@requires_login
+async def reference_secret(
+    name: str = typer.Argument(
+        help="Name of the Kubernetes Secret in your workloads namespace (becomes the secret set name)"
+    ),
+    region: str = typer.Option(
+        ...,
+        "--region",
+        "-r",
+        help="Self-hosted region containing the secret",
+    ),
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization the region belongs to",
+    ),
+):
+    """Reference an existing Kubernetes Secret so agents can use it.
+
+    Enterprise / self-hosted regions only. The secret stays in your cluster:
+    Pipecat Cloud verifies it exists and tracks readiness, but never sees its
+    values or keys. Manage the secret's contents with your own tooling
+    (kubectl); deploy agents against it by set name as usual.
+    """
+    org = organization or config.get("org")
+
+    if region and not await validate_region(region):
+        valid_regions = await get_region_codes()
+        console.print(
+            f"[red]Error: Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
+        )
+        return typer.Exit(1)
+
+    with console.status(
+        f"[dim]Verifying secret [bold]'{name}'[/bold] exists in [bold]{region}[/bold][/dim]",
+        spinner="dots",
+    ):
+        data, error = await API.secrets_reference(name=name, region=region, org=org)
+
+        if error:
+            return typer.Exit(1)
+
+    set_type = (data or {}).get("type")
+    type_info = " (image pull secret)" if set_type == "imagePullSecret" else ""
+    console.success(
+        f"Secret [bold green]'{name}'[/bold green] referenced in [bold cyan]{region}[/bold cyan]{type_info}\n"
+        f"[dim]The secret stays in your cluster; deleting it there will block deploys that use it.[/dim]\n"
+        f"[dim]Deploy your agent with {PIPECAT_CLI_NAME} deploy agent-name --secrets {name}[/dim]"
+    )

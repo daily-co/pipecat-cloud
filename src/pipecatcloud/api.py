@@ -402,6 +402,25 @@ class _API:
         """
         return self.create_api_method(self._secrets_upsert)
 
+    async def _secrets_reference(self, name: str, region: str, org: str) -> dict:
+        url = f"{self.construct_api_url('secrets_path').format(org=org)}/references"
+        return await self._base_request("POST", url, json={"name": name, "region": region}) or {}
+
+    @property
+    def secrets_reference(self):
+        """Reference an existing Kubernetes Secret in a self-hosted region.
+
+        The secret stays in the customer's cluster; Pipecat Cloud stores only its
+        name, region, and readiness (never values or keys). Enterprise /
+        self-hosted regions only — the server rejects cloud regions.
+
+        Args:
+            name: name of the Kubernetes Secret (becomes the secret set name)
+            region: self-hosted region containing the secret
+            org: Organization ID
+        """
+        return self.create_api_method(self._secrets_reference)
+
     async def _secrets_delete(self, set_name: str, secret_name: str, org: str) -> dict | None:
         url = f"{self.construct_api_url('secrets_path').format(org=org)}/{set_name}/{secret_name}"
         return await self._base_request("DELETE", url, not_found_is_empty=True)
