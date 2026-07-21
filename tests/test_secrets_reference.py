@@ -31,7 +31,10 @@ def reference_mocks():
         ),
     ):
         mock_api.secrets_reference = AsyncMock(
-            return_value=({"name": "bot-keys", "region": "onprem-a", "type": "secret", "status": "ready"}, None)
+            return_value=(
+                {"name": "bot-keys", "region": "onprem-a", "type": "secret", "status": "ready"},
+                None,
+            )
         )
         yield mock_api
 
