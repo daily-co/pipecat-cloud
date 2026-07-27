@@ -5,6 +5,19 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- New `pipecat cloud secrets reference <name> --region <region>` command for
+  **self-hosted regions**. It registers an existing Kubernetes Secret from your
+  workloads namespace as a secret set, so agents can use it by set name exactly
+  as they use managed sets, and the Kubernetes Secret's name becomes the secret
+  set name. The secret stays in your cluster: Pipecat Cloud records only its
+  name, region, and readiness, never its values or keys, and you keep managing
+  its contents with your own tooling such as `kubectl`. `--region` is required
+  and must name a self-hosted region; cloud regions are rejected.
+
 ## [1.1.0] - 2026-08-05
 
 ### Added
