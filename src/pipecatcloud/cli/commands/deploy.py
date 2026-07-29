@@ -32,6 +32,7 @@ from pipecatcloud._utils.deploy_utils import (
     KrispVivaConfig,
     ScalingParams,
     interpret_deployment_status,
+    parse_resources_option,
     with_deploy_config,
 )
 from pipecatcloud._utils.regions import get_region_codes, validate_region
@@ -612,6 +613,16 @@ def create_deploy_command(app: typer.Typer):
             help="Agent profile to use for deployment",
             rich_help_panel="Deployment Configuration",
         ),
+        resources: str = typer.Option(
+            None,
+            "--resources",
+            help=(
+                "Explicit sizing for enterprise (self-hosted) regions, as "
+                "cpu=<quantity>,memory=<quantity> (e.g. cpu=2,memory=4Gi). "
+                "Mutually exclusive with --profile."
+            ),
+            rich_help_panel="Deployment Configuration",
+        ),
         region: Region | None = typer.Option(
             None,
             "--region",
@@ -692,6 +703,25 @@ def create_deploy_command(app: typer.Typer):
             max_agents=max_agents if max_agents is not None else partial_config.scaling.max_agents,
         )
         partial_config.agent_profile = profile or partial_config.agent_profile
+        if resources is not None:
+            parsed_resources = parse_resources_option(resources)
+            if parsed_resources is None:
+                console.error(
+                    "Invalid --resources value. Expected cpu=<quantity>,memory=<quantity> "
+                    "e.g. --resources cpu=2,memory=4Gi"
+                )
+                return typer.Exit(1)
+            partial_config.resources = parsed_resources
+            # A CLI --resources overrides a config-file profile: the two are
+            # mutually exclusive, and explicit flags win over the toml.
+            if profile is None:
+                partial_config.agent_profile = None
+        if partial_config.agent_profile is not None and partial_config.resources.is_set():
+            console.error(
+                "Cannot specify both an agent profile and explicit resources. "
+                "Use --profile or --resources, not both."
+            )
+            return typer.Exit(1)
         partial_config.force_redeploy = force
         partial_config.max_session_duration = (
             max_session_duration
@@ -832,6 +862,7 @@ def create_deploy_command(app: typer.Typer):
         content_items.extend(
             [
                 f"[bold white]Agent profile:[/bold white] {'[dim]None[/dim]' if not partial_config.agent_profile else '[green]' + partial_config.agent_profile + '[/green]'}",
+                f"[bold white]Resources:[/bold white] {'[green]cpu=' + str(partial_config.resources.cpu) + ', memory=' + str(partial_config.resources.memory) + '[/green]' if partial_config.resources.is_set() else '[dim]None[/dim]'}",
                 f"[bold white]Krisp VIVA:[/bold white] {'[dim]Disabled[/dim]' if not partial_config.krisp_viva.audio_filter else '[green]Enabled (' + partial_config.krisp_viva.audio_filter + ')[/green]'}",
             ]
         )

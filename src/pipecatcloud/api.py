@@ -448,6 +448,91 @@ class _API:
         """
         return self.create_api_method(self._secrets_delete_set)
 
+    # Agent profiles
+
+    async def _agent_profiles_list(self, org: str) -> dict:
+        url = self.construct_api_url("agent_profiles_path").format(org=org)
+        return await self._base_request("GET", url) or {}
+
+    @property
+    def agent_profiles_list(self):
+        """List agent profiles visible to the organization.
+
+        Returns the platform catalog plus any profiles the organization has
+        defined (enterprise / self-hosted regions). Custom profiles are marked
+        with ``custom: true``.
+
+        Args:
+            org: Organization ID
+        """
+        return self.create_api_method(self._agent_profiles_list)
+
+    async def _agent_profiles_create(
+        self, api_name: str, display_name: str, cpu: str, memory: str, org: str
+    ) -> dict:
+        url = self.construct_api_url("agent_profiles_path").format(org=org)
+        return (
+            await self._base_request(
+                "POST",
+                url,
+                json={
+                    "apiName": api_name,
+                    "displayName": display_name,
+                    "resources": {"cpu": cpu, "memory": memory},
+                },
+            )
+            or {}
+        )
+
+    @property
+    def agent_profiles_create(self):
+        """Create an organization-defined agent profile (enterprise regions only).
+
+        Args:
+            api_name: Profile name used at deploy time (lowercase, hyphens)
+            display_name: Human-readable name
+            cpu: k8s cpu quantity, e.g. "2" or "500m"
+            memory: k8s memory quantity, e.g. "4Gi"
+            org: Organization ID
+        """
+        return self.create_api_method(self._agent_profiles_create)
+
+    async def _agent_profiles_update(
+        self,
+        api_name: str,
+        org: str,
+        display_name: str | None = None,
+        cpu: str | None = None,
+        memory: str | None = None,
+        enabled: bool | None = None,
+    ) -> dict:
+        url = f"{self.construct_api_url('agent_profiles_path').format(org=org)}/{api_name}"
+        payload: dict = {}
+        if display_name is not None:
+            payload["displayName"] = display_name
+        if cpu is not None and memory is not None:
+            payload["resources"] = {"cpu": cpu, "memory": memory}
+        if enabled is not None:
+            payload["enabled"] = enabled
+        return await self._base_request("PATCH", url, json=payload) or {}
+
+    @property
+    def agent_profiles_update(self):
+        """Update or disable an organization-defined agent profile.
+
+        Edits apply to future deploys only; running agents keep the resources
+        their deployment snapshotted. Disabling (enabled=False) is how a
+        profile is removed: history stays intact and the name can be recreated.
+
+        Args:
+            api_name: Profile name to update
+            org: Organization ID
+            display_name: New display name (optional)
+            cpu / memory: New sizing, both required together (optional)
+            enabled: Set False to disable (optional)
+        """
+        return self.create_api_method(self._agent_profiles_update)
+
     # Deploy
 
     async def _deploy(
@@ -466,6 +551,9 @@ class _API:
                 "maxAgents": deploy_config.scaling.max_agents,
             },
             "agentProfile": deploy_config.agent_profile,
+            "resources": (
+                deploy_config.resources.to_dict() if deploy_config.resources.is_set() else None
+            ),
             "krispViva": {
                 "audioFilter": deploy_config.krisp_viva.audio_filter,
             },
