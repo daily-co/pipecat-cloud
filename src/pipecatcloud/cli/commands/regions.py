@@ -28,13 +28,19 @@ async def list_regions():
         console.print("[yellow]No regions available[/yellow]")
         return
 
+    rows = [(region["code"], region["display_name"]) for region in regions]
+
+    if not console.rich_output:
+        console.print_records(["Code", "Name"], rows)
+        return
+
     # Create table
     table = Table(show_header=True, header_style="bold")
     table.add_column("Code")
     table.add_column("Name")
 
     # Add rows
-    for region in regions:
-        table.add_row(region["code"], region["display_name"])
+    for code, name in rows:
+        table.add_row(code, name)
 
     console.print(table)

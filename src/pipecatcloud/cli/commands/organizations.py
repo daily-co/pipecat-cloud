@@ -13,7 +13,7 @@ from rich.table import Table
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
-from pipecatcloud._utils.console_utils import console
+from pipecatcloud._utils.console_utils import console, stdin_is_interactive
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import (
@@ -51,6 +51,7 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
     try:
         selected_org = None, None
         if not organization:
+            console.require_interactive("--organization")
             # Prompt user to select organization
             value = await questionary.select(
                 "Select default namespace / organization",
@@ -117,6 +118,20 @@ async def list_organizations():
         )
         raise typer.Exit(1)
 
+    if not console.rich_output:
+        console.print_records(
+            ["Organization", "Name", "Active"],
+            [
+                (
+                    org["verboseName"],
+                    org["name"],
+                    "active" if current_org and org["name"] == current_org else "",
+                )
+                for org in org_list
+            ],
+        )
+        return
+
     table = Table(border_style="dim", box=box.SIMPLE, show_edge=True, show_lines=False)
     table.add_column("Organization", style="white")
     table.add_column("Name", style="white")
@@ -163,6 +178,22 @@ async def keys(
                 f"[bold]{PIPECAT_CLI_NAME} organizations keys create[/bold] command.[/dim]"
             )
             raise typer.Exit(1)
+
+        if not console.rich_output:
+            console.print_records(
+                ["Name", "Key", "Created At", "Status"],
+                [
+                    (
+                        key["metadata"]["name"],
+                        key["key"],
+                        key["createdAt"],
+                        "Revoked" if key["revoked"] else "Active",
+                    )
+                    for key in data["public"]
+                ],
+                title=f"API keys for organization: {org}",
+            )
+            return
 
         table = Table(
             show_header=True,
@@ -213,6 +244,7 @@ async def create_key(
     org = organization or config.get("org")
 
     if not api_key_name:
+        console.require_interactive("--name")
         api_key_name = await questionary.text(
             "Enter human readable name for API key e.g. 'Pipecat Key'"
         ).ask_async()
@@ -234,9 +266,11 @@ async def create_key(
         console.error("Invalid response from server. Please contact support.")
         raise typer.Exit(1)
 
-    # Determine as to whether we should make this key the active default
+    # Determine as to whether we should make this key the active default.
+    # Non-interactively (key already created at this point, so failing here
+    # would be worse than proceeding) fall back to the prompt's default: no.
     make_active = default
-    if not default:
+    if not default and stdin_is_interactive():
         make_active = await questionary.confirm(
             "Would you like to make this key the default key in your local configuration?",
             default=False,
@@ -252,6 +286,13 @@ async def create_key(
         )
     else:
         console.print("[dim]Bypassing using key as default")
+
+    if not console.rich_output:
+        console.print_records(
+            ["Name", "Key", "Organization"],
+            [(api_key_name, data["key"], org)],
+        )
+        return
 
     table = Table(
         show_header=True,
@@ -308,6 +349,7 @@ async def _revoke_key_flow(organization: str | None) -> None:
         raise typer.Exit(1)
 
     # Prompt user to revoke a key
+    console.require_interactive(None)
     key = await questionary.select(
         "Select API key to revoke",
         choices=[
@@ -390,6 +432,7 @@ async def use_key(
         raise typer.Exit(1)
 
     # Prompt user to use a key
+    console.require_interactive(None)
     key = await questionary.select(
         "Select API key to use",
         choices=[
@@ -441,6 +484,14 @@ async def properties_list(
         console.print("[dim]No properties configured.[/dim]")
         return
 
+    if not console.rich_output:
+        console.print_records(
+            ["Property", "Value"],
+            [(prop_name, prop_value) for prop_name, prop_value in data.items()],
+            title=f"Properties for organization: {org}",
+        )
+        return
+
     table = Table(
         show_header=True,
         show_lines=False,
@@ -480,6 +531,23 @@ async def properties_schema(
 
     if not data:
         console.print("[dim]No properties available.[/dim]")
+        return
+
+    if not console.rich_output:
+        console.print_records(
+            ["Property", "Type", "Current Value", "Default", "Description"],
+            [
+                (
+                    prop_name,
+                    prop_info.get("type", ""),
+                    prop_info.get("currentValue", ""),
+                    prop_info.get("default", ""),
+                    prop_info.get("description", ""),
+                )
+                for prop_name, prop_info in data.items()
+            ],
+            title=f"Properties schema for organization: {org}",
+        )
         return
 
     table = Table(

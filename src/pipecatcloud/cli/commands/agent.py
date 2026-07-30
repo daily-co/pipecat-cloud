@@ -14,7 +14,6 @@ from loguru import logger
 from rich import box
 from rich.columns import Columns
 from rich.console import Group
-from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -125,6 +124,22 @@ async def list_agents(
             )
             raise typer.Exit(1)
 
+        elif not console.rich_output:
+            console.print_records(
+                ["Name", "Region", "Agent ID", "Active Deployment ID", "Created At", "Updated At"],
+                [
+                    (
+                        service["name"],
+                        service["region"],
+                        service["id"],
+                        service["activeDeploymentId"],
+                        service["createdAt"],
+                        service["updatedAt"],
+                    )
+                    for service in data
+                ],
+                title=f"Agents for organization: {org} ({len(data)} results)",
+            )
         else:
             table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
             table.add_column("Name")
@@ -160,8 +175,8 @@ async def status(
 ):
     org = organization or config.get("org")
 
-    with Live(
-        console.status(f"[dim]Looking up agent with name {agent_name}[/dim]", spinner="dots")
+    with console.status(
+        f"[dim]Looking up agent with name {agent_name}[/dim]", spinner="dots"
     ) as live:
         data, error = await API.agent(agent_name=agent_name, org=org, live=live)
 
@@ -175,6 +190,40 @@ async def status(
         if not data:
             console.error(f"No deployment data found for agent with name '{agent_name}'")
             raise typer.Exit(1)
+
+        if not console.rich_output:
+            spec = data.get("deployment", {}).get("manifest", {}).get("spec", {})
+            console.print(f"Agent: {agent_name}")
+            console.print(f"Ready: {bool(data.get('ready'))}")
+            current_rev = data.get("currentRevision")
+            if current_rev:
+                console.print(f"Deployment Phase: {current_rev.get('phase', 'Unknown')}")
+            console.print(f"Active Session Count: {data.get('activeSessionCount', 'N/A')}")
+            console.print(f"Image: {spec.get('image', 'N/A')}")
+            if data.get("agentProfile"):
+                console.print(f"Agent Profile: {data['agentProfile']}")
+            console.print(f"Active Deployment ID: {data.get('activeDeploymentId', 'N/A')}")
+            console.print(f"Created At: {data.get('createdAt', 'N/A')}")
+            console.print(f"Updated At: {data.get('updatedAt', 'N/A')}")
+            krisp_viva = data.get("krispViva") or {}
+            audio_filter = krisp_viva.get("audioFilter")
+            console.print(
+                f"Krisp VIVA: {f'Enabled ({audio_filter})' if audio_filter else 'Disabled'}"
+            )
+            max_session_duration = spec.get("maxSessionDurationSeconds")
+            console.print(
+                f"Max Session Duration: "
+                f"{f'{max_session_duration}s' if max_session_duration is not None else 'default'}"
+            )
+            autoscaling = data.get("autoScaling") or {}
+            if autoscaling:
+                console.print(f"Min Agents: {autoscaling.get('minReplicas', 0)}")
+                console.print(f"Max Agents: {autoscaling.get('maxReplicas', 0)}")
+            for status_error in data.get("errors") or []:
+                code = status_error.get("code", "")
+                detail = status_error.get("message") or status_error.get("error", "Unknown error")
+                console.print(f"Error: {code} {detail}")
+            return
 
         # Deployment info
 
@@ -387,8 +436,8 @@ async def sessions(
 
     # If session_id is specified, fetch single session with detailed metrics
     if session_id:
-        with Live(
-            console.status(f"[dim]Looking up session '{session_id}'[/dim]", spinner="dots")
+        with console.status(
+            f"[dim]Looking up session '{session_id}'[/dim]", spinner="dots"
         ) as live:
             data, error = await API.agent_session(
                 agent_name=agent_name, session_id=session_id, org=org, live=live
@@ -469,8 +518,8 @@ async def sessions(
             )
             return
 
-    with Live(
-        console.status(f"[dim]Looking up agent with name '{agent_name}'[/dim]", spinner="dots")
+    with console.status(
+        f"[dim]Looking up agent with name '{agent_name}'[/dim]", spinner="dots"
     ) as live:
         data, error = await API.agent_sessions(agent_name=agent_name, org=org, live=live)
 
@@ -485,6 +534,36 @@ async def sessions(
 
         sessions_list = data.get("sessions", [])
         total_sessions = len(sessions_list)
+
+        if not console.rich_output:
+            console.print_records(
+                [
+                    "Session ID",
+                    "Created At",
+                    "Ended At",
+                    "Duration",
+                    "Status",
+                    "Bot Start Seconds",
+                    "Cold Start",
+                ],
+                [
+                    (
+                        s["sessionId"],
+                        format_timestamp(s["createdAt"]),
+                        format_timestamp(s["endedAt"]) if s["endedAt"] else "",
+                        format_duration(s["createdAt"], s["endedAt"]) or "",
+                        ("Error (500)" if s.get("completionStatus") == "500" else "Complete")
+                        if s["endedAt"]
+                        else "Active",
+                        s["botStartSeconds"] if s["botStartSeconds"] is not None else "",
+                        s["coldStart"],
+                    )
+                    for s in sessions_list
+                    if not session_id or s["sessionId"] == session_id
+                ],
+                title=f"Session data for agent {agent_name} ({org})",
+            )
+            return
 
         completed_sessions = [s for s in sessions_list if s.get("endedAt")]
 
@@ -705,6 +784,7 @@ async def delete(
     org = organization or config.get("org")
 
     if not force:
+        console.require_interactive("--force")
         if not await questionary.confirm(
             "Are you sure you want to delete this agent? Note: active sessions will not be interrupted and will continue to run until completion."
         ).ask_async():
@@ -759,6 +839,25 @@ async def deployments(
                 response.raise_for_status()
 
             data = await response.json()
+
+            if not console.rich_output:
+                console.print_records(
+                    ["ID", "Node Type", "Image", "Created At", "Updated At"],
+                    [
+                        (
+                            deployment.get("id", "N/A"),
+                            deployment.get("manifest", {})
+                            .get("spec", {})
+                            .get("dailyNodeType", "N/A"),
+                            deployment.get("manifest", {}).get("spec", {}).get("image", "N/A"),
+                            deployment.get("createdAt", "N/A"),
+                            deployment.get("updatedAt", "N/A"),
+                        )
+                        for deployment in data["deployments"]
+                    ],
+                    title=f"Deployments for agent: {agent_name}",
+                )
+                return
 
             table = Table(
                 show_header=True,
@@ -906,14 +1005,15 @@ async def start(
                 border_style="yellow",
             )
         )
+        console.require_interactive("--force")
         if not await questionary.confirm(
             "Are you sure you want to start an active session for this agent?"
         ).ask_async():
             console.print("[bold]Aborting start request[/bold]")
             raise typer.Exit(1)
 
-    with Live(
-        console.status("[dim]Checking agent health...[/dim]", spinner="dots"), refresh_per_second=4
+    with console.status(
+        "[dim]Checking agent health...[/dim]", spinner="dots", refresh_per_second=4
     ) as live:
         health_data, error = await API.agent(agent_name=agent_name, org=org, live=live)
         if not health_data or not health_data["ready"]:
@@ -923,12 +1023,7 @@ async def start(
             )
             raise typer.Exit(1)
 
-        live.update(
-            console.status(
-                f"[dim]Agent '{agent_name}' is healthy, sending start request...[/dim]",
-                spinner="dots",
-            )
-        )
+        live.update(f"[dim]Agent '{agent_name}' is healthy, sending start request...[/dim]")
 
         data, error = await API.start_agent(
             agent_name=agent_name,
@@ -1009,6 +1104,7 @@ async def stop(
                 border_style="yellow",
             )
         )
+        console.require_interactive("--force")
         if not await questionary.confirm("Are you sure you want to stop this session?").ask_async():
             console.print("[bold]Aborting stop request[/bold]")
             raise typer.Exit(1)

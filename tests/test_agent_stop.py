@@ -59,6 +59,7 @@ class TestAgentStopCommand:
             patch("pipecatcloud.cli.commands.agent.config") as mock_config,
             patch("pipecatcloud.cli.commands.agent.questionary") as mock_questionary,
             patch("pipecatcloud.cli.commands.agent.DeployConfigParams") as mock_params,
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=True),
         ):
             mock_api.agent_session_terminate = AsyncMock(return_value=({}, None))
             mock_config.get.return_value = TEST_ORG

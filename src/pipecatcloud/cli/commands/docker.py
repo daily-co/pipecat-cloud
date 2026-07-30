@@ -347,6 +347,7 @@ async def build_push(
         )
     )
 
+    console.require_interactive(None)
     if not typer.confirm("Do you want to proceed with the build?", default=True):
         console.cancel()
         raise typer.Exit(1)

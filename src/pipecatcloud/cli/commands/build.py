@@ -268,6 +268,29 @@ async def list_builds(
             console.print(f"[dim]Filter: status={status_filter}[/dim]")
         return
 
+    # Display with count info
+    showing_text = f"Showing {len(builds)}"
+    if total > len(builds):
+        showing_text += f" of {total}"
+    showing_text += " builds"
+
+    if not console.rich_output:
+        console.print_records(
+            ["Build ID", "Status", "Region", "Duration", "Created"],
+            [
+                (
+                    build.get("id", "N/A"),
+                    build.get("status", "unknown"),
+                    build.get("region", "N/A"),
+                    _format_duration(build.get("buildDurationSeconds")),
+                    format_timestamp(build.get("createdAt", "")),
+                )
+                for build in builds
+            ],
+            title=f"Cloud Builds ({showing_text})",
+        )
+        return
+
     # Create table
     table = Table(
         show_header=True,
@@ -290,12 +313,6 @@ async def list_builds(
             _format_duration(build.get("buildDurationSeconds")),
             format_timestamp(build.get("createdAt", "")),
         )
-
-    # Display with count info
-    showing_text = f"Showing {len(builds)}"
-    if total > len(builds):
-        showing_text += f" of {total}"
-    showing_text += " builds"
 
     console.success(
         table,

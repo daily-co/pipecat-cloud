@@ -10,7 +10,6 @@ from pathlib import Path
 import typer
 from loguru import logger
 from rich.console import Group
-from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -127,6 +126,7 @@ async def _cloud_build_flow(
                 border_style="cyan",
             )
         )
+        console.require_interactive("--yes")
         if not typer.confirm("Proceed with cloud build?", default=True):
             console.cancel()
             return None
@@ -233,15 +233,17 @@ async def _cloud_build_flow(
     # Poll for completion
     last_status = None
 
-    def status_callback(build):
-        nonlocal last_status
-        status = build.get("status", "unknown")
-        if status != last_status:
-            last_status = status
-
     with console.status(
         "[dim]Building image (this may take a few minutes)...[/dim]", spinner="bouncingBar"
-    ):
+    ) as build_status:
+
+        def status_callback(build):
+            nonlocal last_status
+            status = build.get("status", "unknown")
+            if status != last_status:
+                last_status = status
+                build_status.update(f"[dim]Build status: {status}[/dim]")
+
         success, final_build = await poll_build_status(
             build_id=build_id,
             org=org,
@@ -276,9 +278,8 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     existing_agent = False
 
     # Check for an existing deployment with this agent name
-    with Live(
-        console.status("[dim]Checking for existing agent deployment...[/dim]", spinner="dots"),
-        transient=True,
+    with console.status(
+        "[dim]Checking for existing agent deployment...[/dim]", spinner="dots"
     ) as live:
         data, error = await API.agent(agent_name=params.agent_name, org=org, live=live)
 
@@ -291,6 +292,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
 
             if not force:
                 live.stop()
+                console.require_interactive("--yes")
                 if not typer.confirm(
                     f"Deployment for agent '{params.agent_name}' exists. Do you want to update it? Note: this will not interrupt any active sessions",
                     default=True,
@@ -299,16 +301,12 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     raise typer.Exit(1)
 
     # Start the deployment process
-    with Live(
-        console.status("[dim]Preparing deployment...", spinner="dots"), transient=True
-    ) as live:
+    with console.status("[dim]Preparing deployment...", spinner="dots") as live:
         """
         # 1. Check that provided secret set exists
         """
         if params.secret_set:
-            live.update(
-                console.status(f"[dim]Verifying secret set {params.secret_set} exists...[/dim]")
-            )
+            live.update(f"[dim]Verifying secret set {params.secret_set} exists...[/dim]")
             secrets_exist, error = await API.secrets_list(
                 secret_set=params.secret_set, org=org, live=live
             )
@@ -328,9 +326,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         """
         if params.image_credentials:
             live.update(
-                console.status(
-                    f"[dim]Verifying image pull secret {params.image_credentials} exists...[/dim]"
-                )
+                f"[dim]Verifying image pull secret {params.image_credentials} exists...[/dim]"
             )
             sets, error = await API.secrets_list(org=org, live=live)
 
@@ -352,9 +348,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 raise typer.Exit(1)
 
         live.update(
-            console.status(
-                f"[dim]{'Updating' if existing_agent else 'Pushing'} agent manifest for[/dim] [cyan]'{params.agent_name}'[/cyan]"
-            )
+            f"[dim]{'Updating' if existing_agent else 'Pushing'} agent manifest for[/dim] [cyan]'{params.agent_name}'[/cyan]"
         )
 
         result, error = await API.deploy(
@@ -744,6 +738,7 @@ def create_deploy_command(app: typer.Typer):
                         border_style="yellow",
                     )
                 )
+                console.require_interactive("--yes")
                 should_build = typer.confirm(
                     "Would you like to build with Pipecat Cloud?",
                     default=True,
@@ -870,11 +865,11 @@ def create_deploy_command(app: typer.Typer):
             Panel(content, title="Review deployment", title_align="left", border_style="yellow")
         )
 
-        if not auto_yes and not typer.confirm(
-            "\nDo you want to proceed with deployment?", default=True
-        ):
-            console.cancel()
-            raise typer.Abort()
+        if not auto_yes:
+            console.require_interactive("--yes")
+            if not typer.confirm("\nDo you want to proceed with deployment?", default=True):
+                console.cancel()
+                raise typer.Abort()
 
         # Deploy method posts the deployment config to the API
         # and polls the deployment status until it's ready

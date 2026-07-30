@@ -268,6 +268,7 @@ class TestSpendLimitSetCommand:
         with (
             patch("pipecatcloud.cli.commands.spend_limit.API", mock_api),
             patch("pipecatcloud.cli.commands.spend_limit.questionary") as mock_q,
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=True),
         ):
             mock_q.confirm.return_value.ask_async = AsyncMock(return_value=False)
 
@@ -290,6 +291,7 @@ class TestSpendLimitSetCommand:
         with (
             patch("pipecatcloud.cli.commands.spend_limit.API", mock_api),
             patch("pipecatcloud.cli.commands.spend_limit.questionary") as mock_q,
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=True),
         ):
             mock_q.confirm.return_value.ask_async = AsyncMock(return_value=False)
 
@@ -326,6 +328,7 @@ class TestSpendLimitClearCommand:
         with (
             patch("pipecatcloud.cli.commands.spend_limit.API", mock_api),
             patch("pipecatcloud.cli.commands.spend_limit.questionary") as mock_q,
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=True),
         ):
             mock_q.confirm.return_value.ask_async = AsyncMock(return_value=False)
 

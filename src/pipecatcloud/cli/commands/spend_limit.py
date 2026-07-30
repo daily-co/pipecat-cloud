@@ -183,6 +183,7 @@ async def set_limit(
     current_spend = (current or {}).get("currentSpendCents") or 0
 
     if not yes:
+        console.require_interactive("--yes")
         if new_cents == 0:
             confirm = await questionary.confirm(
                 "Setting the limit to $0.00 blocks all new sessions until you raise it. Continue?",
@@ -238,6 +239,7 @@ async def clear(
     org = organization or config.get("org")
 
     if not yes:
+        console.require_interactive("--yes")
         confirm = await questionary.confirm(
             f"Remove the spend limit for '{org}'? New sessions will not be capped.",
             default=False,

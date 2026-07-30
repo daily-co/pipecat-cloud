@@ -171,6 +171,8 @@ _CLI_SETTINGS = {
     "default_public_key": _Setting(),
     "default_public_key_name": _Setting(),
     "cli_log_level": _Setting("INFO"),
+    # Output mode (rich/plain/json); also settable via PIPECAT_OUTPUT
+    "output": _Setting(),
 }
 
 

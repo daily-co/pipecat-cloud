@@ -41,7 +41,6 @@ def deploy_mocks():
     """
     with (
         patch("pipecatcloud.cli.commands.deploy.API") as mock_api,
-        patch("pipecatcloud.cli.commands.deploy.Live"),
         patch("pipecatcloud.cli.commands.deploy.console"),
     ):
         mock_api.agent = AsyncMock(return_value=(None, None))

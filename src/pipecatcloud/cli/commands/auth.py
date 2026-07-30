@@ -18,7 +18,6 @@ import aiohttp
 import typer
 from loguru import logger
 from rich.columns import Columns
-from rich.live import Live
 
 from pipecatcloud.__version__ import version as _cli_version
 from pipecatcloud._utils.async_utils import synchronizer
@@ -592,18 +591,13 @@ async def whomai():
     org = config.get("org")
 
     try:
-        with Live(
-            console.status("[dim]Requesting current user data...[/dim]", spinner="dots"),
-            transient=True,
-        ) as live:
+        with console.status("[dim]Requesting current user data...[/dim]", spinner="dots") as live:
             user_data, error = await API.whoami(live=live)
 
             if error:
                 raise typer.Exit(1)
 
-            live.update(
-                console.status("[dim]Requesting user namespace / organization data...[/dim]")
-            )
+            live.update("[dim]Requesting user namespace / organization data...[/dim]")
 
             # Retrieve default user organization
             account, error = await API.organizations_current(org=org, live=live)
@@ -617,7 +611,7 @@ async def whomai():
             # Retrieve user Daily API key
             # Note: we don't raise an error if this fails, as it's not required for
             # the CLI to function
-            live.update(console.status("[dim]Fetching Daily API key...[/dim]", spinner="dots"))
+            live.update("[dim]Fetching Daily API key...[/dim]")
 
             daily_api_key = None
             try:

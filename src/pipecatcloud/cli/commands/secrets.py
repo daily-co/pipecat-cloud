@@ -233,6 +233,7 @@ async def create_set(
             )
         )
         # Confirm our secrets
+        console.require_interactive("--skip")
         looks_good = await questionary.confirm(
             "Would you like to proceed with these secrets?"
         ).ask_async()
@@ -259,6 +260,7 @@ async def create_set(
         overlapping_secrets = existing_secret_names.intersection(secrets_dict.keys())
 
         if overlapping_secrets and not skip_confirm:
+            console.require_interactive("--skip")
             create = await questionary.confirm(
                 f"The following secret(s) already exist in {name} will be overwritten: {', '.join(overlapping_secrets)}. Would you like to continue?"
             ).ask_async()
@@ -335,6 +337,7 @@ async def unset(
 
     # Confirm to proceed
     if not skip_confirm:
+        console.require_interactive("--skip")
         confirm = await questionary.confirm(
             f"Are you sure you want to unset secret with key '{secret_key}' from set '{name}'?"
         ).ask_async()
@@ -421,6 +424,16 @@ async def list_sets(
             status = data.get("status")
             error_message = data.get("errorMessage")
 
+            if not console.rich_output:
+                console.print_records(
+                    ["Key"],
+                    [(s["fieldName"],) for s in secrets],
+                    title=f"Secret keys for set {name} (status: {status or 'unknown'})",
+                )
+                if status == "failed" and error_message:
+                    console.print(f"[red]{error_message}[/red]")
+                return
+
             table = Table(border_style="dim", show_header=False, show_edge=True, show_lines=True)
             table.add_column(name, style="white")
             for s in secrets:
@@ -445,6 +458,24 @@ async def list_sets(
             if not filtered_sets or not len(filtered_sets):
                 console.error(f"No secret sets in namespace / organization [bold]'{org}'[/bold]")
                 raise typer.Exit(1)
+
+            if not console.rich_output:
+                console.print_records(
+                    ["Secret Set Name", "Region", "Status", "Type"],
+                    [
+                        (
+                            secret_set["name"],
+                            secret_set["region"],
+                            secret_set.get("status") or "unknown",
+                            "Image Pull Secret"
+                            if secret_set["type"] == "imagePullSecret"
+                            else "Secret Set",
+                        )
+                        for secret_set in filtered_sets
+                    ],
+                    title=f"Secret sets for {org}",
+                )
+                return
 
             table = Table(
                 show_header=True,
@@ -502,6 +533,7 @@ async def delete(
 
     # Confirm to proceed
     if not skip_confirm:
+        console.require_interactive("--skip")
         confirm = await questionary.confirm(
             f"Are you sure you want to delete secret set '{name}'?"
         ).ask_async()
@@ -571,6 +603,7 @@ async def image_pull_secret(
             "[cyan]For more information about image pull secrets, see: "
             "https://docs.pipecat.ai/pipecat-cloud/fundamentals/secrets#image-pull-secrets[/cyan]\n"
         )
+        console.require_interactive("the credentials argument")
         username = await questionary.text(f"Username for image repository '{host}'").ask_async()
         password = await questionary.password(
             f"Access token for image repository '{host}'"
@@ -608,6 +641,7 @@ async def image_pull_secret(
             )
 
     if existing_secret and not skip_confirm:
+        console.require_interactive("--skip")
         confirm = await questionary.confirm(
             f"Image pull secret '{name}' already exists. Update it?"
         ).ask_async()
