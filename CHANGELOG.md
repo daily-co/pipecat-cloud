@@ -28,8 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back to an 80-column table that silently ellipsized IDs.
 
 - `agent status` and `agent deployments` now show `Build: <build id>` for
-  cloud-built deployments instead of `Image: N/A` (the internal image URI is
-  redacted by the API; the build ID is the customer-facing reference).
+  cloud-built deployments instead of `Image: N/A`. Cloud builds produce an
+  image managed by Pipecat Cloud, so the build ID is the reference to use
+  when checking which artifact a deployment is running.
 
 ### Changed
 
