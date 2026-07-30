@@ -119,5 +119,8 @@ entrypoint_cli_typer.add_typer(organization_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(regions_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(spend_limit_cli, rich_help_panel="Commands")
+# Profiles nest under agent — `pipecat cloud agent profiles <cmd>` — matching
+# how the feature is spoken about (settled in #187 review before customers
+# could script the flat form).
+agent_cli.add_typer(agent_profiles_cli)
 entrypoint_cli_typer.add_typer(agent_cli, rich_help_panel="Commands")
-entrypoint_cli_typer.add_typer(agent_profiles_cli, rich_help_panel="Commands")

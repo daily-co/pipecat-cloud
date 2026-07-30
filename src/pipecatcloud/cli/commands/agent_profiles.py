@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import re
+
 import typer
 from rich.table import Table
 
@@ -14,8 +16,10 @@ from pipecatcloud._utils.deploy_utils import ResourcesConfig
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
+# Registered under the agent command group, so these surface as
+# `pipecat cloud agent profiles <list|create|update|enable|disable>`.
 agent_profiles_cli = typer.Typer(
-    name="agent-profiles",
+    name="profiles",
     help=(
         "Agent profile management. The platform catalog is read-only; "
         "organizations with enterprise (self-hosted) regions can define their "
@@ -23,6 +27,20 @@ agent_profiles_cli = typer.Typer(
     ),
     no_args_is_help=True,
 )
+
+# Mirrors the server-side name rule so a typo fails before the network call:
+# lowercase alphanumerics and hyphens, must start/end alphanumeric.
+API_NAME_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def _validate_name(name: str) -> bool:
+    if not API_NAME_PATTERN.match(name):
+        console.error(
+            f"Invalid profile name '{name}'. Use lowercase letters, digits, and "
+            "hyphens; must start and end with a letter or digit (max 63 chars)."
+        )
+        return False
+    return True
 
 
 def _validate_sizing(cpu: str, memory: str) -> bool:
@@ -49,7 +67,7 @@ async def list_profiles(
         data, error = await API.agent_profiles_list(org=org)
 
     if error:
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     profiles = (data or {}).get("agentProfiles", [])
     if not profiles:
@@ -97,8 +115,10 @@ async def create_profile(
 ):
     org = organization or config.get("org")
 
+    if not _validate_name(name):
+        raise typer.Exit(1)
     if not _validate_sizing(cpu, memory):
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     with console.status(f"[dim]Creating agent profile '{name}'...[/dim]", spinner="dots"):
         data, error = await API.agent_profiles_create(
@@ -110,7 +130,7 @@ async def create_profile(
         )
 
     if error:
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     console.success(
         f"Created agent profile '{name}' (cpu={cpu}, memory={memory}). "
@@ -137,12 +157,12 @@ async def update_profile(
 
     if (cpu is None) != (memory is None):
         console.error("--cpu and --memory must be provided together")
-        return typer.Exit(1)
+        raise typer.Exit(1)
     if cpu is None and display_name is None:
         console.error("Nothing to update. Provide --cpu/--memory and/or --display-name.")
-        return typer.Exit(1)
+        raise typer.Exit(1)
     if cpu is not None and not _validate_sizing(cpu, memory):
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     with console.status(f"[dim]Updating agent profile '{name}'...[/dim]", spinner="dots"):
         data, error = await API.agent_profiles_update(
@@ -154,7 +174,7 @@ async def update_profile(
         )
 
     if error:
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     console.success(
         f"Updated agent profile '{name}'. Running agents keep their current "
@@ -180,9 +200,33 @@ async def disable_profile(
         data, error = await API.agent_profiles_update(api_name=name, org=org, enabled=False)
 
     if error:
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     console.success(
         f"Disabled agent profile '{name}'. Agents already deployed with it keep "
-        "running; it can no longer be selected for new deploys."
+        "running; it can no longer be selected for new deploys. Re-enable it "
+        f"with: agent profiles enable {name}"
     )
+
+
+@agent_profiles_cli.command(
+    name="enable",
+    help="Re-enable a previously disabled custom agent profile",
+)
+@synchronizer.create_blocking
+@requires_login
+async def enable_profile(
+    name: str = typer.Argument(help="Profile name to re-enable"),
+    organization: str = typer.Option(
+        None, "--organization", "-o", help="Organization the profile belongs to"
+    ),
+):
+    org = organization or config.get("org")
+
+    with console.status(f"[dim]Enabling agent profile '{name}'...[/dim]", spinner="dots"):
+        data, error = await API.agent_profiles_update(api_name=name, org=org, enabled=True)
+
+    if error:
+        raise typer.Exit(1)
+
+    console.success(f"Enabled agent profile '{name}'. It can be selected for deploys again.")

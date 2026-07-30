@@ -336,24 +336,29 @@ class ResourcesConfig:
         return {"cpu": self.cpu, "memory": self.memory}
 
 
-def parse_resources_option(value: str) -> "ResourcesConfig | None":
+def parse_resources_option(value: str) -> "ResourcesConfig":
     """Parse the --resources CLI value ("cpu=2,memory=4Gi") into a ResourcesConfig.
 
-    Returns None on malformed input (unknown keys, missing cpu/memory, bad
-    quantities) so the caller can print a usable error instead of a traceback.
+    Raises ValueError with a specific message on malformed input (unknown keys,
+    missing cpu/memory, bad quantities) so the caller can surface exactly what
+    was wrong rather than a generic usage error.
     """
     parts: dict[str, str] = {}
     for chunk in value.split(","):
         key, sep, val = chunk.partition("=")
         if not sep or not val.strip():
-            return None
+            raise ValueError(
+                f"Malformed --resources segment '{chunk.strip()}'. "
+                "Expected key=value pairs, e.g. cpu=2,memory=4Gi"
+            )
         parts[key.strip()] = val.strip()
     if set(parts.keys()) != {"cpu", "memory"}:
-        return None
-    try:
-        return ResourcesConfig(cpu=parts["cpu"], memory=parts["memory"])
-    except ValueError:
-        return None
+        raise ValueError(
+            "--resources requires exactly 'cpu' and 'memory', "
+            f"got: {', '.join(sorted(parts.keys())) or 'nothing'}"
+        )
+    # ResourcesConfig raises its own specific ValueError for bad quantities.
+    return ResourcesConfig(cpu=parts["cpu"], memory=parts["memory"])
 
 
 @dataclass

@@ -58,28 +58,29 @@ class TestParseResourcesOption:
 
     def test_parses_valid_value(self):
         parsed = parse_resources_option("cpu=2,memory=4Gi")
-        assert parsed is not None
         assert parsed.to_dict() == {"cpu": "2", "memory": "4Gi"}
 
     def test_order_does_not_matter_and_spaces_tolerated(self):
         parsed = parse_resources_option("memory=4Gi, cpu=500m")
-        assert parsed is not None
         assert parsed.to_dict() == {"cpu": "500m", "memory": "4Gi"}
 
     @pytest.mark.parametrize(
-        "value",
+        "value,match",
         [
-            "cpu=2",  # missing memory
-            "memory=4Gi",  # missing cpu
-            "cpu=2,memory=4Gi,gpu=1",  # unknown key
-            "cpu=,memory=4Gi",  # empty value
-            "2,4Gi",  # no keys
-            "cpu=two,memory=4Gi",  # bad quantity
-            "",
+            ("cpu=2", "requires exactly"),  # missing memory
+            ("memory=4Gi", "requires exactly"),  # missing cpu
+            ("cpu=2,memory=4Gi,gpu=1", "requires exactly"),  # unknown key
+            ("cpu=,memory=4Gi", "Malformed"),  # empty value
+            ("2,4Gi", "Malformed"),  # no keys
+            ("cpu=two,memory=4Gi", "quantity"),  # bad quantity, specific message
+            ("", "Malformed"),
         ],
     )
-    def test_rejects_malformed_values(self, value):
-        assert parse_resources_option(value) is None
+    def test_rejects_malformed_values_with_specific_errors(self, value, match):
+        # #187 review: the specific reason must survive to the caller — the
+        # deploy command prints str(e), not a generic usage error.
+        with pytest.raises(ValueError, match=match):
+            parse_resources_option(value)
 
 
 class TestDeployConfigMutualExclusion:

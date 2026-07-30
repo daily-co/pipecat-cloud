@@ -16,11 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resources and `--profile` are mutually exclusive, and the API accepts
   explicit resources only for agents in self-hosted regions.
 
-- New `pipecat cloud agent-profiles` command group. `list` shows the platform
+- New `pipecat cloud agent profiles` command group. `list` shows the platform
   catalog plus any profiles your organization has defined; `create`, `update`,
-  and `disable` manage organization-defined profiles for self-hosted regions.
-  Profile edits apply to future deploys only: running agents keep the
-  resources their deployment captured.
+  `disable`, and `enable` manage organization-defined profiles for self-hosted
+  regions. Profile edits apply to future deploys only: running agents keep the
+  resources their deployment captured. Disabling is reversible: a disabled
+  profile can't be selected for new deploys until re-enabled.
 
 - New `pipecat cloud secrets reference <name> --region <region>` command for
   **self-hosted regions**. It registers an existing Kubernetes Secret from your

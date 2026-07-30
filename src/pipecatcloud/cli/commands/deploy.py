@@ -30,6 +30,7 @@ from pipecatcloud._utils.deploy_utils import (
     BuildConfig,
     DeployConfigParams,
     KrispVivaConfig,
+    ResourcesConfig,
     ScalingParams,
     interpret_deployment_status,
     parse_resources_option,
@@ -702,18 +703,19 @@ def create_deploy_command(app: typer.Typer):
             min_agents=min_agents if min_agents is not None else partial_config.scaling.min_agents,
             max_agents=max_agents if max_agents is not None else partial_config.scaling.max_agents,
         )
+        # Sizing precedence: --profile and --resources are mutually exclusive,
+        # and an explicit CLI flag beats the toml's *other* sizing source in
+        # both directions (symmetry per #187 review) — --resources clears a
+        # toml agent_profile, --profile clears a toml [resources].
         partial_config.agent_profile = profile or partial_config.agent_profile
+        if profile is not None and resources is None:
+            partial_config.resources = ResourcesConfig()
         if resources is not None:
-            parsed_resources = parse_resources_option(resources)
-            if parsed_resources is None:
-                console.error(
-                    "Invalid --resources value. Expected cpu=<quantity>,memory=<quantity> "
-                    "e.g. --resources cpu=2,memory=4Gi"
-                )
-                return typer.Exit(1)
-            partial_config.resources = parsed_resources
-            # A CLI --resources overrides a config-file profile: the two are
-            # mutually exclusive, and explicit flags win over the toml.
+            try:
+                partial_config.resources = parse_resources_option(resources)
+            except ValueError as e:
+                console.error(str(e))
+                raise typer.Exit(1)
             if profile is None:
                 partial_config.agent_profile = None
         if partial_config.agent_profile is not None and partial_config.resources.is_set():
@@ -721,7 +723,7 @@ def create_deploy_command(app: typer.Typer):
                 "Cannot specify both an agent profile and explicit resources. "
                 "Use --profile or --resources, not both."
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
         partial_config.force_redeploy = force
         partial_config.max_session_duration = (
             max_session_duration
