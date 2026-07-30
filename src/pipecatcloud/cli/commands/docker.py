@@ -277,26 +277,26 @@ async def build_push(
     # Validate required parameters
     if not final_agent_name:
         console.error("Agent name is required. Provide via argument or pcc-deploy.toml")
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     if not no_push:
         if not final_registry:
             console.error(
                 "Registry type is required when pushing. Use --registry or configure in pcc-deploy.toml"
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if not final_username:
             console.error(
                 "Registry username is required when pushing. Use --username or configure in pcc-deploy.toml"
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if final_registry == RegistryType.CUSTOM and not final_registry_url:
             console.error(
                 "Registry URL is required for custom registries. Use --registry-url or configure in pcc-deploy.toml"
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     # Build image name
     if no_push:
@@ -309,7 +309,7 @@ async def build_push(
             )
         except ValueError as e:
             console.error(str(e))
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     # Prepare image tags
     version_tag = f"{base_image_name}:{final_version}"
@@ -349,12 +349,12 @@ async def build_push(
 
     if not typer.confirm("Do you want to proceed with the build?", default=True):
         console.cancel()
-        return typer.Exit()
+        raise typer.Exit(1)
 
     # Execute build
     console.print("\n[bold cyan]Building Docker image...[/bold cyan]")
     if not run_docker_command(build_command, f"Building {final_agent_name}", stream_output=True):
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     console.success(f"Successfully built image(s): {', '.join(tags_display)}")
 
@@ -375,7 +375,7 @@ async def build_push(
             stream_output=False,
             registry_info=registry_info,
         ):
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         # Push latest tag if created
         if not final_no_latest:
@@ -385,7 +385,7 @@ async def build_push(
                 stream_output=False,
                 registry_info=registry_info,
             ):
-                return typer.Exit(1)
+                raise typer.Exit(1)
 
         pushed_tags = [version_tag]
         if not final_no_latest:

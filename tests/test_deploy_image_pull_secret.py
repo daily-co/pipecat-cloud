@@ -60,8 +60,10 @@ async def test_matching_image_pull_secret_passes_guard(deploy_mocks):
         )
     )
 
-    # Act
-    await _deploy(_make_params(), "test-org", force=True)
+    # Act: the mocked API.deploy error halts the flow right after the guard,
+    # which now surfaces as a raised typer.Exit.
+    with pytest.raises(typer.Exit):
+        await _deploy(_make_params(), "test-org", force=True)
 
     # Assert: guard passed, so deployment was attempted
     deploy_mocks.deploy.assert_awaited_once()
@@ -78,11 +80,9 @@ async def test_same_name_wrong_type_is_rejected(deploy_mocks):
         )
     )
 
-    # Act
-    result = await _deploy(_make_params(), "test-org", force=True)
-
-    # Assert: aborted before attempting deployment
-    assert isinstance(result, typer.Exit)
+    # Act & Assert: aborted before attempting deployment
+    with pytest.raises(typer.Exit):
+        await _deploy(_make_params(), "test-org", force=True)
     deploy_mocks.deploy.assert_not_awaited()
 
 
@@ -92,11 +92,9 @@ async def test_missing_secret_is_rejected(deploy_mocks):
     # Arrange
     deploy_mocks.secrets_list = AsyncMock(return_value=([], None))
 
-    # Act
-    result = await _deploy(_make_params(), "test-org", force=True)
-
-    # Assert
-    assert isinstance(result, typer.Exit)
+    # Act & Assert
+    with pytest.raises(typer.Exit):
+        await _deploy(_make_params(), "test-org", force=True)
     deploy_mocks.deploy.assert_not_awaited()
 
 
@@ -106,9 +104,7 @@ async def test_secrets_list_error_aborts(deploy_mocks):
     # Arrange
     deploy_mocks.secrets_list = AsyncMock(return_value=(None, {"code": "500"}))
 
-    # Act
-    result = await _deploy(_make_params(), "test-org", force=True)
-
-    # Assert
-    assert isinstance(result, typer.Exit)
+    # Act & Assert
+    with pytest.raises(typer.Exit):
+        await _deploy(_make_params(), "test-org", force=True)
     deploy_mocks.deploy.assert_not_awaited()

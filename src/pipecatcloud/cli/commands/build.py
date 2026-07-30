@@ -77,11 +77,11 @@ async def logs(
         data, error = await API.build_logs(org=org, build_id=build_id, limit=limit)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if not data:
             console.error(f"Build '{build_id}' not found")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     logs_list = data.get("logs", [])
 
@@ -149,11 +149,11 @@ async def status(
         data, error = await API.build_get(org=org, build_id=build_id)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if not data:
             console.error(f"Build '{build_id}' not found")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     build = data.get("build", data)
 
@@ -257,7 +257,7 @@ async def list_builds(
         )
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     builds = data.get("builds", [])
     total = data.get("total", len(builds))

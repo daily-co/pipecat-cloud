@@ -123,7 +123,7 @@ async def show(
         data, error = await API.bubble_error().spend_limit_get(org)
         if error:
             console.print_json(data={"error": error})
-            return typer.Exit(1)
+            raise typer.Exit(1)
         if data is None:
             console.print_json(data={})
             return
@@ -137,7 +137,7 @@ async def show(
         data, error = await API.spend_limit_get(org)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     if data is None:
         console.print("[dim]No spend-limit data available for this organization.[/dim]")
@@ -178,7 +178,7 @@ async def set_limit(
     ):
         current, error = await API.spend_limit_get(org)
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     current_spend = (current or {}).get("currentSpendCents") or 0
 
@@ -190,7 +190,7 @@ async def set_limit(
             ).ask_async()
             if not confirm:
                 console.cancel()
-                return typer.Exit(1)
+                raise typer.Exit(1)
         elif current_spend > new_cents:
             confirm = await questionary.confirm(
                 f"Current spend ({format_cents(current_spend)}) exceeds the new limit "
@@ -199,7 +199,7 @@ async def set_limit(
             ).ask_async()
             if not confirm:
                 console.cancel()
-                return typer.Exit(1)
+                raise typer.Exit(1)
 
     with console.status(
         f"[dim]Setting spend limit to {format_cents(new_cents)}[/dim]",
@@ -208,7 +208,7 @@ async def set_limit(
         data, error = await API.spend_limit_update(org, new_cents)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     console.success(
         f"Spend limit for [bold]'{org}'[/bold] set to "
@@ -244,7 +244,7 @@ async def clear(
         ).ask_async()
         if not confirm:
             console.cancel()
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     with console.status(
         f"[dim]Clearing spend limit for organization: [bold]'{org}'[/bold][/dim]",
@@ -253,7 +253,7 @@ async def clear(
         data, error = await API.spend_limit_update(org, None)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     console.success(f"Spend limit for [bold]'{org}'[/bold] cleared.")
     if data:

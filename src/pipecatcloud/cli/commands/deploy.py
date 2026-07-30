@@ -284,7 +284,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
 
         if error:
             live.stop()
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if data:
             existing_agent = True
@@ -296,7 +296,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     default=True,
                 ):
                     console.cancel()
-                    return typer.Exit()
+                    raise typer.Exit(1)
 
     # Start the deployment process
     with Live(
@@ -314,14 +314,14 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             )
 
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
 
             if not secrets_exist:
                 live.stop()
                 console.error(
                     f"Secret set [bold]'{params.secret_set}'[/bold] not found in namespace [bold]'{org}'[/bold]"
                 )
-                return typer.Exit()
+                raise typer.Exit(1)
 
         """
         # 2. Check that provided image pull secret exists
@@ -335,7 +335,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             sets, error = await API.secrets_list(org=org, live=live)
 
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
 
             # Image pull secrets are globally unique by name (region is validated
             # server-side at deploy), so match on name + type without region filter.
@@ -349,7 +349,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 console.error(
                     f"Image pull secret with name [bold]'{params.image_credentials}'[/bold] not found in namespace [bold]'{org}'[/bold]"
                 )
-                return typer.Exit()
+                raise typer.Exit(1)
 
         live.update(
             console.status(
@@ -362,12 +362,12 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         )
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if not existing_agent and not result:
             live.stop()
             console.error("A problem occured during deployment. Please contact support.")
-            return typer.Exit()
+            raise typer.Exit(1)
 
         # Close the live display before starting the new polling phase
         live.stop()
@@ -434,11 +434,11 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                             "Your deployment may still be in progress. Check it with "
                             f"`{PIPECAT_CLI_NAME} agent status {params.agent_name}`"
                         )
-                        return typer.Exit()
+                        raise typer.Exit(1)
                     # Non-transient error (4xx, auth, etc.) — abort immediately.
                     status.stop()
                     console.error("Error checking deployment status")
-                    return typer.Exit()
+                    raise typer.Exit(1)
 
                 # Successful poll — reset the transient-failure budget.
                 consecutive_failures = 0
@@ -454,7 +454,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                         console.api_error(error_message, "Agent deployment failed")
                     else:
                         console.error(f"Deployment failed with an unknown error: {status_errors}")
-                    return typer.Exit()
+                    raise typer.Exit(1)
 
                 # Capture the deployment ID for display
                 desired_deployment_id = agent_status.get(
@@ -488,7 +488,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             console.print(
                 "\n[yellow]Deployment monitoring interrupted. The deployment may still be in progress.[/yellow]"
             )
-            return typer.Exit()
+            raise typer.Exit(1)
 
     if is_ready:
         public_api_key = config.get("default_public_key")
@@ -532,14 +532,14 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 border_style="red",
             )
         )
+        raise typer.Exit(1)
     else:
         timeout_seconds = MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP
         console.error(
             f"Deployment did not become available within {timeout_seconds} seconds.\n"
             f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`"
         )
-
-    return typer.Exit()
+        raise typer.Exit(1)
 
 
 def create_deploy_command(app: typer.Typer):
@@ -712,7 +712,7 @@ def create_deploy_command(app: typer.Typer):
             console.error(
                 f"Invalid region '{deploy_region}'. Valid regions are: {', '.join(valid_regions)}"
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         # Handle Krisp VIVA configuration
         if krisp_viva_audio_filter is not None:
@@ -721,7 +721,7 @@ def create_deploy_command(app: typer.Typer):
         # Assert agent name is provided
         if not partial_config.agent_name:
             console.error("Agent name is required")
-            return typer.Exit()
+            raise typer.Exit(1)
 
         # Track if we're using cloud build (either from --build-id or interactive build)
         using_cloud_build = bool(partial_config.build_id)
@@ -758,13 +758,13 @@ def create_deploy_command(app: typer.Typer):
                 )
 
                 if not build_id:
-                    return typer.Exit(1)
+                    raise typer.Exit(1)
 
                 partial_config.build_id = build_id
                 using_cloud_build = True
             else:
                 console.cancel()
-                return typer.Exit()
+                raise typer.Exit(1)
 
         # Assert credentials are provided if not using --no-credentials / force flag
         # Skip this check for cloud builds (they use managed credentials)
@@ -780,7 +780,7 @@ def create_deploy_command(app: typer.Typer):
                 subtitle="Learn more: https://docs.pipecat.ai/pipecat-cloud/fundamentals/secrets#image-pull-secrets",
                 title_extra="Attempt to deploy without repository credentials",
             )
-            return typer.Exit()
+            raise typer.Exit(1)
 
         # Create and display table
         table = Table(show_header=False, border_style="dim", show_edge=True, show_lines=True)
@@ -799,7 +799,7 @@ def create_deploy_command(app: typer.Typer):
             # Fetch org's default region to show user what will be used
             props, error = await API.properties(org)
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
             region_display = (
                 f"[green]{props['defaultRegion']}[/green] [dim](organization default)[/dim]"
             )
@@ -874,7 +874,7 @@ def create_deploy_command(app: typer.Typer):
             "\nDo you want to proceed with deployment?", default=True
         ):
             console.cancel()
-            return typer.Abort()
+            raise typer.Abort()
 
         # Deploy method posts the deployment config to the API
         # and polls the deployment status until it's ready

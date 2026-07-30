@@ -271,16 +271,16 @@ class TestSpendLimitSetCommand:
         ):
             mock_q.confirm.return_value.ask_async = AsyncMock(return_value=False)
 
-            result = set_limit(
-                amount="50",
-                organization="test-org",
-                yes=False,
-            )
+            with pytest.raises(typer.Exit) as exc_info:
+                set_limit(
+                    amount="50",
+                    organization="test-org",
+                    yes=False,
+                )
 
             mock_q.confirm.assert_called_once()
             mock_api.spend_limit_update.assert_not_called()
-            assert isinstance(result, typer.Exit)
-            assert result.exit_code == 1
+            assert exc_info.value.exit_code == 1
 
     def test_set_aborts_when_zero_rejected(self):
         mock_api = MagicMock()
@@ -293,16 +293,16 @@ class TestSpendLimitSetCommand:
         ):
             mock_q.confirm.return_value.ask_async = AsyncMock(return_value=False)
 
-            result = set_limit(
-                amount="0",
-                organization="test-org",
-                yes=False,
-            )
+            with pytest.raises(typer.Exit) as exc_info:
+                set_limit(
+                    amount="0",
+                    organization="test-org",
+                    yes=False,
+                )
 
             mock_q.confirm.assert_called_once()
             mock_api.spend_limit_update.assert_not_called()
-            assert isinstance(result, typer.Exit)
-            assert result.exit_code == 1
+            assert exc_info.value.exit_code == 1
 
 
 class TestSpendLimitClearCommand:
@@ -329,9 +329,9 @@ class TestSpendLimitClearCommand:
         ):
             mock_q.confirm.return_value.ask_async = AsyncMock(return_value=False)
 
-            result = clear(organization="test-org", yes=False)
+            with pytest.raises(typer.Exit) as exc_info:
+                clear(organization="test-org", yes=False)
 
             mock_q.confirm.assert_called_once()
             mock_api.spend_limit_update.assert_not_called()
-            assert isinstance(result, typer.Exit)
-            assert result.exit_code == 1
+            assert exc_info.value.exit_code == 1

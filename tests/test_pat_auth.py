@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -106,7 +107,9 @@ class TestUsePATCommand:
         from pipecatcloud.cli.commands.auth import _use_pat_impl
 
         with patch("pipecatcloud.cli.commands.auth.console") as mock_console:
-            await _use_pat_impl("sk_not-a-pat-token")
+            with pytest.raises(typer.Exit) as exc_info:
+                await _use_pat_impl("sk_not-a-pat-token")
+            assert exc_info.value.exit_code == 1
             mock_console.error.assert_called_once()
             assert "pcc_pat_" in str(mock_console.error.call_args)
 
@@ -155,7 +158,9 @@ class TestUsePATCommand:
         ):
             mock_get_org.side_effect = Exception("401 Unauthorized")
 
-            await _use_pat_impl("pcc_pat_0000000000000000000000000000dead")
+            with pytest.raises(typer.Exit) as exc_info:
+                await _use_pat_impl("pcc_pat_0000000000000000000000000000dead")
 
+            assert exc_info.value.exit_code == 1
             mock_console.error.assert_called_once()
             mock_update.assert_not_called()

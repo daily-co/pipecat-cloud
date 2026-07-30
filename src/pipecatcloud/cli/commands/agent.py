@@ -108,7 +108,7 @@ async def list_agents(
         console.print(
             f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     with console.status(
         f"[dim]Fetching agents for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"
@@ -116,14 +116,14 @@ async def list_agents(
         data, error = await API.agents(org=org, region=region)
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if not data or len(data) == 0:
             console.error(
                 f"[red]No agents found for namespace / organization '{org}'[/red]\n\n"
                 f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]"
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         else:
             table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
@@ -170,11 +170,11 @@ async def status(
         live.stop()
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if not data:
             console.error(f"No deployment data found for agent with name '{agent_name}'")
-            return typer.Exit()
+            raise typer.Exit(1)
 
         # Deployment info
 
@@ -383,7 +383,7 @@ async def sessions(
             agent_name = deploy_config.agent_name
         else:
             console.error("No target agent name provided")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     # If session_id is specified, fetch single session with detailed metrics
     if session_id:
@@ -396,11 +396,11 @@ async def sessions(
             live.stop()
 
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
 
             if not data:
                 console.error(f"Session '{session_id}' not found")
-                return typer.Exit()
+                raise typer.Exit(1)
 
             # Display detailed session view
             session_duration = format_duration(data.get("createdAt"), data.get("endedAt")) or "N/A"
@@ -477,11 +477,11 @@ async def sessions(
         live.stop()
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if not data:
             console.error(f"No session data found for agent with name '{agent_name}'")
-            return typer.Exit()
+            raise typer.Exit(1)
 
         sessions_list = data.get("sessions", [])
         total_sessions = len(sessions_list)
@@ -660,7 +660,7 @@ async def logs(
 
         if not data or not data.get("logs"):
             console.print("[dim]No logs found for agent[/dim]")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     for log in data["logs"]:
         log_data = log.get("log", "")
@@ -709,17 +709,17 @@ async def delete(
             "Are you sure you want to delete this agent? Note: active sessions will not be interrupted and will continue to run until completion."
         ).ask_async():
             console.print("[bold]Aborting delete request[/bold]")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     with console.status(f"[dim]Deleting agent: [bold]'{agent_name}'[/bold][/dim]", spinner="dots"):
         data, error = await API.agent_delete(agent_name=agent_name, org=org)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if not data:
             console.error(f"Agent '{agent_name}' not found in namespace / organization '{org}'")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         console.success(f"Agent '{agent_name}' deleted successfully")
 
@@ -792,6 +792,7 @@ async def deployments(
     except Exception as e:
         logger.debug(e)
         console.api_error(error_code, f"Unable to get deployments for {agent_name}")
+        raise typer.Exit(1)
 
 
 @agent_cli.command(name="start", help="Start an agent instance")
@@ -860,7 +861,7 @@ async def start(
 
         if not default_agent_name:
             console.error("No target agent name provided")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         agent_name = default_agent_name
 
@@ -875,7 +876,7 @@ async def start(
             )
         )
 
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     # Validate daily_properties JSON if provided
     if use_daily and daily_properties:
@@ -884,7 +885,7 @@ async def start(
         except json.JSONDecodeError as e:
             console.error(f"Invalid JSON format for Daily room properties: {daily_properties}")
             console.print(f"[dim]JSON error: {str(e)}[/dim]")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     # Confirm start request
     if not force:
@@ -909,7 +910,7 @@ async def start(
             "Are you sure you want to start an active session for this agent?"
         ).ask_async():
             console.print("[bold]Aborting start request[/bold]")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     with Live(
         console.status("[dim]Checking agent health...[/dim]", spinner="dots"), refresh_per_second=4
@@ -920,7 +921,7 @@ async def start(
             console.error(
                 f"Agent '{agent_name}' does not exist or is not in a healthy state. Please check the agent status with [bold cyan]{PIPECAT_CLI_NAME} agent status {agent_name}[/bold cyan]"
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         live.update(
             console.status(
@@ -941,7 +942,7 @@ async def start(
         if error:
             live.stop()
             # Error is displayed from start_agent create_api_method wrapper
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         live.stop()
 
@@ -996,7 +997,7 @@ async def stop(
             agent_name = partial_config.agent_name
         else:
             console.error("No target agent name provided")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     # Confirm stop request
     if not force:
@@ -1010,7 +1011,7 @@ async def stop(
         )
         if not await questionary.confirm("Are you sure you want to stop this session?").ask_async():
             console.print("[bold]Aborting stop request[/bold]")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     with console.status(
         f"[dim]Stopping session [bold]'{session_id}'[/bold] for agent [bold]'{agent_name}'[/bold][/dim]",
@@ -1021,6 +1022,6 @@ async def stop(
         )
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         console.success(f"Session '{session_id}' stopped successfully")
