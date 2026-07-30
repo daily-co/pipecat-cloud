@@ -270,6 +270,12 @@ async def list_builds(
     builds = data.get("builds", [])
     total = data.get("total", len(builds))
 
+    # Before the empty-result return: an empty set must still emit a
+    # well-formed JSON payload rather than zero bytes on stdout.
+    if console.json_output:
+        console.output_json(data)
+        return
+
     if not builds:
         console.print("[dim]No builds found[/dim]")
         if status_filter:
@@ -281,10 +287,6 @@ async def list_builds(
     if total > len(builds):
         showing_text += f" of {total}"
     showing_text += " builds"
-
-    if console.json_output:
-        console.output_json(data)
-        return
 
     if not console.rich_output:
         console.print_records(

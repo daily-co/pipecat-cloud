@@ -226,6 +226,13 @@ async def build_push(
         help="Do not tag as 'latest'",
         rich_help_panel="Build Configuration",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Automatic yes to the build confirmation (for CI/CD automation)",
+        rich_help_panel="Build Configuration",
+    ),
 ):
     """Build, tag, and optionally push a Docker image for your agent."""
 
@@ -347,10 +354,11 @@ async def build_push(
         )
     )
 
-    console.require_interactive(None)
-    if not typer.confirm("Do you want to proceed with the build?", default=True):
-        console.cancel()
-        raise typer.Exit(1)
+    if not yes:
+        console.require_interactive("--yes")
+        if not typer.confirm("Do you want to proceed with the build?", default=True):
+            console.cancel()
+            raise typer.Exit(1)
 
     # Execute build
     console.print("\n[bold cyan]Building Docker image...[/bold cyan]")

@@ -492,12 +492,14 @@ async def properties_list(
         if error:
             raise typer.Exit(1)
 
-    if not data:
-        console.print("[dim]No properties configured.[/dim]")
+    # Before the empty-result return: an empty set must still emit a
+    # well-formed JSON payload rather than zero bytes on stdout.
+    if console.json_output:
+        console.output_json(data or {})
         return
 
-    if console.json_output:
-        console.output_json(data)
+    if not data:
+        console.print("[dim]No properties configured.[/dim]")
         return
 
     if not console.rich_output:
@@ -545,12 +547,14 @@ async def properties_schema(
         if error:
             raise typer.Exit(1)
 
-    if not data:
-        console.print("[dim]No properties available.[/dim]")
+    # Before the empty-result return: an empty set must still emit a
+    # well-formed JSON payload rather than zero bytes on stdout.
+    if console.json_output:
+        console.output_json(data or {})
         return
 
-    if console.json_output:
-        console.output_json(data)
+    if not data:
+        console.print("[dim]No properties available.[/dim]")
         return
 
     if not console.rich_output:

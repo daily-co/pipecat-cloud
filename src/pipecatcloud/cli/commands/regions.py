@@ -24,12 +24,14 @@ async def list_regions():
     with console.status("[dim]Fetching available regions...[/dim]", spinner="dots"):
         regions = await get_regions()
 
-    if not regions:
-        console.print("[yellow]No regions available[/yellow]")
+    # Before the empty-result return: an empty set must still emit a
+    # well-formed JSON payload rather than zero bytes on stdout.
+    if console.json_output:
+        console.output_json({"regions": regions or []})
         return
 
-    if console.json_output:
-        console.output_json({"regions": regions})
+    if not regions:
+        console.print("[yellow]No regions available[/yellow]")
         return
 
     rows = [(region["code"], region["display_name"]) for region in regions]

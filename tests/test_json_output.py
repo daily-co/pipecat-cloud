@@ -122,3 +122,105 @@ class TestJsonMode:
             result = runner.invoke(entrypoint_cli_typer, ["--output", "json", "regions", "list"])
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {"regions": regions}
+
+
+class TestJsonEmptyResults:
+    """Empty result sets must emit a well-formed JSON payload, not zero bytes.
+
+    The pre-existing empty-result early returns print to the console (stderr
+    in json mode); if the json branch sits below them, stdout is empty and
+    `jq` errors on the output of a command that exited 0.
+    """
+
+    def test_build_list_empty(self):
+        with patch("pipecatcloud.cli.commands.build.API") as mock_api:
+            mock_api.build_list = AsyncMock(return_value=({"builds": [], "total": 0}, None))
+            result = runner.invoke(entrypoint_cli_typer, ["--output", "json", "build", "list"])
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"builds": [], "total": 0}
+
+    def test_regions_list_empty(self):
+        with patch(
+            "pipecatcloud.cli.commands.regions.get_regions",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = runner.invoke(entrypoint_cli_typer, ["--output", "json", "regions", "list"])
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"regions": []}
+
+    def test_properties_list_empty(self):
+        with patch("pipecatcloud.cli.commands.organizations.API") as mock_api:
+            mock_api.properties = AsyncMock(return_value=(None, None))
+            result = runner.invoke(
+                entrypoint_cli_typer,
+                ["--output", "json", "organizations", "properties", "list"],
+            )
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {}
+
+    def test_properties_schema_empty(self):
+        with patch("pipecatcloud.cli.commands.organizations.API") as mock_api:
+            mock_api.properties_schema = AsyncMock(return_value=(None, None))
+            result = runner.invoke(
+                entrypoint_cli_typer,
+                ["--output", "json", "organizations", "properties", "schema"],
+            )
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {}
+
+
+class TestWhoamiJson:
+    """whoami exercises the real _API wrapper, which is where double-emission
+    of {"error": ...} objects can occur (the wrapper reports errors itself)."""
+
+    @staticmethod
+    def _fake_base_request(responses: dict):
+        """Route _base_request by URL suffix; a suffix mapped to an Exception
+        sets self.error (as the real _base_request does) and raises."""
+
+        async def fake(self, method, url, **kwargs):
+            for suffix, value in responses.items():
+                if url.endswith(suffix):
+                    if isinstance(value, Exception):
+                        self.error = {"code": "500", "error": str(value)}
+                        raise value
+                    return value
+            raise AssertionError(f"unexpected URL in test: {url}")
+
+        return fake
+
+    def test_org_lookup_failure_emits_exactly_one_error_object(self):
+        from pipecatcloud.api import _API
+
+        fake = self._fake_base_request(
+            {
+                "/users": {"user": {"userId": "u1", "emails": []}},
+                "/organizations": RuntimeError("org lookup failed"),
+            }
+        )
+        with patch.object(_API, "_base_request", fake):
+            result = runner.invoke(entrypoint_cli_typer, ["--output", "json", "auth", "whoami"])
+        assert result.exit_code == 1
+        # json.loads fails if stdout contains two concatenated objects
+        assert json.loads(result.stdout) == {"error": {"code": "500", "error": "org lookup failed"}}
+
+    def test_nonfatal_daily_key_failure_keeps_stdout_clean(self):
+        from pipecatcloud.api import _API
+
+        fake = self._fake_base_request(
+            {
+                "/daily": RuntimeError("daily key unavailable"),
+                "/users": {"user": {"userId": "u1", "emails": []}},
+                "/organizations": {
+                    "organizations": [{"name": "test-org", "verboseName": "Test Org"}]
+                },
+            }
+        )
+        with patch.object(_API, "_base_request", fake):
+            result = runner.invoke(entrypoint_cli_typer, ["--output", "json", "auth", "whoami"])
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["organization"] == {"name": "test-org", "verbose_name": "Test Org"}
+        assert payload["dailyApiKey"] is None
+        assert "error" not in payload

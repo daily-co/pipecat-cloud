@@ -599,10 +599,12 @@ async def whomai():
 
             live.update("[dim]Requesting user namespace / organization data...[/dim]")
 
-            # Retrieve default user organization
+            # Retrieve default user organization. The API wrapper already
+            # reported the error (create_api_method calls print_error), so
+            # don't report it again here — in json mode a second call would
+            # put a second {"error": ...} object on stdout.
             account, error = await API.organizations_current(org=org, live=live)
             if error:
-                API.print_error()
                 raise typer.Exit(1)
 
             if not account["name"] or not account["verbose_name"]:
@@ -613,9 +615,14 @@ async def whomai():
             # the CLI to function
             live.update("[dim]Fetching Daily API key...[/dim]")
 
+            # Bubbled because this failure is non-fatal: without bubbling, the
+            # API wrapper would render an error (and in json mode emit an
+            # {"error": ...} object to stdout) for a command that succeeds.
             daily_api_key = None
             try:
-                daily_api_key, error = await API.organizations_daily_key(org=org, live=live)
+                daily_api_key, error = await API.bubble_error().organizations_daily_key(
+                    org=org, live=live
+                )
             except Exception:
                 pass
 
