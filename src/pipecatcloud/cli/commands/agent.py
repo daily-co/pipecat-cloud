@@ -82,6 +82,23 @@ def format_cpu(millicores: int) -> str:
     return f"{millicores / 1000:.2f} cores"
 
 
+def _image_display(deployment: dict) -> tuple[str, str]:
+    """Label and value for the artifact a deployment runs.
+
+    Cloud-built deployments have their internal ECR image URI redacted by the
+    API (sanitizeDeploymentForResponse), which used to render as "Image: N/A".
+    The build ID is the customer-facing reference for those, so show it.
+    """
+    spec = deployment.get("manifest", {}).get("spec", {})
+    image = spec.get("image")
+    if image:
+        return "Image", str(image)
+    build_id = deployment.get("buildId")
+    if build_id:
+        return "Build", str(build_id)
+    return "Image", "N/A"
+
+
 # ----- Agent Commands -----
 
 
@@ -205,7 +222,8 @@ async def status(
             if current_rev:
                 console.print(f"Deployment Phase: {current_rev.get('phase', 'Unknown')}")
             console.print(f"Active Session Count: {data.get('activeSessionCount', 'N/A')}")
-            console.print(f"Image: {spec.get('image', 'N/A')}")
+            image_label, image_value = _image_display(data.get("deployment", {}))
+            console.print(f"{image_label}: {image_value}")
             if data.get("agentProfile"):
                 console.print(f"Agent Profile: {data['agentProfile']}")
             console.print(f"Active Deployment ID: {data.get('activeDeploymentId', 'N/A')}")
@@ -240,9 +258,10 @@ async def status(
             "[bold]Active Session Count:[/bold]",
             str(data.get("activeSessionCount", "N/A")),
         )
+        image_label, image_value = _image_display(data.get("deployment", {}))
         deployment_table.add_row(
-            "[bold]Image:[/bold]",
-            str(data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("image", "N/A")),
+            f"[bold]{image_label}:[/bold]",
+            image_value,
         )
 
         # Display agent profile if available
@@ -864,14 +883,14 @@ async def deployments(
 
             if not console.rich_output:
                 console.print_records(
-                    ["ID", "Node Type", "Image", "Created At", "Updated At"],
+                    ["ID", "Node Type", "Image / Build", "Created At", "Updated At"],
                     [
                         (
                             deployment.get("id", "N/A"),
                             deployment.get("manifest", {})
                             .get("spec", {})
                             .get("dailyNodeType", "N/A"),
-                            deployment.get("manifest", {}).get("spec", {}).get("image", "N/A"),
+                            _image_display(deployment)[1],
                             deployment.get("createdAt", "N/A"),
                             deployment.get("updatedAt", "N/A"),
                         )
@@ -889,7 +908,7 @@ async def deployments(
             )
             table.add_column("ID")
             table.add_column("Node Type")
-            table.add_column("Image")
+            table.add_column("Image / Build")
             table.add_column("Created At")
             table.add_column("Updated At")
 
@@ -898,7 +917,7 @@ async def deployments(
                 table.add_row(
                     deployment.get("id", "N/A"),
                     spec.get("dailyNodeType", "N/A"),
-                    spec.get("image", "N/A"),
+                    _image_display(deployment)[1],
                     deployment.get("createdAt", "N/A"),
                     deployment.get("updatedAt", "N/A"),
                 )
