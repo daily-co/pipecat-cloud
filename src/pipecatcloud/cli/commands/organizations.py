@@ -118,6 +118,10 @@ async def list_organizations():
         )
         raise typer.Exit(1)
 
+    if console.json_output:
+        console.output_json({"organizations": org_list})
+        return
+
     if not console.rich_output:
         console.print_records(
             ["Organization", "Name", "Active"],
@@ -178,6 +182,10 @@ async def keys(
                 f"[bold]{PIPECAT_CLI_NAME} organizations keys create[/bold] command.[/dim]"
             )
             raise typer.Exit(1)
+
+        if console.json_output:
+            console.output_json(data)
+            return
 
         if not console.rich_output:
             console.print_records(
@@ -286,6 +294,10 @@ async def create_key(
         )
     else:
         console.print("[dim]Bypassing using key as default")
+
+    if console.json_output:
+        console.output_json(data)
+        return
 
     if not console.rich_output:
         console.print_records(
@@ -484,6 +496,10 @@ async def properties_list(
         console.print("[dim]No properties configured.[/dim]")
         return
 
+    if console.json_output:
+        console.output_json(data)
+        return
+
     if not console.rich_output:
         console.print_records(
             ["Property", "Value"],
@@ -531,6 +547,10 @@ async def properties_schema(
 
     if not data:
         console.print("[dim]No properties available.[/dim]")
+        return
+
+    if console.json_output:
+        console.output_json(data)
         return
 
     if not console.rich_output:

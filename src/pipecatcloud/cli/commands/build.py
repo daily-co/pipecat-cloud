@@ -83,6 +83,10 @@ async def logs(
             console.error(f"Build '{build_id}' not found")
             raise typer.Exit(1)
 
+    if console.json_output:
+        console.output_json(data)
+        return
+
     logs_list = data.get("logs", [])
 
     if not logs_list:
@@ -156,6 +160,10 @@ async def status(
             raise typer.Exit(1)
 
     build = data.get("build", data)
+
+    if console.json_output:
+        console.output_json(build)
+        return
 
     # Build info table
     info_lines = [
@@ -273,6 +281,10 @@ async def list_builds(
     if total > len(builds):
         showing_text += f" of {total}"
     showing_text += " builds"
+
+    if console.json_output:
+        console.output_json(data)
+        return
 
     if not console.rich_output:
         console.print_records(

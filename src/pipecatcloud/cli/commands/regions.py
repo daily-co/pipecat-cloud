@@ -28,6 +28,10 @@ async def list_regions():
         console.print("[yellow]No regions available[/yellow]")
         return
 
+    if console.json_output:
+        console.output_json({"regions": regions})
+        return
+
     rows = [(region["code"], region["display_name"]) for region in regions]
 
     if not console.rich_output:

@@ -37,19 +37,8 @@ AGENT_LIST_PAYLOAD = [
 ]
 
 
-@pytest.fixture(autouse=True)
-def reset_console_mode():
-    """set_output_mode mutates the module singleton; restore it around tests.
-
-    Save the private ``_file`` (normally None = resolve sys.stdout dynamically),
-    not the ``file`` property: reading the property returns the *current*
-    stdout object, and pinning that back would bypass CliRunner's capture.
-    """
-    explicit = console._explicit_output_mode
-    file = console._file
-    yield
-    console._explicit_output_mode = explicit
-    console._file = file
+# Note: the autouse fixture restoring the console singleton's output mode
+# lives in conftest.py so it protects every test module.
 
 
 def make_console(**kwargs) -> tuple[PipecatConsole, StringIO]:

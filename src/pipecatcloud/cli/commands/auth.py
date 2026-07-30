@@ -620,6 +620,17 @@ async def whomai():
                 pass
 
             live.stop()
+
+            if console.json_output:
+                console.output_json(
+                    {
+                        "user": user_data.get("user"),
+                        "organization": account,
+                        "dailyApiKey": daily_api_key,
+                    }
+                )
+                return
+
             emails = user_data.get("user", {}).get("emails", [])
             email = emails[0]["emailAddress"] if emails else user_data["user"]["userId"]
 

@@ -484,6 +484,16 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             )
             raise typer.Exit(1)
 
+    if console.json_output:
+        console.output_json(
+            {
+                "agentName": params.agent_name,
+                "deploymentId": active_deployment_id,
+                "ready": is_ready,
+                "available": bool(last_status and last_status.is_available),
+            }
+        )
+
     if is_ready:
         public_api_key = config.get("default_public_key")
         extra_message = ""

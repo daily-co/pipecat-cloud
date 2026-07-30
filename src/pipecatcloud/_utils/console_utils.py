@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import json
 import statistics
 import sys
 from datetime import datetime
@@ -110,6 +111,19 @@ class PipecatConsole(Console):
     @property
     def rich_output(self) -> bool:
         return self.output_mode == OutputMode.rich
+
+    @property
+    def json_output(self) -> bool:
+        return self.output_mode == OutputMode.json
+
+    def output_json(self, data) -> None:
+        """Write the single machine-readable JSON object to stdout.
+
+        In json mode this console's own writes go to stderr, so this is the
+        only thing that touches stdout — parsers get pure JSON.
+        """
+        sys.stdout.write(json.dumps(data, indent=2, default=str) + "\n")
+        sys.stdout.flush()
 
     def status(self, status, **kwargs):  # pyright: ignore[reportIncompatibleMethodOverride]
         # Returns rich's Status in rich mode and a line-printing _PlainStatus

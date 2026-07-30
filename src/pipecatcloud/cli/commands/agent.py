@@ -124,6 +124,8 @@ async def list_agents(
             )
             raise typer.Exit(1)
 
+        elif console.json_output:
+            console.output_json({"agents": data})
         elif not console.rich_output:
             console.print_records(
                 ["Name", "Region", "Agent ID", "Active Deployment ID", "Created At", "Updated At"],
@@ -190,6 +192,10 @@ async def status(
         if not data:
             console.error(f"No deployment data found for agent with name '{agent_name}'")
             raise typer.Exit(1)
+
+        if console.json_output:
+            console.output_json(data)
+            return
 
         if not console.rich_output:
             spec = data.get("deployment", {}).get("manifest", {}).get("spec", {})
@@ -447,6 +453,10 @@ async def sessions(
             if error:
                 raise typer.Exit(1)
 
+            if data and console.json_output:
+                console.output_json(data)
+                return
+
             if not data:
                 console.error(f"Session '{session_id}' not found")
                 raise typer.Exit(1)
@@ -534,6 +544,10 @@ async def sessions(
 
         sessions_list = data.get("sessions", [])
         total_sessions = len(sessions_list)
+
+        if console.json_output:
+            console.output_json(data)
+            return
 
         if not console.rich_output:
             console.print_records(
@@ -741,6 +755,10 @@ async def logs(
             console.print("[dim]No logs found for agent[/dim]")
             raise typer.Exit(1)
 
+    if console.json_output:
+        console.output_json(data)
+        return
+
     for log in data["logs"]:
         log_data = log.get("log", "")
         if log_data:
@@ -839,6 +857,10 @@ async def deployments(
                 response.raise_for_status()
 
             data = await response.json()
+
+            if console.json_output:
+                console.output_json(data)
+                return
 
             if not console.rich_output:
                 console.print_records(
@@ -1040,6 +1062,9 @@ async def start(
             raise typer.Exit(1)
 
         live.stop()
+
+        if console.json_output:
+            console.output_json(data if isinstance(data, dict) else {})
 
         console.success(f"Agent '{agent_name}' started successfully")
 

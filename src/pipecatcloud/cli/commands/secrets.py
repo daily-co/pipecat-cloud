@@ -424,6 +424,10 @@ async def list_sets(
             status = data.get("status")
             error_message = data.get("errorMessage")
 
+            if console.json_output:
+                console.output_json(data)
+                return
+
             if not console.rich_output:
                 console.print_records(
                     ["Key"],
@@ -458,6 +462,10 @@ async def list_sets(
             if not filtered_sets or not len(filtered_sets):
                 console.error(f"No secret sets in namespace / organization [bold]'{org}'[/bold]")
                 raise typer.Exit(1)
+
+            if console.json_output:
+                console.output_json({"secretSets": filtered_sets})
+                return
 
             if not console.rich_output:
                 console.print_records(

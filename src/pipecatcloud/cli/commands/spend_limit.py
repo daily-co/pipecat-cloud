@@ -13,7 +13,7 @@ from rich.table import Table
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
-from pipecatcloud._utils.console_utils import console, format_cents, format_timestamp
+from pipecatcloud._utils.console_utils import OutputMode, console, format_cents, format_timestamp
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
@@ -113,21 +113,22 @@ async def show(
     output_json: bool = typer.Option(
         False,
         "--json",
-        help="Print raw JSON instead of a formatted table",
+        help="Deprecated alias for the global --output json mode",
     ),
 ):
     org = organization or config.get("org")
 
     if output_json:
-        # Bubble errors so we don't print a rich panel before/instead of the JSON.
+        # Predates the global --output mechanism; kept as an alias.
+        console.set_output_mode(OutputMode.json)
+
+    if console.json_output:
+        # Bubble errors so the error object is the only thing on stdout.
         data, error = await API.bubble_error().spend_limit_get(org)
         if error:
-            console.print_json(data={"error": error})
+            console.output_json({"error": error})
             raise typer.Exit(1)
-        if data is None:
-            console.print_json(data={})
-            return
-        console.print_json(data=data)
+        console.output_json(data if data is not None else {})
         return
 
     with console.status(
@@ -211,6 +212,10 @@ async def set_limit(
         if error:
             raise typer.Exit(1)
 
+    if console.json_output:
+        console.output_json(data or {})
+        return
+
     console.success(
         f"Spend limit for [bold]'{org}'[/bold] set to "
         f"[bold green]{format_cents(new_cents)}[/bold green]."
@@ -256,6 +261,10 @@ async def clear(
 
         if error:
             raise typer.Exit(1)
+
+    if console.json_output:
+        console.output_json(data or {})
+        return
 
     console.success(f"Spend limit for [bold]'{org}'[/bold] cleared.")
     if data:
