@@ -183,9 +183,12 @@ async def set_limit(
 
     current_spend = (current or {}).get("currentSpendCents") or 0
 
+    # Guard inside the prompt branches, not above them: most `set` invocations
+    # (raising or setting a fresh limit) show no prompt at all, and those must
+    # keep working non-interactively without --yes.
     if not yes:
-        console.require_interactive("--yes")
         if new_cents == 0:
+            console.require_interactive("--yes")
             confirm = await questionary.confirm(
                 "Setting the limit to $0.00 blocks all new sessions until you raise it. Continue?",
                 default=False,
@@ -194,6 +197,7 @@ async def set_limit(
                 console.cancel()
                 raise typer.Exit(1)
         elif current_spend > new_cents:
+            console.require_interactive("--yes")
             confirm = await questionary.confirm(
                 f"Current spend ({format_cents(current_spend)}) exceeds the new limit "
                 f"({format_cents(new_cents)}). New sessions will be blocked. Continue?",
