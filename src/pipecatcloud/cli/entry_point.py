@@ -9,7 +9,7 @@ import sys
 import typer
 from loguru import logger
 
-from pipecatcloud._utils.console_utils import console
+from pipecatcloud._utils.console_utils import OutputMode, console
 from pipecatcloud.cli.commands.agent import agent_cli
 from pipecatcloud.cli.commands.auth import auth_cli
 from pipecatcloud.cli.commands.build import build_cli
@@ -89,8 +89,25 @@ def cli(
         callback=show_config_callback,
         help="Show CLI internal configuration (credentials redacted)",
     ),
+    output: OutputMode | None = typer.Option(
+        None,
+        "--output",
+        help="Output mode: rich (interactive), plain (line-oriented, no boxes or "
+        "truncation), json (machine-readable on stdout). Defaults to rich on a "
+        "terminal and plain otherwise; can also be set via PIPECAT_OUTPUT. "
+        "Place before the subcommand: pipecat cloud --output json agent list.",
+    ),
 ):
-    pass
+    # Resolution order: --output flag > PIPECAT_OUTPUT env / config file >
+    # auto-detect (rich on a terminal, plain when piped).
+    resolved = output or config.get("output")
+    if resolved is not None:
+        try:
+            console.set_output_mode(OutputMode(resolved))
+        except ValueError:
+            valid = ", ".join(m.value for m in OutputMode)
+            console.error(f"Invalid output mode '{resolved}'. Valid modes are: {valid}")
+            raise typer.Exit(2) from None
 
 
 create_deploy_command(entrypoint_cli_typer)

@@ -44,16 +44,14 @@ class TestAgentSessionsCommand:
         # Arrange: _agent_sessions raises exception (API error)
         mock_api.side_effect = Exception("Agent not found")
 
-        # Act: Call with API error
-        result = sessions(
-            deploy_config=None,
-            agent_name="nonexistent-agent",
-            session_id=None,
-            organization=TEST_ORG,
-        )
-
-        # Assert: Should return typer.Exit on error
-        assert isinstance(result, type(typer.Exit()))
+        # Act & Assert: Should raise typer.Exit on error
+        with pytest.raises(typer.Exit):
+            sessions(
+                deploy_config=None,
+                agent_name="nonexistent-agent",
+                session_id=None,
+                organization=TEST_ORG,
+            )
 
     @patch("pipecatcloud._utils.deploy_utils.load_deploy_config_file")
     def test_handles_missing_agent_name_gracefully(self, mock_load_config):
@@ -61,14 +59,12 @@ class TestAgentSessionsCommand:
         # Arrange: Mock the config loader to return None (no config file)
         mock_load_config.return_value = None
 
-        # Act: Call with no agent name from either source
-        result = sessions(
-            deploy_config=None,  # No deploy config
-            agent_name=None,  # No agent name argument
-            session_id=None,
-            organization=TEST_ORG,
-        )
-
-        # Assert: Should return typer.Exit(1) with error message
-        assert isinstance(result, type(typer.Exit()))
-        assert result.exit_code == 1
+        # Act & Assert: Should raise typer.Exit(1) with error message
+        with pytest.raises(typer.Exit) as exc_info:
+            sessions(
+                deploy_config=None,  # No deploy config
+                agent_name=None,  # No agent name argument
+                session_id=None,
+                organization=TEST_ORG,
+            )
+        assert exc_info.value.exit_code == 1

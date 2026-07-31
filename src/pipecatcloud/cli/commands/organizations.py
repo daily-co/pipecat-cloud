@@ -13,7 +13,7 @@ from rich.table import Table
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
-from pipecatcloud._utils.console_utils import console
+from pipecatcloud._utils.console_utils import console, stdin_is_interactive
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import (
@@ -46,11 +46,12 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
         org_list, error = await API.organizations()
 
         if error:
-            typer.Exit()
+            raise typer.Exit(1)
 
     try:
         selected_org = None, None
         if not organization:
+            console.require_interactive("--organization")
             # Prompt user to select organization
             value = await questionary.select(
                 "Select default namespace / organization",
@@ -65,7 +66,7 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
             ).ask_async()
 
             if not value:
-                return typer.Exit(1)
+                raise typer.Exit(1)
 
             selected_org = value[0], value[1]
 
@@ -79,7 +80,7 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
                 console.error(
                     f"Unable to find namespace [bold]'{organization}'[/bold] in user's available organizations"
                 )
-                return typer.Exit(1)
+                raise typer.Exit(1)
             selected_org = match["name"], match["verboseName"]
 
         update_user_config(None, selected_org[0])
@@ -89,8 +90,11 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
             f"Current organization set to [bold green]{selected_org[1]} [dim]({selected_org[0]})[/dim][/bold green]\n"
             f"[dim]Default namespace updated in {user_config_path}[/dim]"
         )
+    except typer.Exit:
+        raise
     except Exception:
         console.error("Unable to update user credentials. Please contact support.")
+        raise typer.Exit(1)
 
 
 @organization_cli.command(name="list", help="List organizations user is a member of.")
@@ -105,14 +109,32 @@ async def list_organizations():
         org_list, error = await API.organizations()
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
     if not org_list or not len(org_list):
         console.error(
             "No namespaces associated with user account. Please complete onboarding via the dashboard.",
             subtitle=config.get("dashboard_host"),
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
+
+    if console.json_output:
+        console.output_json({"organizations": org_list})
+        return
+
+    if not console.rich_output:
+        console.print_records(
+            ["Organization", "Name", "Active"],
+            [
+                (
+                    org["verboseName"],
+                    org["name"],
+                    "active" if current_org and org["name"] == current_org else "",
+                )
+                for org in org_list
+            ],
+        )
+        return
 
     table = Table(border_style="dim", box=box.SIMPLE, show_edge=True, show_lines=False)
     table.add_column("Organization", style="white")
@@ -151,7 +173,7 @@ async def keys(
         data, error = await API.api_keys(org)
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if len(data["public"]) == 0:
             console.error(
@@ -159,7 +181,27 @@ async def keys(
                 f"[dim]Create a new API key with the "
                 f"[bold]{PIPECAT_CLI_NAME} organizations keys create[/bold] command.[/dim]"
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
+
+        if console.json_output:
+            console.output_json(data)
+            return
+
+        if not console.rich_output:
+            console.print_records(
+                ["Name", "Key", "Created At", "Status"],
+                [
+                    (
+                        key["metadata"]["name"],
+                        key["key"],
+                        key["createdAt"],
+                        "Revoked" if key["revoked"] else "Active",
+                    )
+                    for key in data["public"]
+                ],
+                title=f"API keys for organization: {org}",
+            )
+            return
 
         table = Table(
             show_header=True,
@@ -210,13 +252,14 @@ async def create_key(
     org = organization or config.get("org")
 
     if not api_key_name:
+        console.require_interactive("--name")
         api_key_name = await questionary.text(
             "Enter human readable name for API key e.g. 'Pipecat Key'"
         ).ask_async()
 
     if not api_key_name or api_key_name == "":
         console.error("You must enter a name for the API key")
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     data = None
 
@@ -225,15 +268,17 @@ async def create_key(
     ):
         data, error = await API.api_key_create(api_key_name, org)
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     if not data or "key" not in data:
         console.error("Invalid response from server. Please contact support.")
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
-    # Determine as to whether we should make this key the active default
+    # Determine as to whether we should make this key the active default.
+    # Non-interactively (key already created at this point, so failing here
+    # would be worse than proceeding) fall back to the prompt's default: no.
     make_active = default
-    if not default:
+    if not default and stdin_is_interactive():
         make_active = await questionary.confirm(
             "Would you like to make this key the default key in your local configuration?",
             default=False,
@@ -249,6 +294,17 @@ async def create_key(
         )
     else:
         console.print("[dim]Bypassing using key as default")
+
+    if console.json_output:
+        console.output_json(data)
+        return
+
+    if not console.rich_output:
+        console.print_records(
+            ["Name", "Key", "Organization"],
+            [(api_key_name, data["key"], org)],
+        )
+        return
 
     table = Table(
         show_header=True,
@@ -283,7 +339,7 @@ async def _revoke_key_flow(organization: str | None) -> None:
         data, error = await API.api_keys(org)
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if len(data["public"]) == 0:
             console.error(
@@ -291,8 +347,7 @@ async def _revoke_key_flow(organization: str | None) -> None:
                 f"[dim]Create a new API key with the "
                 f"[bold]{PIPECAT_CLI_NAME} organizations keys create[/bold] command.[/dim]"
             )
-            typer.Exit(1)
-            return
+            raise typer.Exit(1)
 
     # Only offer keys that are not already revoked — revoking a revoked key
     # is a no-op on the server and confuses the interactive flow.
@@ -303,9 +358,10 @@ async def _revoke_key_flow(organization: str | None) -> None:
             "[bold]No active API keys to revoke.[/bold]\n"
             "[dim]All keys in this organization are already revoked.[/dim]"
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     # Prompt user to revoke a key
+    console.require_interactive(None)
     key = await questionary.select(
         "Select API key to revoke",
         choices=[
@@ -315,7 +371,7 @@ async def _revoke_key_flow(organization: str | None) -> None:
     ).ask_async()
 
     if not key:
-        typer.Exit(1)
+        raise typer.Exit(1)
 
     key_is_default = config.get("default_public_key") == key[1]
 
@@ -333,13 +389,13 @@ async def _revoke_key_flow(organization: str | None) -> None:
             )
         except Exception:
             console.error("Unable to remove default key from local user config")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     with console.status(f"[dim]Revoking API key with ID {key[0]}...[/dim]", spinner="dots"):
         data, error = await API.api_key_revoke(key[0], org)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     console.success(f"API key with ID: [bold]'{key[0]}'[/bold] revoked successfully.")
 
@@ -377,7 +433,7 @@ async def use_key(
         data, error = await API.api_keys(org)
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
     if len(data["public"]) == 0:
         console.print(
@@ -385,10 +441,10 @@ async def use_key(
             f"[dim]Create a new API key with the "
             f"[bold]{PIPECAT_CLI_NAME} organizations keys create[/bold] command.[/dim]"
         )
-        typer.Exit(1)
-        return
+        raise typer.Exit(1)
 
     # Prompt user to use a key
+    console.require_interactive(None)
     key = await questionary.select(
         "Select API key to use",
         choices=[
@@ -398,8 +454,7 @@ async def use_key(
     ).ask_async()
 
     if not key:
-        typer.Exit(1)
-        return
+        raise typer.Exit(1)
 
     try:
         update_user_config(
@@ -410,6 +465,7 @@ async def use_key(
     except Exception as e:
         logger.debug(e)
         console.error("Unable to set default key in local config. Please contact support.")
+        raise typer.Exit(1)
 
 
 # ---- Properties Commands ----
@@ -434,10 +490,24 @@ async def properties_list(
         data, error = await API.properties(org)
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
+
+    # Before the empty-result return: an empty set must still emit a
+    # well-formed JSON payload rather than zero bytes on stdout.
+    if console.json_output:
+        console.output_json(data or {})
+        return
 
     if not data:
         console.print("[dim]No properties configured.[/dim]")
+        return
+
+    if not console.rich_output:
+        console.print_records(
+            ["Property", "Value"],
+            [(prop_name, prop_value) for prop_name, prop_value in data.items()],
+            title=f"Properties for organization: {org}",
+        )
         return
 
     table = Table(
@@ -475,10 +545,33 @@ async def properties_schema(
         data, error = await API.properties_schema(org)
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
+
+    # Before the empty-result return: an empty set must still emit a
+    # well-formed JSON payload rather than zero bytes on stdout.
+    if console.json_output:
+        console.output_json(data or {})
+        return
 
     if not data:
         console.print("[dim]No properties available.[/dim]")
+        return
+
+    if not console.rich_output:
+        console.print_records(
+            ["Property", "Type", "Current Value", "Default", "Description"],
+            [
+                (
+                    prop_name,
+                    prop_info.get("type", ""),
+                    prop_info.get("currentValue", ""),
+                    prop_info.get("default", ""),
+                    prop_info.get("description", ""),
+                )
+                for prop_name, prop_info in data.items()
+            ],
+            title=f"Properties schema for organization: {org}",
+        )
         return
 
     table = Table(
@@ -536,11 +629,11 @@ async def properties_set(
         data, error = await API.properties_update(org, {property_name: value})
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
     if not data:
         console.error("Failed to update property.")
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     new_value = data.get(property_name, value)
     console.success(
@@ -576,11 +669,11 @@ async def default_region(
             data, error = await API.properties_update(org, {"defaultRegion": region})
 
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
 
         if not data:
             console.error("Failed to update default region.")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         console.success(
             f"Default region set to [bold green]{data.get('defaultRegion', region)}[/bold green]"
@@ -594,7 +687,7 @@ async def default_region(
             data, error = await API.properties_schema(org)
 
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
 
         if not data or "defaultRegion" not in data:
             console.print("[dim]No default region configured.[/dim]")

@@ -15,3 +15,21 @@ _tmp = tempfile.NamedTemporaryFile(suffix=".toml", delete=False, mode="w")
 _tmp.write('token = "test-token"\norg = "test-org"\n')
 _tmp.close()
 os.environ["PIPECAT_CONFIG_PATH"] = _tmp.name
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_console_output_mode():
+    """The output mode mutates the console singleton (e.g. `spend-limit show
+    --json` or the global --output callback); restore it so one test's mode
+    can't leak into the next. Save the private `_file` (normally None =
+    resolve sys.stdout dynamically), not the `file` property — pinning the
+    resolved object back would bypass CliRunner capture in later tests."""
+    from pipecatcloud._utils.console_utils import console
+
+    explicit = console._explicit_output_mode
+    file = console._file
+    yield
+    console._explicit_output_mode = explicit
+    console._file = file

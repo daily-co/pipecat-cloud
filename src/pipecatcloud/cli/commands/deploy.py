@@ -10,7 +10,6 @@ from pathlib import Path
 import typer
 from loguru import logger
 from rich.console import Group
-from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -127,6 +126,7 @@ async def _cloud_build_flow(
                 border_style="cyan",
             )
         )
+        console.require_interactive("--yes")
         if not typer.confirm("Proceed with cloud build?", default=True):
             console.cancel()
             return None
@@ -233,15 +233,17 @@ async def _cloud_build_flow(
     # Poll for completion
     last_status = None
 
-    def status_callback(build):
-        nonlocal last_status
-        status = build.get("status", "unknown")
-        if status != last_status:
-            last_status = status
-
     with console.status(
         "[dim]Building image (this may take a few minutes)...[/dim]", spinner="bouncingBar"
-    ):
+    ) as build_status:
+
+        def status_callback(build):
+            nonlocal last_status
+            status = build.get("status", "unknown")
+            if status != last_status:
+                last_status = status
+                build_status.update(f"[dim]Build status: {status}[/dim]")
+
         success, final_build = await poll_build_status(
             build_id=build_id,
             org=org,
@@ -253,10 +255,11 @@ async def _cloud_build_flow(
 
     if success:
         duration = final_build.get("buildDurationSeconds")
+        # Duration lives in the title; repeating it in the body rendered as a
+        # dangling unitless "Duration: 99" in plain mode.
         duration_str = f" ({duration}s)" if duration else ""
         console.success(
-            f"[bold white]Build ID:[/bold white] {build_id}\n"
-            f"[bold white]Duration:[/bold white] {duration_str.strip('() s') if duration else 'N/A'}",
+            f"[bold white]Build ID:[/bold white] {build_id}",
             title=f"Build Complete{duration_str}",
         )
         return build_id
@@ -276,66 +279,60 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
     existing_agent = False
 
     # Check for an existing deployment with this agent name
-    with Live(
-        console.status("[dim]Checking for existing agent deployment...[/dim]", spinner="dots"),
-        transient=True,
+    with console.status(
+        "[dim]Checking for existing agent deployment...[/dim]", spinner="dots"
     ) as live:
         data, error = await API.agent(agent_name=params.agent_name, org=org, live=live)
 
         if error:
             live.stop()
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if data:
             existing_agent = True
 
             if not force:
                 live.stop()
+                console.require_interactive("--yes")
                 if not typer.confirm(
                     f"Deployment for agent '{params.agent_name}' exists. Do you want to update it? Note: this will not interrupt any active sessions",
                     default=True,
                 ):
                     console.cancel()
-                    return typer.Exit()
+                    raise typer.Exit(1)
 
     # Start the deployment process
-    with Live(
-        console.status("[dim]Preparing deployment...", spinner="dots"), transient=True
-    ) as live:
+    with console.status("[dim]Preparing deployment...", spinner="dots") as live:
         """
         # 1. Check that provided secret set exists
         """
         if params.secret_set:
-            live.update(
-                console.status(f"[dim]Verifying secret set {params.secret_set} exists...[/dim]")
-            )
+            live.update(f"[dim]Verifying secret set {params.secret_set} exists...[/dim]")
             secrets_exist, error = await API.secrets_list(
                 secret_set=params.secret_set, org=org, live=live
             )
 
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
 
             if not secrets_exist:
                 live.stop()
                 console.error(
                     f"Secret set [bold]'{params.secret_set}'[/bold] not found in namespace [bold]'{org}'[/bold]"
                 )
-                return typer.Exit()
+                raise typer.Exit(1)
 
         """
         # 2. Check that provided image pull secret exists
         """
         if params.image_credentials:
             live.update(
-                console.status(
-                    f"[dim]Verifying image pull secret {params.image_credentials} exists...[/dim]"
-                )
+                f"[dim]Verifying image pull secret {params.image_credentials} exists...[/dim]"
             )
             sets, error = await API.secrets_list(org=org, live=live)
 
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
 
             # Image pull secrets are globally unique by name (region is validated
             # server-side at deploy), so match on name + type without region filter.
@@ -349,12 +346,10 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 console.error(
                     f"Image pull secret with name [bold]'{params.image_credentials}'[/bold] not found in namespace [bold]'{org}'[/bold]"
                 )
-                return typer.Exit()
+                raise typer.Exit(1)
 
         live.update(
-            console.status(
-                f"[dim]{'Updating' if existing_agent else 'Pushing'} agent manifest for[/dim] [cyan]'{params.agent_name}'[/cyan]"
-            )
+            f"[dim]{'Updating' if existing_agent else 'Pushing'} agent manifest for[/dim] [cyan]'{params.agent_name}'[/cyan]"
         )
 
         result, error = await API.deploy(
@@ -362,12 +357,12 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         )
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if not existing_agent and not result:
             live.stop()
             console.error("A problem occured during deployment. Please contact support.")
-            return typer.Exit()
+            raise typer.Exit(1)
 
         # Close the live display before starting the new polling phase
         live.stop()
@@ -434,11 +429,11 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                             "Your deployment may still be in progress. Check it with "
                             f"`{PIPECAT_CLI_NAME} agent status {params.agent_name}`"
                         )
-                        return typer.Exit()
+                        raise typer.Exit(1)
                     # Non-transient error (4xx, auth, etc.) — abort immediately.
                     status.stop()
                     console.error("Error checking deployment status")
-                    return typer.Exit()
+                    raise typer.Exit(1)
 
                 # Successful poll — reset the transient-failure budget.
                 consecutive_failures = 0
@@ -454,7 +449,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                         console.api_error(error_message, "Agent deployment failed")
                     else:
                         console.error(f"Deployment failed with an unknown error: {status_errors}")
-                    return typer.Exit()
+                    raise typer.Exit(1)
 
                 # Capture the deployment ID for display
                 desired_deployment_id = agent_status.get(
@@ -488,7 +483,17 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             console.print(
                 "\n[yellow]Deployment monitoring interrupted. The deployment may still be in progress.[/yellow]"
             )
-            return typer.Exit()
+            raise typer.Exit(1)
+
+    if console.json_output:
+        console.output_json(
+            {
+                "agentName": params.agent_name,
+                "deploymentId": active_deployment_id,
+                "ready": is_ready,
+                "available": bool(last_status and last_status.is_available),
+            }
+        )
 
     if is_ready:
         public_api_key = config.get("default_public_key")
@@ -532,14 +537,14 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 border_style="red",
             )
         )
+        raise typer.Exit(1)
     else:
         timeout_seconds = MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP
         console.error(
             f"Deployment did not become available within {timeout_seconds} seconds.\n"
             f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`"
         )
-
-    return typer.Exit()
+        raise typer.Exit(1)
 
 
 def create_deploy_command(app: typer.Typer):
@@ -712,7 +717,7 @@ def create_deploy_command(app: typer.Typer):
             console.error(
                 f"Invalid region '{deploy_region}'. Valid regions are: {', '.join(valid_regions)}"
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         # Handle Krisp VIVA configuration
         if krisp_viva_audio_filter is not None:
@@ -721,7 +726,7 @@ def create_deploy_command(app: typer.Typer):
         # Assert agent name is provided
         if not partial_config.agent_name:
             console.error("Agent name is required")
-            return typer.Exit()
+            raise typer.Exit(1)
 
         # Track if we're using cloud build (either from --build-id or interactive build)
         using_cloud_build = bool(partial_config.build_id)
@@ -744,6 +749,7 @@ def create_deploy_command(app: typer.Typer):
                         border_style="yellow",
                     )
                 )
+                console.require_interactive("--yes")
                 should_build = typer.confirm(
                     "Would you like to build with Pipecat Cloud?",
                     default=True,
@@ -758,13 +764,13 @@ def create_deploy_command(app: typer.Typer):
                 )
 
                 if not build_id:
-                    return typer.Exit(1)
+                    raise typer.Exit(1)
 
                 partial_config.build_id = build_id
                 using_cloud_build = True
             else:
                 console.cancel()
-                return typer.Exit()
+                raise typer.Exit(1)
 
         # Assert credentials are provided if not using --no-credentials / force flag
         # Skip this check for cloud builds (they use managed credentials)
@@ -780,17 +786,13 @@ def create_deploy_command(app: typer.Typer):
                 subtitle="Learn more: https://docs.pipecat.ai/pipecat-cloud/fundamentals/secrets#image-pull-secrets",
                 title_extra="Attempt to deploy without repository credentials",
             )
-            return typer.Exit()
+            raise typer.Exit(1)
 
-        # Create and display table
-        table = Table(show_header=False, border_style="dim", show_edge=True, show_lines=True)
-        table.add_column("Property", style="cyan")
-        table.add_column("Value", style="green")
-        table.add_row("Min agents", str(partial_config.scaling.min_agents))
-        if partial_config.scaling.max_agents:
-            table.add_row("Max agents", str(partial_config.scaling.max_agents))
-        else:
-            table.add_row("Max agents", "[dim]Use existing or default[/dim]")
+        max_agents_display = (
+            str(partial_config.scaling.max_agents)
+            if partial_config.scaling.max_agents
+            else "[dim]Use existing or default[/dim]"
+        )
 
         # Resolve region display - fetch org default if not explicitly specified
         if partial_config.region:
@@ -799,7 +801,7 @@ def create_deploy_command(app: typer.Typer):
             # Fetch org's default region to show user what will be used
             props, error = await API.properties(org)
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
             region_display = (
                 f"[green]{props['defaultRegion']}[/green] [dim](organization default)[/dim]"
             )
@@ -846,35 +848,36 @@ def create_deploy_command(app: typer.Typer):
             ]
         )
 
-        content = Group(
-            *content_items,
-            table,
-            *(
-                [
-                    Text(
-                        f"Note: Usage costs will apply for {partial_config.scaling.min_agents} reserved agent(s). Please see: https://www.daily.co/pricing/pipecat-cloud/",
-                        style="red",
-                    )
-                ]
-                if partial_config.scaling.min_agents
-                else [
-                    Text(
-                        "Note: Deploying with 0 minimum agents may result in cold starts",
-                        style="red",
-                    )
-                ]
-            ),
+        cost_note = (
+            f"Note: Usage costs will apply for {partial_config.scaling.min_agents} reserved agent(s). Please see: https://www.daily.co/pricing/pipecat-cloud/"
+            if partial_config.scaling.min_agents
+            else "Note: Deploying with 0 minimum agents may result in cold starts"
         )
 
-        console.print(
-            Panel(content, title="Review deployment", title_align="left", border_style="yellow")
-        )
+        if not console.rich_output:
+            console.print("Review deployment:")
+            for item in content_items:
+                console.print(item)
+            console.print(f"Min agents: {partial_config.scaling.min_agents}")
+            console.print(f"Max agents: {max_agents_display}")
+            console.print(cost_note)
+        else:
+            table = Table(show_header=False, border_style="dim", show_edge=True, show_lines=True)
+            table.add_column("Property", style="cyan")
+            table.add_column("Value", style="green")
+            table.add_row("Min agents", str(partial_config.scaling.min_agents))
+            table.add_row("Max agents", max_agents_display)
 
-        if not auto_yes and not typer.confirm(
-            "\nDo you want to proceed with deployment?", default=True
-        ):
-            console.cancel()
-            return typer.Abort()
+            content = Group(*content_items, table, Text(cost_note, style="red"))
+            console.print(
+                Panel(content, title="Review deployment", title_align="left", border_style="yellow")
+            )
+
+        if not auto_yes:
+            console.require_interactive("--yes")
+            if not typer.confirm("\nDo you want to proceed with deployment?", default=True):
+                console.cancel()
+                raise typer.Abort()
 
         # Deploy method posts the deployment config to the API
         # and polls the deployment status until it's ready

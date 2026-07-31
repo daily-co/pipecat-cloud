@@ -197,6 +197,10 @@ class _API:
 
         if not self.error:
             return
+        # In json mode the machine-readable error goes to stdout; the human
+        # rendering below lands on stderr (the console is redirected there).
+        if self.is_cli and getattr(console, "json_output", False):
+            console.output_json({"error": self.error})
         if isinstance(self.error, dict) and self.error.get("code", "400") == "401":
             console.unauthorized()
         else:

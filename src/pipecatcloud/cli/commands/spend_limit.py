@@ -13,7 +13,7 @@ from rich.table import Table
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
-from pipecatcloud._utils.console_utils import console, format_cents, format_timestamp
+from pipecatcloud._utils.console_utils import OutputMode, console, format_cents, format_timestamp
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
@@ -113,21 +113,22 @@ async def show(
     output_json: bool = typer.Option(
         False,
         "--json",
-        help="Print raw JSON instead of a formatted table",
+        help="Deprecated alias for the global --output json mode",
     ),
 ):
     org = organization or config.get("org")
 
     if output_json:
-        # Bubble errors so we don't print a rich panel before/instead of the JSON.
+        # Predates the global --output mechanism; kept as an alias.
+        console.set_output_mode(OutputMode.json)
+
+    if console.json_output:
+        # Bubble errors so the error object is the only thing on stdout.
         data, error = await API.bubble_error().spend_limit_get(org)
         if error:
-            console.print_json(data={"error": error})
-            return typer.Exit(1)
-        if data is None:
-            console.print_json(data={})
-            return
-        console.print_json(data=data)
+            console.output_json({"error": error})
+            raise typer.Exit(1)
+        console.output_json(data if data is not None else {})
         return
 
     with console.status(
@@ -137,7 +138,7 @@ async def show(
         data, error = await API.spend_limit_get(org)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     if data is None:
         console.print("[dim]No spend-limit data available for this organization.[/dim]")
@@ -178,20 +179,25 @@ async def set_limit(
     ):
         current, error = await API.spend_limit_get(org)
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     current_spend = (current or {}).get("currentSpendCents") or 0
 
+    # Guard inside the prompt branches, not above them: most `set` invocations
+    # (raising or setting a fresh limit) show no prompt at all, and those must
+    # keep working non-interactively without --yes.
     if not yes:
         if new_cents == 0:
+            console.require_interactive("--yes")
             confirm = await questionary.confirm(
                 "Setting the limit to $0.00 blocks all new sessions until you raise it. Continue?",
                 default=False,
             ).ask_async()
             if not confirm:
                 console.cancel()
-                return typer.Exit(1)
+                raise typer.Exit(1)
         elif current_spend > new_cents:
+            console.require_interactive("--yes")
             confirm = await questionary.confirm(
                 f"Current spend ({format_cents(current_spend)}) exceeds the new limit "
                 f"({format_cents(new_cents)}). New sessions will be blocked. Continue?",
@@ -199,7 +205,7 @@ async def set_limit(
             ).ask_async()
             if not confirm:
                 console.cancel()
-                return typer.Exit(1)
+                raise typer.Exit(1)
 
     with console.status(
         f"[dim]Setting spend limit to {format_cents(new_cents)}[/dim]",
@@ -208,7 +214,11 @@ async def set_limit(
         data, error = await API.spend_limit_update(org, new_cents)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
+
+    if console.json_output:
+        console.output_json(data or {})
+        return
 
     console.success(
         f"Spend limit for [bold]'{org}'[/bold] set to "
@@ -238,13 +248,14 @@ async def clear(
     org = organization or config.get("org")
 
     if not yes:
+        console.require_interactive("--yes")
         confirm = await questionary.confirm(
             f"Remove the spend limit for '{org}'? New sessions will not be capped.",
             default=False,
         ).ask_async()
         if not confirm:
             console.cancel()
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     with console.status(
         f"[dim]Clearing spend limit for organization: [bold]'{org}'[/bold][/dim]",
@@ -253,7 +264,11 @@ async def clear(
         data, error = await API.spend_limit_update(org, None)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
+
+    if console.json_output:
+        console.output_json(data or {})
+        return
 
     console.success(f"Spend limit for [bold]'{org}'[/bold] cleared.")
     if data:

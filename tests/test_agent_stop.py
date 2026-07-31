@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 import typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -27,10 +28,12 @@ class TestAgentStopCommand:
     def test_stop_respects_force_flag(self):
         """Verify force flag skips confirmation when set to True."""
         with (
+            patch("pipecatcloud.cli.commands.agent.API") as mock_api,
             patch("pipecatcloud.cli.commands.agent.config") as mock_config,
             patch("pipecatcloud.cli.commands.agent.questionary") as mock_questionary,
             patch("pipecatcloud.cli.commands.agent.DeployConfigParams") as mock_params,
         ):
+            mock_api.agent_session_terminate = AsyncMock(return_value=({}, None))
             mock_config.get.return_value = TEST_ORG
             mock_params.return_value = MagicMock(agent_name=TEST_AGENT)
             # Mock questionary - should NOT be called when force=True
@@ -52,10 +55,13 @@ class TestAgentStopCommand:
     def test_stop_shows_confirmation_without_force(self):
         """Verify confirmation prompt is shown when force is False."""
         with (
+            patch("pipecatcloud.cli.commands.agent.API") as mock_api,
             patch("pipecatcloud.cli.commands.agent.config") as mock_config,
             patch("pipecatcloud.cli.commands.agent.questionary") as mock_questionary,
             patch("pipecatcloud.cli.commands.agent.DeployConfigParams") as mock_params,
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=True),
         ):
+            mock_api.agent_session_terminate = AsyncMock(return_value=({}, None))
             mock_config.get.return_value = TEST_ORG
             mock_params.return_value = MagicMock(agent_name=TEST_AGENT)
             # User agrees to the confirmation
@@ -87,18 +93,17 @@ class TestAgentStopCommand:
             # User rejects the confirmation
             mock_questionary.confirm.return_value.ask_async = AsyncMock(return_value=False)
 
-            # Act
-            result = stop(
-                deploy_config=None,
-                agent_name=TEST_AGENT,
-                session_id=TEST_SESSION_ID,
-                organization=TEST_ORG,
-                force=False,
-            )
-
-            # Assert
+            # Act & Assert
             # Should exit with code 1 (abort)
-            assert isinstance(result, typer.Exit)
-            assert result.exit_code == 1
+            with pytest.raises(typer.Exit) as exc_info:
+                stop(
+                    deploy_config=None,
+                    agent_name=TEST_AGENT,
+                    session_id=TEST_SESSION_ID,
+                    organization=TEST_ORG,
+                    force=False,
+                )
+
+            assert exc_info.value.exit_code == 1
             # Should display abort message
             mock_console.print.assert_any_call("[bold]Aborting stop request[/bold]")

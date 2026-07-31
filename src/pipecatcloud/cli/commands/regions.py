@@ -24,8 +24,20 @@ async def list_regions():
     with console.status("[dim]Fetching available regions...[/dim]", spinner="dots"):
         regions = await get_regions()
 
+    # Before the empty-result return: an empty set must still emit a
+    # well-formed JSON payload rather than zero bytes on stdout.
+    if console.json_output:
+        console.output_json({"regions": regions or []})
+        return
+
     if not regions:
         console.print("[yellow]No regions available[/yellow]")
+        return
+
+    rows = [(region["code"], region["display_name"]) for region in regions]
+
+    if not console.rich_output:
+        console.print_records(["Code", "Name"], rows)
         return
 
     # Create table
@@ -34,7 +46,7 @@ async def list_regions():
     table.add_column("Name")
 
     # Add rows
-    for region in regions:
-        table.add_row(region["code"], region["display_name"])
+    for code, name in rows:
+        table.add_row(code, name)
 
     console.print(table)

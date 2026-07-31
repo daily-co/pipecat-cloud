@@ -52,17 +52,17 @@ def validate_secrets(secrets: dict):
             console.print(
                 "[red]Error: Secrets must be provided as key-value pairs. Please reference --help for more information.[/red]"
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if len(key) > 64:
             console.print("[red]Error: Secret names must not exceed 64 characters in length.[/red]")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if not valid_name_pattern.match(key):
             console.print(
                 "[red]Error: Secret names must contain only alphanumeric characters, underscores, and hyphens.[/red]"
             )
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
 
 def validate_secret_name(name: str):
@@ -111,17 +111,17 @@ async def create_set(
         console.print(
             "[red]Secret set name must only contain characters, numbers and hyphens.[/red]"
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     if not secrets and not from_file:
         console.print(
             "[red]Command requires either passed key-values or relative file path. See --help for more information.[/red]"
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     if secrets and from_file:
         console.print("[red]Cannot pass key-value pairs with --file option")
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     secrets_dict = {}
     org = organization or config.get("org")
@@ -130,7 +130,7 @@ async def create_set(
     if from_file:
         if not os.path.exists(from_file):
             console.print(f"[red]Error: File '{from_file}' does not exist.[/red]")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         try:
             with open(from_file) as f:
@@ -143,7 +143,7 @@ async def create_set(
                         console.print(
                             f"[red]Error: Invalid line format in {from_file}. Each line must be a key-value pair using '=' separator.[/red]"
                         )
-                        return typer.Exit(1)
+                        raise typer.Exit(1)
 
                     key, value = line.split("=", 1)
                     key = key.strip()
@@ -154,16 +154,18 @@ async def create_set(
 
                     if not key or not value:
                         console.error(f"Error: Empty key or value found in {from_file}")
-                        return typer.Exit(1)
+                        raise typer.Exit(1)
 
                     secrets_dict[key] = value
 
             if not secrets_dict:
                 console.error(f"Error: No valid secrets found in {from_file}")
-                return typer.Exit(1)
+                raise typer.Exit(1)
+        except typer.Exit:
+            raise
         except Exception as e:
             console.error(f"Error reading file '{from_file}': {str(e)}")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     else:
         for secret in secrets:
@@ -171,7 +173,7 @@ async def create_set(
                 console.error(
                     "Error: Secrets must be provided as key-value pairs using '=' separator. Example: KEY=value"
                 )
-                return typer.Exit(1)
+                raise typer.Exit(1)
 
             key, value = secret.split("=", 1)
             key = key.strip()
@@ -185,7 +187,7 @@ async def create_set(
                 console.print(
                     "[red]Error: Both key and value must be provided for each secret.[/red]"
                 )
-                return typer.Exit(1)
+                raise typer.Exit(1)
 
             secrets_dict[key] = value
 
@@ -200,7 +202,7 @@ async def create_set(
         console.print(
             f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     if not skip_confirm:
         table = Table(
@@ -219,7 +221,7 @@ async def create_set(
             # Fetch org's default region to show user what will be used
             props, error = await API.properties(org)
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
             console.print(
                 f"[bold white]Region:[/bold white] {props['defaultRegion']} [dim](organization default)[/dim]\n"
             )
@@ -231,11 +233,12 @@ async def create_set(
             )
         )
         # Confirm our secrets
+        console.require_interactive("--skip")
         looks_good = await questionary.confirm(
             "Would you like to proceed with these secrets?"
         ).ask_async()
         if not looks_good:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     # Confirm if we are sure we want to create a new secret set (if one doesn't already exist)
     existing_set = None
@@ -246,7 +249,7 @@ async def create_set(
         data, error = await API.secrets_list(org=org, secret_set=name)
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if data and len(data):
             existing_set = data
@@ -257,12 +260,13 @@ async def create_set(
         overlapping_secrets = existing_secret_names.intersection(secrets_dict.keys())
 
         if overlapping_secrets and not skip_confirm:
+            console.require_interactive("--skip")
             create = await questionary.confirm(
                 f"The following secret(s) already exist in {name} will be overwritten: {', '.join(overlapping_secrets)}. Would you like to continue?"
             ).ask_async()
             if not create:
                 console.print("[bold red]Secret set creation cancelled[/bold red]")
-                return typer.Exit(1)
+                raise typer.Exit(1)
 
     used_region = None
     with console.status(
@@ -283,7 +287,7 @@ async def create_set(
             )
 
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
 
             # Capture the region that was used (from API response)
             if data and "region" in data:
@@ -329,16 +333,17 @@ async def unset(
         console.error(
             "Error: Secret set name and secret name must be provided. Please reference --help for more information."
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     # Confirm to proceed
     if not skip_confirm:
+        console.require_interactive("--skip")
         confirm = await questionary.confirm(
             f"Are you sure you want to unset secret with key '{secret_key}' from set '{name}'?"
         ).ask_async()
         if not confirm:
             console.error("Secret key unset cancelled")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     with console.status(
         f"[dim]Deleting secret [bold]'{secret_key}'[/bold] from secret set [bold]'{name}'[/bold][/dim]",
@@ -348,10 +353,10 @@ async def unset(
 
         if not data:
             console.error(f"Key not found in set '{name}'")
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
     console.success(
         f"Secret [bold green]'{secret_key}'[/bold green] deleted successfully from secret set [bold green]'{name}'[/bold green]"
@@ -388,7 +393,7 @@ async def list_sets(
         console.print(
             f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     logger.debug(f"Secret set name to lookup: {name}")
 
@@ -403,7 +408,7 @@ async def list_sets(
                 console.error("Unable to lookup image pull secrets")
             else:
                 API.print_error()
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if not data or not len(data):
             if name:
@@ -412,12 +417,26 @@ async def list_sets(
                 )
             else:
                 console.error(f"No secrets sets for namespace / organization [bold]'{org}'[/bold]")
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if name:
             secrets = data.get("secrets") or []
             status = data.get("status")
             error_message = data.get("errorMessage")
+
+            if console.json_output:
+                console.output_json(data)
+                return
+
+            if not console.rich_output:
+                console.print_records(
+                    ["Key"],
+                    [(s["fieldName"],) for s in secrets],
+                    title=f"Secret keys for set {name} (status: {status or 'unknown'})",
+                )
+                if status == "failed" and error_message:
+                    console.print(f"[red]{error_message}[/red]")
+                return
 
             table = Table(border_style="dim", show_header=False, show_edge=True, show_lines=True)
             table.add_column(name, style="white")
@@ -442,7 +461,29 @@ async def list_sets(
 
             if not filtered_sets or not len(filtered_sets):
                 console.error(f"No secret sets in namespace / organization [bold]'{org}'[/bold]")
-                return typer.Exit()
+                raise typer.Exit(1)
+
+            if console.json_output:
+                console.output_json({"secretSets": filtered_sets})
+                return
+
+            if not console.rich_output:
+                console.print_records(
+                    ["Secret Set Name", "Region", "Status", "Type"],
+                    [
+                        (
+                            secret_set["name"],
+                            secret_set["region"],
+                            secret_set.get("status") or "unknown",
+                            "Image Pull Secret"
+                            if secret_set["type"] == "imagePullSecret"
+                            else "Secret Set",
+                        )
+                        for secret_set in filtered_sets
+                    ],
+                    title=f"Secret sets for {org}",
+                )
+                return
 
             table = Table(
                 show_header=True,
@@ -500,22 +541,23 @@ async def delete(
 
     # Confirm to proceed
     if not skip_confirm:
+        console.require_interactive("--skip")
         confirm = await questionary.confirm(
             f"Are you sure you want to delete secret set '{name}'?"
         ).ask_async()
         if not confirm:
             console.print("[bold red]Secret deletion cancelled[/bold red]")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     with console.status(f"Deleting secret set [bold]'{name}'[/bold]", spinner="dots"):
         data, error = await API.secrets_delete_set(set_name=name, org=org)
 
         if not data:
             console.error(f"No set found with name '{name}")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     console.success(f"Secret set [bold green]'{name}'[/bold green] deleted successfully")
 
@@ -562,20 +604,21 @@ async def image_pull_secret(
         console.error(
             "Name and host must be provided. Please reference --help for more information."
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     if not credentials:
         console.print(
             "[cyan]For more information about image pull secrets, see: "
             "https://docs.pipecat.ai/pipecat-cloud/fundamentals/secrets#image-pull-secrets[/cyan]\n"
         )
+        console.require_interactive("the credentials argument")
         username = await questionary.text(f"Username for image repository '{host}'").ask_async()
         password = await questionary.password(
             f"Access token for image repository '{host}'"
         ).ask_async()
         if not username or not password:
             console.print("[bold red]Image pull secret creation cancelled[/bold red]")
-            return typer.Exit(1)
+            raise typer.Exit(1)
         credentials = f"{username}:{password}"
 
     if base64encode:
@@ -588,7 +631,7 @@ async def image_pull_secret(
         console.print(
             f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     # Check if secret already exists
     existing_secret = None
@@ -598,7 +641,7 @@ async def image_pull_secret(
         data, error = await API.secrets_list(org=org)
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
         if data:
             existing_secret = next(
@@ -606,12 +649,13 @@ async def image_pull_secret(
             )
 
     if existing_secret and not skip_confirm:
+        console.require_interactive("--skip")
         confirm = await questionary.confirm(
             f"Image pull secret '{name}' already exists. Update it?"
         ).ask_async()
         if not confirm:
             console.print("[bold red]Update cancelled[/bold red]")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     used_region = None
     with console.status(
@@ -626,7 +670,7 @@ async def image_pull_secret(
         )
 
         if error:
-            return typer.Exit()
+            raise typer.Exit(1)
 
         # Capture the region that was used (from API response)
         if data and "region" in data:

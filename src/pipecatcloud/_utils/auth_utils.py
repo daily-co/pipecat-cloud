@@ -7,6 +7,7 @@
 import functools
 
 import aiohttp
+import typer
 
 from pipecatcloud.__version__ import version
 from pipecatcloud._utils.console_utils import console
@@ -46,7 +47,7 @@ def requires_login(func):
             console.error(
                 f"You are not logged in. Please run `{PIPECAT_CLI_NAME} auth login` first.",
             )
-            return
+            raise typer.Exit(1)
 
         # When org is not set locally (e.g. PIPECAT_TOKEN without a config file),
         # resolve the user's default organization from the API.
@@ -59,7 +60,7 @@ def requires_login(func):
                     "Could not determine your organization. "
                     f"Set PIPECAT_ORG or run `{PIPECAT_CLI_NAME} auth login`.",
                 )
-                return
+                raise typer.Exit(1)
 
         return await func(*args, **kwargs)
 

@@ -5,6 +5,53 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- New global `--output {rich,plain,json}` option for every `pipecat cloud`
+  command, also settable via the `PIPECAT_OUTPUT` environment variable or the
+  `output` config key. Note the option is placed before the subcommand
+  (`pipecat cloud --output json agent list`); in CI, setting `PIPECAT_OUTPUT`
+  once avoids ordering concerns. `rich` is the interactive default; `plain` is
+  line-oriented with no boxes and no truncation; `json` emits one
+  machine-readable JSON object on stdout with all human output on stderr.
+  When stdout is not a terminal the CLI now defaults to `plain`.
+
+- Progress is now visible when output is piped or redirected. Long-running
+  operations (deploy rollout polling, cloud builds) print each status
+  transition as a timestamped line instead of rendering nothing outside a
+  terminal. Cloud-build polling additionally reports build status changes.
+
+- Listings (`agent list`, `agent sessions`, `agent deployments`,
+  `secrets list`, `organizations list`, `organizations keys list`, `build
+  list`, `regions list`, and friends) render as tab-separated rows with
+  full, untruncated values in `plain` mode. Piped output previously fell
+  back to an 80-column table that silently ellipsized IDs.
+
+- `agent status` and `agent deployments` now show `Build: <build id>` for
+  cloud-built deployments instead of `Image: N/A`. Cloud builds produce an
+  image managed by Pipecat Cloud, so the build ID is the reference to use
+  when checking which artifact a deployment is running.
+
+### Changed
+
+- **The CLI now exits non-zero on failure.** Previously every error path
+  exited `0` — including failed deploys and running commands while logged
+  out — so CI pipelines could not detect failures. Errors and user
+  cancellations exit `1`; usage errors and refused non-interactive prompts
+  exit `2`. Pipelines that depended on the old always-zero behavior will
+  now correctly fail.
+
+- Commands that would show a confirmation prompt now fail fast with exit
+  code `2` when stdin is not a terminal, pointing at the bypass flag
+  (`--yes`/`--force`/`--skip`), instead of hanging or misbehaving in CI.
+
+### Deprecated
+
+- `spend-limit show --json` still works but is now an alias for the global
+  `--output json` mode.
+
 ## [1.0.1] - 2026-07-13
 
 ### Fixed

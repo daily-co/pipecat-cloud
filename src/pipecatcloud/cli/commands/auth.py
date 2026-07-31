@@ -18,7 +18,6 @@ import aiohttp
 import typer
 from loguru import logger
 from rich.columns import Columns
-from rich.live import Live
 
 from pipecatcloud.__version__ import version as _cli_version
 from pipecatcloud._utils.async_utils import synchronizer
@@ -362,7 +361,7 @@ async def login():
         oidc = await _fetch_oidc_discovery(oauth_config["issuer"])
     except Exception as e:
         console.error(f"Failed to fetch authentication configuration: {e}")
-        return
+        raise typer.Exit(1)
 
     authorize_url_base = oidc["authorization_endpoint"]
     token_url = oidc["token_endpoint"]
@@ -374,7 +373,7 @@ async def login():
         runner, port, result_future = await _start_callback_server()
     except RuntimeError as e:
         console.error(str(e))
-        return
+        raise typer.Exit(1)
 
     redirect_uri = f"http://{CALLBACK_HOST}:{port}{CALLBACK_PATH}"
 
@@ -411,16 +410,16 @@ async def login():
             auth_code, returned_state = await asyncio.wait_for(result_future, timeout=120.0)
         except TimeoutError:
             console.error("Authentication timed out.")
-            return
+            raise typer.Exit(1)
 
         if not auth_code:
             console.error("Authentication was cancelled or failed.")
-            return
+            raise typer.Exit(1)
 
         # Verify state to prevent CSRF
         if returned_state != state:
             console.error("Authentication failed: state mismatch (possible CSRF attack).")
-            return
+            raise typer.Exit(1)
 
         # Exchange code for tokens
         try:
@@ -429,7 +428,7 @@ async def login():
             )
         except RuntimeError as e:
             console.error(f"Token exchange failed: {e}")
-            return
+            raise typer.Exit(1)
 
     finally:
         await runner.cleanup()
@@ -448,10 +447,12 @@ async def login():
                 "Have you completed the onboarding process? "
                 "Please first sign in via the web dashboard."
             )
-            return
+            raise typer.Exit(1)
+    except typer.Exit:
+        raise
     except Exception:
         console.error("Failed to retrieve account information.")
-        return
+        raise typer.Exit(1)
 
     # Store credentials
     update_user_config(
@@ -532,7 +533,7 @@ async def _use_pat_impl(token: str):
     """Core logic for use-pat command, extracted for testability."""
     if not token.startswith("pcc_pat_"):
         console.error("Invalid token format. PATs must start with [bold]pcc_pat_[/bold]")
-        return
+        raise typer.Exit(1)
 
     # Verify the PAT works by fetching the user's organizations
     # Preserve the currently active org if set
@@ -545,10 +546,12 @@ async def _use_pat_impl(token: str):
                     "Token is valid but account has no associated namespace. "
                     "Have you completed the onboarding process?"
                 )
-                return
+                raise typer.Exit(1)
+    except typer.Exit:
+        raise
     except Exception:
         console.error("Invalid or expired token.")
-        return
+        raise typer.Exit(1)
 
     # Store PAT — clear OAuth-specific fields since they don't apply
     update_user_config(
@@ -572,7 +575,7 @@ async def use_pat():
     token = getpass.getpass("Personal Access Token: ")
     if not token:
         console.error("No token provided.")
-        return
+        raise typer.Exit(1)
     await _use_pat_impl(token)
 
 
@@ -588,24 +591,21 @@ async def whomai():
     org = config.get("org")
 
     try:
-        with Live(
-            console.status("[dim]Requesting current user data...[/dim]", spinner="dots"),
-            transient=True,
-        ) as live:
+        with console.status("[dim]Requesting current user data...[/dim]", spinner="dots") as live:
             user_data, error = await API.whoami(live=live)
 
             if error:
-                return typer.Exit()
+                raise typer.Exit(1)
 
-            live.update(
-                console.status("[dim]Requesting user namespace / organization data...[/dim]")
-            )
+            live.update("[dim]Requesting user namespace / organization data...[/dim]")
 
-            # Retrieve default user organization
+            # Retrieve default user organization. The API wrapper already
+            # reported the error (create_api_method calls print_error), so
+            # don't report it again here — in json mode a second call would
+            # put a second {"error": ...} object on stdout.
             account, error = await API.organizations_current(org=org, live=live)
             if error:
-                API.print_error()
-                return typer.Exit()
+                raise typer.Exit(1)
 
             if not account["name"] or not account["verbose_name"]:
                 raise
@@ -613,15 +613,31 @@ async def whomai():
             # Retrieve user Daily API key
             # Note: we don't raise an error if this fails, as it's not required for
             # the CLI to function
-            live.update(console.status("[dim]Fetching Daily API key...[/dim]", spinner="dots"))
+            live.update("[dim]Fetching Daily API key...[/dim]")
 
+            # Bubbled because this failure is non-fatal: without bubbling, the
+            # API wrapper would render an error (and in json mode emit an
+            # {"error": ...} object to stdout) for a command that succeeds.
             daily_api_key = None
             try:
-                daily_api_key, error = await API.organizations_daily_key(org=org, live=live)
+                daily_api_key, error = await API.bubble_error().organizations_daily_key(
+                    org=org, live=live
+                )
             except Exception:
                 pass
 
             live.stop()
+
+            if console.json_output:
+                console.output_json(
+                    {
+                        "user": user_data.get("user"),
+                        "organization": account,
+                        "dailyApiKey": daily_api_key,
+                    }
+                )
+                return
+
             emails = user_data.get("user", {}).get("emails", [])
             email = emails[0]["emailAddress"] if emails else user_data["user"]["userId"]
 
@@ -641,5 +657,8 @@ async def whomai():
                 ]
             )
             console.success(message)
+    except typer.Exit:
+        raise
     except Exception:
         console.error("Unable to obtain user data. Please contact support")
+        raise typer.Exit(1)

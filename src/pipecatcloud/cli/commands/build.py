@@ -77,11 +77,15 @@ async def logs(
         data, error = await API.build_logs(org=org, build_id=build_id, limit=limit)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if not data:
             console.error(f"Build '{build_id}' not found")
-            return typer.Exit(1)
+            raise typer.Exit(1)
+
+    if console.json_output:
+        console.output_json(data)
+        return
 
     logs_list = data.get("logs", [])
 
@@ -149,13 +153,17 @@ async def status(
         data, error = await API.build_get(org=org, build_id=build_id)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
         if not data:
             console.error(f"Build '{build_id}' not found")
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     build = data.get("build", data)
+
+    if console.json_output:
+        console.output_json(build)
+        return
 
     # Build info table
     info_lines = [
@@ -257,15 +265,44 @@ async def list_builds(
         )
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     builds = data.get("builds", [])
     total = data.get("total", len(builds))
+
+    # Before the empty-result return: an empty set must still emit a
+    # well-formed JSON payload rather than zero bytes on stdout.
+    if console.json_output:
+        console.output_json(data)
+        return
 
     if not builds:
         console.print("[dim]No builds found[/dim]")
         if status_filter:
             console.print(f"[dim]Filter: status={status_filter}[/dim]")
+        return
+
+    # Display with count info
+    showing_text = f"Showing {len(builds)}"
+    if total > len(builds):
+        showing_text += f" of {total}"
+    showing_text += " builds"
+
+    if not console.rich_output:
+        console.print_records(
+            ["Build ID", "Status", "Region", "Duration", "Created"],
+            [
+                (
+                    build.get("id", "N/A"),
+                    build.get("status", "unknown"),
+                    build.get("region", "N/A"),
+                    _format_duration(build.get("buildDurationSeconds")),
+                    format_timestamp(build.get("createdAt", "")),
+                )
+                for build in builds
+            ],
+            title=f"Cloud Builds ({showing_text})",
+        )
         return
 
     # Create table
@@ -290,12 +327,6 @@ async def list_builds(
             _format_duration(build.get("buildDurationSeconds")),
             format_timestamp(build.get("createdAt", "")),
         )
-
-    # Display with count info
-    showing_text = f"Showing {len(builds)}"
-    if total > len(builds):
-        showing_text += f" of {total}"
-    showing_text += " builds"
 
     console.success(
         table,

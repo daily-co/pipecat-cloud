@@ -4,13 +4,75 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import json
 import statistics
+import sys
 from datetime import datetime
+from enum import Enum
 
 from rich.console import Console
 from rich.panel import Panel
 
 from pipecatcloud.cli import PANEL_TITLE_ERROR, PANEL_TITLE_SUCCESS, PIPECAT_CLI_NAME
+
+
+class OutputMode(str, Enum):
+    """How the CLI renders its output.
+
+    - ``rich``: panels, spinners, and tables (the interactive default)
+    - ``plain``: line-oriented output — no boxes, no spinners, no truncation
+    - ``json``: one machine-parseable JSON object on stdout; all human
+      output is redirected to stderr
+    """
+
+    rich = "rich"
+    plain = "plain"
+    json = "json"
+
+
+def stdin_is_interactive() -> bool:
+    """Whether we can prompt the user. Separate function so tests can patch it."""
+    try:
+        return sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+class _PlainStatus:
+    """Drop-in replacement for rich's Status in non-interactive output.
+
+    Rich renders nothing from ``console.status(...)`` when stdout is not a
+    terminal, which left long-running operations (e.g. the up-to-600s deploy
+    poll loop) completely silent in CI. This sink prints each *distinct*
+    status message as a timestamped line instead, so piped output shows
+    every transition without spamming identical poll updates.
+    """
+
+    def __init__(self, console: "PipecatConsole", message: str | None = None):
+        self._console = console
+        self._last: str | None = None
+        self._stopped = False
+        if message:
+            self.update(message)
+
+    def update(self, status: str | None = None, **kwargs) -> None:
+        if not status or self._stopped or status == self._last:
+            return
+        self._last = status
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self._console.print(rf"[dim]\[{timestamp}][/dim] {status}")
+
+    def start(self) -> None:
+        self._stopped = False
+
+    def stop(self) -> None:
+        self._stopped = True
+
+    def __enter__(self) -> "_PlainStatus":
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.stop()
 
 
 def format_cents(cents: int | None) -> str:
@@ -28,6 +90,92 @@ def format_cents(cents: int | None) -> str:
 
 
 class PipecatConsole(Console):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # None means "auto": rich on a terminal, plain otherwise.
+        self._explicit_output_mode: OutputMode | None = None
+
+    @property
+    def output_mode(self) -> OutputMode:
+        if self._explicit_output_mode is not None:
+            return self._explicit_output_mode
+        return OutputMode.rich if self.is_terminal else OutputMode.plain
+
+    def set_output_mode(self, mode: OutputMode) -> None:
+        self._explicit_output_mode = mode
+        if mode == OutputMode.json:
+            # stdout is reserved for the single JSON payload; every human-facing
+            # write on this console moves to stderr so parsers see pure JSON.
+            self.file = sys.stderr
+
+    @property
+    def rich_output(self) -> bool:
+        return self.output_mode == OutputMode.rich
+
+    @property
+    def json_output(self) -> bool:
+        return self.output_mode == OutputMode.json
+
+    def output_json(self, data) -> None:
+        """Write the single machine-readable JSON object to stdout.
+
+        In json mode this console's own writes go to stderr, so this is the
+        only thing that touches stdout — parsers get pure JSON.
+        """
+        sys.stdout.write(json.dumps(data, indent=2, default=str) + "\n")
+        sys.stdout.flush()
+
+    def status(self, status, **kwargs):  # pyright: ignore[reportIncompatibleMethodOverride]
+        # Returns rich's Status in rich mode and a line-printing _PlainStatus
+        # otherwise; both expose update()/stop()/context-manager.
+        if self.rich_output:
+            return super().status(status, **kwargs)
+        return _PlainStatus(self, str(status))
+
+    def require_interactive(self, flag_hint: str | None = "--yes") -> None:
+        """Fail fast instead of letting a prompt hang or misbehave in CI.
+
+        Exits 2 (usage error) when a prompt would be shown but stdin is not a
+        terminal, pointing at the flag that skips the prompt when one exists.
+        """
+        import typer
+
+        if not stdin_is_interactive():
+            remedy = (
+                f"Pass [bold]{flag_hint}[/bold] to run non-interactively."
+                if flag_hint
+                else "This command requires an interactive terminal."
+            )
+            self.error(f"Confirmation required but input is not a terminal.\n{remedy}")
+            raise typer.Exit(2)
+
+    def print(self, *objects, **kwargs):
+        # In non-rich modes, never hard-wrap plain text lines: wrapped IDs and
+        # URIs are as unparseable as truncated ones.
+        if not self.rich_output and objects and all(isinstance(o, str) for o in objects):
+            kwargs.setdefault("soft_wrap", True)
+        return super().print(*objects, **kwargs)
+
+    def print_records(
+        self,
+        columns: list[str],
+        rows: list[tuple],
+        title: str | None = None,
+    ) -> None:
+        """Plain-mode listing: tab-separated, full values, no boxes.
+
+        Rich tables ellipsize cell values at 80 columns when piped, which
+        silently corrupts IDs consumed by scripts. Rows are written straight to
+        the output stream — bypassing Rich's tab expansion and line wrapping —
+        so the output stays greppable and `cut`-able.
+        """
+        if title:
+            self.print(title)
+        self.file.write("\t".join(columns) + "\n")
+        for row in rows:
+            self.file.write("\t".join("" if cell is None else str(cell) for cell in row) + "\n")
+        self.file.flush()
+
     def success(
         self,
         message,
@@ -37,6 +185,16 @@ class PipecatConsole(Console):
     ):
         if not title:
             title = f"{PANEL_TITLE_SUCCESS}{f' - {title_extra}' if title_extra is not None else ''}"
+
+        if not self.rich_output:
+            if isinstance(message, str):
+                self.print(f"[bold green]{title}:[/bold green] {message}")
+            else:
+                self.print(f"[bold green]{title}[/bold green]")
+                self.print(message)
+            if subtitle:
+                self.print(subtitle)
+            return
 
         self.print(
             Panel(
@@ -59,6 +217,16 @@ class PipecatConsole(Console):
         if not title:
             title = f"{PANEL_TITLE_ERROR}{f' - {title_extra}' if title_extra is not None else ''}"
 
+        if not self.rich_output:
+            if isinstance(message, str):
+                self.print(f"[bold red]{title}:[/bold red] {message}")
+            else:
+                self.print(f"[bold red]{title}[/bold red]")
+                self.print(message)
+            if subtitle:
+                self.print(subtitle)
+            return
+
         self.print(
             Panel(
                 message,
@@ -74,9 +242,16 @@ class PipecatConsole(Console):
         self.print("[yellow]Cancelled by user[/yellow]")
 
     def unauthorized(self):
+        message = (
+            "Unauthorized request / invalid user token.\n\n"
+            f"Please log in again using [bold cyan]{PIPECAT_CLI_NAME} auth login[/bold cyan]"
+        )
+        if not self.rich_output:
+            self.error(message, title=f"{PANEL_TITLE_ERROR} - Unauthorized (401)")
+            return
         self.print(
             Panel(
-                f"Unauthorized request / invalid user token.\n\nPlease log in again using [bold cyan]{PIPECAT_CLI_NAME} auth login[/bold cyan]",
+                message,
                 title=f"[bold red]{PANEL_TITLE_ERROR} - Unauthorized (401)[/bold red]",
                 subtitle="",
                 title_align="left",
@@ -112,13 +287,22 @@ class PipecatConsole(Console):
         if not error_message:
             hide_subtitle = True
 
+        panel_title = f"{PANEL_TITLE_ERROR}{f' - {code}' if code else ''}"
+        subtitle = (
+            f"[dim]Docs: https://docs.pipecat.ai/pipecat-cloud/fundamentals/error-codes#{str(code).lower()}[/dim]"
+            if not hide_subtitle and code
+            else None
+        )
+
+        if not self.rich_output:
+            self.error(f"{title}: {error_message}", title=panel_title, subtitle=subtitle)
+            return
+
         self.print(
             Panel(
                 f"[red]{title}[/red]\n\n[dim]Error message:[/dim]\n{error_message}",
-                title=f"[bold red]{PANEL_TITLE_ERROR}{f' - {code}' if code else ''}[/bold red]",
-                subtitle=f"[dim]Docs: https://docs.pipecat.ai/pipecat-cloud/fundamentals/error-codes#{str(code).lower()}[/dim]"
-                if not hide_subtitle and code
-                else None,
+                title=f"[bold red]{panel_title}[/bold red]",
+                subtitle=subtitle,
                 title_align="left",
                 subtitle_align="left",
                 border_style="red",
@@ -157,6 +341,10 @@ class PipecatConsole(Console):
             f"  [bold cyan]{PIPECAT_CLI_NAME} spend-limit clear[/bold cyan]\n\n"
             f"Or visit [link={dashboard}]{dashboard}[/link]"
         )
+
+        if not self.rich_output:
+            self.error(body, title=f"{PANEL_TITLE_ERROR} - Spend limit reached (402)")
+            return
 
         self.print(
             Panel(

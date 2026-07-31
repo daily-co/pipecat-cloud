@@ -242,6 +242,39 @@ class TestSpendLimitShowCommand:
 
 
 class TestSpendLimitSetCommand:
+    def test_set_without_prompt_condition_works_non_interactively(self):
+        """A plain limit raise shows no prompt interactively, so it must not
+        demand --yes when stdin is not a terminal (guard sits inside the
+        prompt branches, not above them)."""
+        mock_api = MagicMock()
+        mock_api.spend_limit_get = AsyncMock(return_value=({"currentSpendCents": 0}, None))
+        mock_api.spend_limit_update = AsyncMock(return_value=({"limitCents": 5000}, None))
+
+        with (
+            patch("pipecatcloud.cli.commands.spend_limit.API", mock_api),
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=False),
+        ):
+            set_limit(amount="50", organization="test-org", yes=False)
+
+            mock_api.spend_limit_update.assert_awaited_once_with("test-org", 5000)
+
+    def test_set_zero_requires_terminal_or_yes(self):
+        """Setting $0 blocks all sessions and always prompts, so non-TTY
+        without --yes must fail fast with a usage error."""
+        mock_api = MagicMock()
+        mock_api.spend_limit_get = AsyncMock(return_value=({"currentSpendCents": 0}, None))
+        mock_api.spend_limit_update = AsyncMock()
+
+        with (
+            patch("pipecatcloud.cli.commands.spend_limit.API", mock_api),
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=False),
+        ):
+            with pytest.raises(typer.Exit) as exc_info:
+                set_limit(amount="0", organization="test-org", yes=False)
+
+            assert exc_info.value.exit_code == 2
+            mock_api.spend_limit_update.assert_not_called()
+
     def test_set_skips_prompt_when_yes_flag(self):
         mock_api = MagicMock()
         mock_api.spend_limit_get = AsyncMock(return_value=({"currentSpendCents": 0}, None))
@@ -268,19 +301,20 @@ class TestSpendLimitSetCommand:
         with (
             patch("pipecatcloud.cli.commands.spend_limit.API", mock_api),
             patch("pipecatcloud.cli.commands.spend_limit.questionary") as mock_q,
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=True),
         ):
             mock_q.confirm.return_value.ask_async = AsyncMock(return_value=False)
 
-            result = set_limit(
-                amount="50",
-                organization="test-org",
-                yes=False,
-            )
+            with pytest.raises(typer.Exit) as exc_info:
+                set_limit(
+                    amount="50",
+                    organization="test-org",
+                    yes=False,
+                )
 
             mock_q.confirm.assert_called_once()
             mock_api.spend_limit_update.assert_not_called()
-            assert isinstance(result, typer.Exit)
-            assert result.exit_code == 1
+            assert exc_info.value.exit_code == 1
 
     def test_set_aborts_when_zero_rejected(self):
         mock_api = MagicMock()
@@ -290,19 +324,20 @@ class TestSpendLimitSetCommand:
         with (
             patch("pipecatcloud.cli.commands.spend_limit.API", mock_api),
             patch("pipecatcloud.cli.commands.spend_limit.questionary") as mock_q,
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=True),
         ):
             mock_q.confirm.return_value.ask_async = AsyncMock(return_value=False)
 
-            result = set_limit(
-                amount="0",
-                organization="test-org",
-                yes=False,
-            )
+            with pytest.raises(typer.Exit) as exc_info:
+                set_limit(
+                    amount="0",
+                    organization="test-org",
+                    yes=False,
+                )
 
             mock_q.confirm.assert_called_once()
             mock_api.spend_limit_update.assert_not_called()
-            assert isinstance(result, typer.Exit)
-            assert result.exit_code == 1
+            assert exc_info.value.exit_code == 1
 
 
 class TestSpendLimitClearCommand:
@@ -326,12 +361,13 @@ class TestSpendLimitClearCommand:
         with (
             patch("pipecatcloud.cli.commands.spend_limit.API", mock_api),
             patch("pipecatcloud.cli.commands.spend_limit.questionary") as mock_q,
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=True),
         ):
             mock_q.confirm.return_value.ask_async = AsyncMock(return_value=False)
 
-            result = clear(organization="test-org", yes=False)
+            with pytest.raises(typer.Exit) as exc_info:
+                clear(organization="test-org", yes=False)
 
             mock_q.confirm.assert_called_once()
             mock_api.spend_limit_update.assert_not_called()
-            assert isinstance(result, typer.Exit)
-            assert result.exit_code == 1
+            assert exc_info.value.exit_code == 1
