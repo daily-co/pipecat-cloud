@@ -255,10 +255,11 @@ async def _cloud_build_flow(
 
     if success:
         duration = final_build.get("buildDurationSeconds")
+        # Duration lives in the title; repeating it in the body rendered as a
+        # dangling unitless "Duration: 99" in plain mode.
         duration_str = f" ({duration}s)" if duration else ""
         console.success(
-            f"[bold white]Build ID:[/bold white] {build_id}\n"
-            f"[bold white]Duration:[/bold white] {duration_str.strip('() s') if duration else 'N/A'}",
+            f"[bold white]Build ID:[/bold white] {build_id}",
             title=f"Build Complete{duration_str}",
         )
         return build_id
@@ -787,15 +788,11 @@ def create_deploy_command(app: typer.Typer):
             )
             raise typer.Exit(1)
 
-        # Create and display table
-        table = Table(show_header=False, border_style="dim", show_edge=True, show_lines=True)
-        table.add_column("Property", style="cyan")
-        table.add_column("Value", style="green")
-        table.add_row("Min agents", str(partial_config.scaling.min_agents))
-        if partial_config.scaling.max_agents:
-            table.add_row("Max agents", str(partial_config.scaling.max_agents))
-        else:
-            table.add_row("Max agents", "[dim]Use existing or default[/dim]")
+        max_agents_display = (
+            str(partial_config.scaling.max_agents)
+            if partial_config.scaling.max_agents
+            else "[dim]Use existing or default[/dim]"
+        )
 
         # Resolve region display - fetch org default if not explicitly specified
         if partial_config.region:
@@ -851,29 +848,30 @@ def create_deploy_command(app: typer.Typer):
             ]
         )
 
-        content = Group(
-            *content_items,
-            table,
-            *(
-                [
-                    Text(
-                        f"Note: Usage costs will apply for {partial_config.scaling.min_agents} reserved agent(s). Please see: https://www.daily.co/pricing/pipecat-cloud/",
-                        style="red",
-                    )
-                ]
-                if partial_config.scaling.min_agents
-                else [
-                    Text(
-                        "Note: Deploying with 0 minimum agents may result in cold starts",
-                        style="red",
-                    )
-                ]
-            ),
+        cost_note = (
+            f"Note: Usage costs will apply for {partial_config.scaling.min_agents} reserved agent(s). Please see: https://www.daily.co/pricing/pipecat-cloud/"
+            if partial_config.scaling.min_agents
+            else "Note: Deploying with 0 minimum agents may result in cold starts"
         )
 
-        console.print(
-            Panel(content, title="Review deployment", title_align="left", border_style="yellow")
-        )
+        if not console.rich_output:
+            console.print("Review deployment:")
+            for item in content_items:
+                console.print(item)
+            console.print(f"Min agents: {partial_config.scaling.min_agents}")
+            console.print(f"Max agents: {max_agents_display}")
+            console.print(cost_note)
+        else:
+            table = Table(show_header=False, border_style="dim", show_edge=True, show_lines=True)
+            table.add_column("Property", style="cyan")
+            table.add_column("Value", style="green")
+            table.add_row("Min agents", str(partial_config.scaling.min_agents))
+            table.add_row("Max agents", max_agents_display)
+
+            content = Group(*content_items, table, Text(cost_note, style="red"))
+            console.print(
+                Panel(content, title="Review deployment", title_align="left", border_style="yellow")
+            )
 
         if not auto_yes:
             console.require_interactive("--yes")

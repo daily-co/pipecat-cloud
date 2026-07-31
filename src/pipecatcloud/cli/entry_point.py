@@ -94,7 +94,8 @@ def cli(
         "--output",
         help="Output mode: rich (interactive), plain (line-oriented, no boxes or "
         "truncation), json (machine-readable on stdout). Defaults to rich on a "
-        "terminal and plain otherwise; can also be set via PIPECAT_OUTPUT.",
+        "terminal and plain otherwise; can also be set via PIPECAT_OUTPUT. "
+        "Place before the subcommand: pipecat cloud --output json agent list.",
     ),
 ):
     # Resolution order: --output flag > PIPECAT_OUTPUT env / config file >

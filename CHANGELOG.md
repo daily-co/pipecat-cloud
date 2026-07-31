@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New global `--output {rich,plain,json}` option for every `pipecat cloud`
   command, also settable via the `PIPECAT_OUTPUT` environment variable or the
-  `output` config key. `rich` is the interactive default; `plain` is
+  `output` config key. Note the option is placed before the subcommand
+  (`pipecat cloud --output json agent list`); in CI, setting `PIPECAT_OUTPUT`
+  once avoids ordering concerns. `rich` is the interactive default; `plain` is
   line-oriented with no boxes and no truncation; `json` emits one
   machine-readable JSON object on stdout with all human output on stderr.
   When stdout is not a terminal the CLI now defaults to `plain`.
