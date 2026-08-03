@@ -40,9 +40,7 @@ organization_cli.add_typer(properties_cli)
 async def select(organization: str = typer.Option(None, "--organization", "-o")):
     current_org = config.get("org")
 
-    with console.status(
-        "[dim]Retrieve user namespace / organization data...[/dim]", spinner="dots"
-    ):
+    with console.status("[dim]Retrieve user organization data...[/dim]", spinner="dots"):
         org_list, error = await API.organizations()
 
         if error:
@@ -54,7 +52,7 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
             console.require_interactive("--organization")
             # Prompt user to select organization
             value = await questionary.select(
-                "Select default namespace / organization",
+                "Select default organization",
                 choices=[
                     {
                         "name": f"{org['verboseName']} ({org['name']})",
@@ -78,7 +76,9 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
                     match = o
             if not match:
                 console.error(
-                    f"Unable to find namespace [bold]'{organization}'[/bold] in user's available organizations"
+                    f"No organization with ID [bold]'{organization}'[/bold].\n"
+                    f"[dim]Run [bold]{PIPECAT_CLI_NAME} organizations list[/bold] "
+                    f"to see available IDs.[/dim]"
                 )
                 raise typer.Exit(1)
             selected_org = match["name"], match["verboseName"]
@@ -88,7 +88,7 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
 
         console.success(
             f"Current organization set to [bold green]{selected_org[1]} [dim]({selected_org[0]})[/dim][/bold green]\n"
-            f"[dim]Default namespace updated in {user_config_path}[/dim]"
+            f"[dim]Default organization updated in {user_config_path}[/dim]"
         )
     except typer.Exit:
         raise
@@ -103,9 +103,7 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
 async def list_organizations():
     current_org = config.get("org")
 
-    with console.status(
-        "[dim]Retrieve user namespace / organization data...[/dim]", spinner="dots"
-    ):
+    with console.status("[dim]Retrieve user organization data...[/dim]", spinner="dots"):
         org_list, error = await API.organizations()
 
         if error:
@@ -113,7 +111,7 @@ async def list_organizations():
 
     if not org_list or not len(org_list):
         console.error(
-            "No namespaces associated with user account. Please complete onboarding via the dashboard.",
+            "No organizations associated with user account. Please complete onboarding via the dashboard.",
             subtitle=config.get("dashboard_host"),
         )
         raise typer.Exit(1)
@@ -124,7 +122,7 @@ async def list_organizations():
 
     if not console.rich_output:
         console.print_records(
-            ["Organization", "Name", "Active"],
+            ["Organization Name", "Organization ID", "Active"],
             [
                 (
                     org["verboseName"],
@@ -137,16 +135,21 @@ async def list_organizations():
         return
 
     table = Table(border_style="dim", box=box.SIMPLE, show_edge=True, show_lines=False)
-    table.add_column("Organization", style="white")
-    table.add_column("Name", style="white")
+    # `verboseName` is the display string; `name` is the unique slug used in
+    # API paths, the k8s namespace, and `--organization`.
+    table.add_column("Organization Name", style="white")
+    table.add_column("Organization ID", style="white")
+    # The active marker gets its own column so the ID cell holds nothing but
+    # the value `--organization` accepts.
+    table.add_column("Active", style="white")
     for org in org_list:
-        if current_org and org["name"] == current_org:
-            table.add_row(
-                f"[cyan bold]{org['verboseName']}[/cyan bold]",
-                f"[cyan bold]{org['name']} (active)[/cyan bold]",
-            )
-        else:
-            table.add_row(org["verboseName"], org["name"])
+        active = bool(current_org and org["name"] == current_org)
+        table.add_row(
+            org["verboseName"],
+            org["name"],
+            "active" if active else "",
+            style="cyan bold" if active else None,
+        )
 
     console.success(table, title_extra=f"{len(org_list)} results")
 
@@ -301,7 +304,7 @@ async def create_key(
 
     if not console.rich_output:
         console.print_records(
-            ["Name", "Key", "Organization"],
+            ["Name", "Key", "Organization ID"],
             [(api_key_name, data["key"], org)],
         )
         return
@@ -314,7 +317,7 @@ async def create_key(
     )
     table.add_column("Name")
     table.add_column("Key")
-    table.add_column("Organization")
+    table.add_column("Organization ID")
 
     table.add_row(
         api_key_name,
@@ -322,7 +325,10 @@ async def create_key(
         org,
     )
 
-    console.success(table, subtitle="Using as default in local config")
+    console.success(
+        table,
+        subtitle="Using as default in local config" if make_active else None,
+    )
 
 
 async def _revoke_key_flow(organization: str | None) -> None:

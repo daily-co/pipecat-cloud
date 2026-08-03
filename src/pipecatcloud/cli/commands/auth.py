@@ -443,7 +443,7 @@ async def login():
         account_name, account_name_verbose = await _get_account_org(access_token, active_org)
         if account_name is None:
             console.error(
-                "Account has no associated namespace. "
+                "Account has no associated organization. "
                 "Have you completed the onboarding process? "
                 "Please first sign in via the web dashboard."
             )
@@ -543,7 +543,7 @@ async def _use_pat_impl(token: str):
             account_name, account_name_verbose = await _get_account_org(token, active_org)
             if account_name is None:
                 console.error(
-                    "Token is valid but account has no associated namespace. "
+                    "Token is valid but account has no associated organization. "
                     "Have you completed the onboarding process?"
                 )
                 raise typer.Exit(1)
@@ -597,7 +597,7 @@ async def whomai():
             if error:
                 raise typer.Exit(1)
 
-            live.update("[dim]Requesting user namespace / organization data...[/dim]")
+            live.update("[dim]Requesting user organization data...[/dim]")
 
             # Retrieve default user organization. The API wrapper already
             # reported the error (create_api_method calls print_error), so

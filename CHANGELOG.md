@@ -47,10 +47,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code `2` when stdin is not a terminal, pointing at the bypass flag
   (`--yes`/`--force`/`--skip`), instead of hanging or misbehaving in CI.
 
+- `organizations list` and `organizations keys create` label their
+  organization columns **Organization Name** (the display name) and
+  **Organization ID** (the identifier `--organization` takes), matching
+  the dashboard. The values are unchanged, as is `--output json`, which
+  emits the server's own field names. Scripts scraping the previous
+  `Organization` / `Name` headers out of table output need updating. In
+  `organizations list`, the active-organization marker moved to its own
+  `Active` column, so the ID column holds nothing but the identifier.
+
+- CLI messages call an organization an "organization" rather than a
+  "namespace". The Kubernetes namespace an organization maps to is an
+  implementation detail, so messages about missing agents, secret sets,
+  or accounts now name the organization. `organizations select` reports
+  an unmatched `--organization` value as an unknown organization ID and
+  points at `organizations list`.
+
 ### Deprecated
 
 - `spend-limit show --json` still works but is now an alias for the global
   `--output json` mode.
+
+### Fixed
+
+- `organizations keys create` no longer reports a new key as "Using as
+  default in local config" when it was not stored as the default. The
+  panel carries that note only when the key actually became the default.
 
 ## [1.0.1] - 2026-07-13
 

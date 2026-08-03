@@ -136,7 +136,7 @@ async def list_agents(
 
         if not data or len(data) == 0:
             console.error(
-                f"[red]No agents found for namespace / organization '{org}'[/red]\n\n"
+                f"[red]No agents found for organization '{org}'[/red]\n\n"
                 f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]"
             )
             raise typer.Exit(1)
@@ -835,7 +835,7 @@ async def delete(
             raise typer.Exit(1)
 
         if not data:
-            console.error(f"Agent '{agent_name}' not found in namespace / organization '{org}'")
+            console.error(f"Agent '{agent_name}' not found in organization '{org}'")
             raise typer.Exit(1)
 
         console.success(f"Agent '{agent_name}' deleted successfully")
