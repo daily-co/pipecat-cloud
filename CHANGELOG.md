@@ -51,8 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   organization columns **Organization Name** (the display name) and
   **Organization ID** (the identifier `--organization` takes), matching
   the dashboard. The values are unchanged, as is `--output json`, which
-  emits the server's own field names. Scripts parsing the previous
-  `Organization` / `Name` headers out of `--output plain` need updating.
+  emits the server's own field names. Scripts scraping the previous
+  `Organization` / `Name` headers out of table output need updating. In
+  `organizations list`, the active-organization marker moved to its own
+  `Active` column, so the ID column holds nothing but the identifier.
 
 - CLI messages call an organization an "organization" rather than a
   "namespace". The Kubernetes namespace an organization maps to is an

@@ -39,6 +39,18 @@ class TestOrganizationColumnLabels:
         assert "Organization Name" in result.output
         assert "Organization ID" in result.output
 
+    def test_rich_id_cell_holds_only_the_identifier(self):
+        # conftest pins the active org to "test-org". The active marker must
+        # not end up inside the cell users copy into --organization.
+        with patch("pipecatcloud.cli.commands.organizations.API") as mock_api:
+            mock_api.organizations = AsyncMock(return_value=(ORG_LIST_PAYLOAD, None))
+            result = runner.invoke(
+                entrypoint_cli_typer, ["--output", "rich", "organizations", "list"]
+            )
+        assert result.exit_code == 0
+        assert "test-org (active)" not in result.output
+        assert "active" in result.output
+
     def test_plain_list_labels_both_columns(self):
         with patch("pipecatcloud.cli.commands.organizations.API") as mock_api:
             mock_api.organizations = AsyncMock(return_value=(ORG_LIST_PAYLOAD, None))

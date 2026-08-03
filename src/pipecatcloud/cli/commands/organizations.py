@@ -139,14 +139,17 @@ async def list_organizations():
     # API paths, the k8s namespace, and `--organization`.
     table.add_column("Organization Name", style="white")
     table.add_column("Organization ID", style="white")
+    # The active marker gets its own column so the ID cell holds nothing but
+    # the value `--organization` accepts.
+    table.add_column("Active", style="white")
     for org in org_list:
-        if current_org and org["name"] == current_org:
-            table.add_row(
-                f"[cyan bold]{org['verboseName']}[/cyan bold]",
-                f"[cyan bold]{org['name']} (active)[/cyan bold]",
-            )
-        else:
-            table.add_row(org["verboseName"], org["name"])
+        active = bool(current_org and org["name"] == current_org)
+        table.add_row(
+            org["verboseName"],
+            org["name"],
+            "active" if active else "",
+            style="cyan bold" if active else None,
+        )
 
     console.success(table, title_extra=f"{len(org_list)} results")
 
