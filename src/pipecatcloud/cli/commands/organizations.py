@@ -324,7 +324,10 @@ async def create_key(
         org,
     )
 
-    console.success(table, subtitle="Using as default in local config")
+    console.success(
+        table,
+        subtitle="Using as default in local config" if make_active else None,
+    )
 
 
 async def _revoke_key_flow(organization: str | None) -> None:

@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `spend-limit show --json` still works but is now an alias for the global
   `--output json` mode.
 
+### Fixed
+
+- `organizations keys create` no longer reports a new key as "Using as
+  default in local config" when it was not stored as the default. The
+  panel carries that note only when the key actually became the default.
+
 ## [1.0.1] - 2026-07-13
 
 ### Fixed
