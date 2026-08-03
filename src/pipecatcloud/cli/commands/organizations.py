@@ -124,7 +124,7 @@ async def list_organizations():
 
     if not console.rich_output:
         console.print_records(
-            ["Organization", "Name", "Active"],
+            ["Organization Name", "Organization ID", "Active"],
             [
                 (
                     org["verboseName"],
@@ -137,8 +137,10 @@ async def list_organizations():
         return
 
     table = Table(border_style="dim", box=box.SIMPLE, show_edge=True, show_lines=False)
-    table.add_column("Organization", style="white")
-    table.add_column("Name", style="white")
+    # `verboseName` is the display string; `name` is the unique slug used in
+    # API paths, the k8s namespace, and `--organization`.
+    table.add_column("Organization Name", style="white")
+    table.add_column("Organization ID", style="white")
     for org in org_list:
         if current_org and org["name"] == current_org:
             table.add_row(
@@ -301,7 +303,7 @@ async def create_key(
 
     if not console.rich_output:
         console.print_records(
-            ["Name", "Key", "Organization"],
+            ["Name", "Key", "Organization ID"],
             [(api_key_name, data["key"], org)],
         )
         return
@@ -314,7 +316,7 @@ async def create_key(
     )
     table.add_column("Name")
     table.add_column("Key")
-    table.add_column("Organization")
+    table.add_column("Organization ID")
 
     table.add_row(
         api_key_name,

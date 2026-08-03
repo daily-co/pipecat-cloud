@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code `2` when stdin is not a terminal, pointing at the bypass flag
   (`--yes`/`--force`/`--skip`), instead of hanging or misbehaving in CI.
 
+- `organizations list` and `organizations keys create` label their
+  organization columns **Organization Name** (the display name) and
+  **Organization ID** (the identifier `--organization` takes), matching
+  the dashboard. The values are unchanged, as is `--output json`, which
+  emits the server's own field names. Scripts parsing the previous
+  `Organization` / `Name` headers out of `--output plain` need updating.
+
 ### Deprecated
 
 - `spend-limit show --json` still works but is now an alias for the global
