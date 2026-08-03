@@ -54,6 +54,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   emits the server's own field names. Scripts parsing the previous
   `Organization` / `Name` headers out of `--output plain` need updating.
 
+- CLI messages call an organization an "organization" rather than a
+  "namespace". The Kubernetes namespace an organization maps to is an
+  implementation detail, so messages about missing agents, secret sets,
+  or accounts now name the organization. `organizations select` reports
+  an unmatched `--organization` value as an unknown organization ID and
+  points at `organizations list`.
+
 ### Deprecated
 
 - `spend-limit show --json` still works but is now an alias for the global

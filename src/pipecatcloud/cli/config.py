@@ -142,7 +142,7 @@ def update_user_config(
         if additional_data:
             existing_config[active_org].update(additional_data)
     elif additional_data:
-        raise ValueError("Attempt to store additional data without specifying namespace")
+        raise ValueError("Attempt to store additional data without specifying organization")
 
     try:
         _write_user_config(existing_config)

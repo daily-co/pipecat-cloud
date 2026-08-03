@@ -318,7 +318,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             if not secrets_exist:
                 live.stop()
                 console.error(
-                    f"Secret set [bold]'{params.secret_set}'[/bold] not found in namespace [bold]'{org}'[/bold]"
+                    f"Secret set [bold]'{params.secret_set}'[/bold] not found in organization [bold]'{org}'[/bold]"
                 )
                 raise typer.Exit(1)
 
@@ -344,7 +344,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             if not creds_exist:
                 live.stop()
                 console.error(
-                    f"Image pull secret with name [bold]'{params.image_credentials}'[/bold] not found in namespace [bold]'{org}'[/bold]"
+                    f"Image pull secret with name [bold]'{params.image_credentials}'[/bold] not found in organization [bold]'{org}'[/bold]"
                 )
                 raise typer.Exit(1)
 

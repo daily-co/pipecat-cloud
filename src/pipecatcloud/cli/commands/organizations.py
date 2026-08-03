@@ -40,9 +40,7 @@ organization_cli.add_typer(properties_cli)
 async def select(organization: str = typer.Option(None, "--organization", "-o")):
     current_org = config.get("org")
 
-    with console.status(
-        "[dim]Retrieve user namespace / organization data...[/dim]", spinner="dots"
-    ):
+    with console.status("[dim]Retrieve user organization data...[/dim]", spinner="dots"):
         org_list, error = await API.organizations()
 
         if error:
@@ -54,7 +52,7 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
             console.require_interactive("--organization")
             # Prompt user to select organization
             value = await questionary.select(
-                "Select default namespace / organization",
+                "Select default organization",
                 choices=[
                     {
                         "name": f"{org['verboseName']} ({org['name']})",
@@ -78,7 +76,9 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
                     match = o
             if not match:
                 console.error(
-                    f"Unable to find namespace [bold]'{organization}'[/bold] in user's available organizations"
+                    f"No organization with ID [bold]'{organization}'[/bold].\n"
+                    f"[dim]Run [bold]{PIPECAT_CLI_NAME} organizations list[/bold] "
+                    f"to see available IDs.[/dim]"
                 )
                 raise typer.Exit(1)
             selected_org = match["name"], match["verboseName"]
@@ -88,7 +88,7 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
 
         console.success(
             f"Current organization set to [bold green]{selected_org[1]} [dim]({selected_org[0]})[/dim][/bold green]\n"
-            f"[dim]Default namespace updated in {user_config_path}[/dim]"
+            f"[dim]Default organization updated in {user_config_path}[/dim]"
         )
     except typer.Exit:
         raise
@@ -103,9 +103,7 @@ async def select(organization: str = typer.Option(None, "--organization", "-o"))
 async def list_organizations():
     current_org = config.get("org")
 
-    with console.status(
-        "[dim]Retrieve user namespace / organization data...[/dim]", spinner="dots"
-    ):
+    with console.status("[dim]Retrieve user organization data...[/dim]", spinner="dots"):
         org_list, error = await API.organizations()
 
         if error:
@@ -113,7 +111,7 @@ async def list_organizations():
 
     if not org_list or not len(org_list):
         console.error(
-            "No namespaces associated with user account. Please complete onboarding via the dashboard.",
+            "No organizations associated with user account. Please complete onboarding via the dashboard.",
             subtitle=config.get("dashboard_host"),
         )
         raise typer.Exit(1)

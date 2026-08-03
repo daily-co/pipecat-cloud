@@ -416,7 +416,7 @@ async def list_sets(
                     f"No secrets sets with name [bold]'{name}'[/bold] found in [bold]'{org}'[/bold]"
                 )
             else:
-                console.error(f"No secrets sets for namespace / organization [bold]'{org}'[/bold]")
+                console.error(f"No secret sets for organization [bold]'{org}'[/bold]")
             raise typer.Exit(1)
 
         if name:
@@ -460,7 +460,7 @@ async def list_sets(
             filtered_sets = [s for s in data if show_all or s["type"] != "imagePullSecret"]
 
             if not filtered_sets or not len(filtered_sets):
-                console.error(f"No secret sets in namespace / organization [bold]'{org}'[/bold]")
+                console.error(f"No secret sets in organization [bold]'{org}'[/bold]")
                 raise typer.Exit(1)
 
             if console.json_output:
