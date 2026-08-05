@@ -41,7 +41,7 @@ dev = [
     "pytest>=9.0.0,<10",
     "pytest-asyncio>=1.0.0,<2",
     "ruff>=0.12.11,<1",
-    "setuptools~=78.1.1",
+    "setuptools>=83.0.0,<84",
     "setuptools_scm~=8.3.1",
     # Needed to import/test pipecatcloud.agent (the optional pipecat surface).
     "pipecat-ai>=1.0.0",
