@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built for one architecture, so it schedules on matching nodes instead of
   failing at startup. The choice is validated against the target region's
   supported architectures before anything uploads, when the API advertises
-  them. `pipecat cloud agent status` shows the deployment's architecture.
+  them. `pipecat cloud regions list` shows each region's supported and
+  default architectures (Daily-hosted regions are arm64-only today), and
+  `pipecat cloud agent status` shows the deployment's architecture.
 
 - Explicit agent sizing for **enterprise (self-hosted) regions**. Deploys can
   now state resources directly instead of selecting an agent profile:

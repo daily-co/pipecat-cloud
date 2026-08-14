@@ -641,8 +641,9 @@ def create_deploy_command(app: typer.Typer):
             "--architecture",
             help=(
                 "CPU architecture the agent image requires (amd64 or arm64). "
-                "Omitted, the region's default applies. Must match how the "
-                "image was built."
+                "Omitted, the region's default applies. Regions support "
+                "specific architectures — see 'regions list'. Must match how "
+                "the image was built."
             ),
             rich_help_panel="Deployment Configuration",
         ),
