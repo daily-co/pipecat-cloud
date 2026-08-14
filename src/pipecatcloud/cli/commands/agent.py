@@ -272,6 +272,15 @@ async def status(
                 str(agent_profile),
             )
 
+        # The architecture the deployment pinned (PCC-1105) — which nodes it
+        # schedules on and which image platform was resolved.
+        arch = data.get("deployment", {}).get("manifest", {}).get("spec", {}).get("arch")
+        if arch:
+            deployment_table.add_row(
+                "[bold]Architecture:[/bold]",
+                str(arch),
+            )
+
         # Resolved sizing from the deployment manifest. For an agent deployed
         # with explicit resources (enterprise regions), there is no profile —
         # this row is its only visible sizing.

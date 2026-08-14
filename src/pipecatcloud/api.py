@@ -560,6 +560,10 @@ class _API:
             "forceRedeploy": deploy_config.force_redeploy or None,
             "websocketAuth": deploy_config.websocket_auth,
             "maxSessionDuration": deploy_config.max_session_duration,
+            # The field name is `architecture` — the API silently drops
+            # unknown keys, so a wrong name here schedules on the region
+            # default and exec-format-errors (the PCC-1105 incident).
+            "architecture": deploy_config.architecture,
         }
 
         # Use either build_id (cloud build) or image (user-provided)

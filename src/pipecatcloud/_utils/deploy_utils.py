@@ -394,6 +394,9 @@ class DeployConfigParams:
     force_redeploy: bool = False
     websocket_auth: str | None = None
     max_session_duration: int | None = None
+    # CPU architecture the agent image requires (PCC-1105). Exactly the
+    # kubernetes.io/arch vocabulary; omitted = the region's default.
+    architecture: str | None = None
 
     def __attrs_post_init__(self):
         if self.image is not None and ":" not in self.image:
@@ -407,6 +410,8 @@ class DeployConfigParams:
         # regions). The API enforces this too; failing here is just faster.
         if self.agent_profile is not None and self.resources.is_set():
             raise ValueError("Cannot specify both 'agent_profile' and 'resources'")
+        if self.architecture is not None and self.architecture not in ("amd64", "arm64"):
+            raise ValueError("architecture must be 'amd64' or 'arm64'")
 
     def to_dict(self):
         return {
@@ -424,6 +429,7 @@ class DeployConfigParams:
             "krisp_viva": self.krisp_viva.to_dict() if self.krisp_viva else None,
             "websocket_auth": self.websocket_auth,
             "max_session_duration": self.max_session_duration,
+            "architecture": self.architecture,
         }
 
 
@@ -481,6 +487,7 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             "websocket_auth",
             "max_session_duration",
             "resources",
+            "architecture",
         }
 
         # TODO: Remove this enable_krisp migration hint in the 2.0.0 release.
