@@ -53,10 +53,10 @@ async def test_reference_api_error_exits_nonzero(reference_mocks):
     """Server-side rejections (secret missing, cloud region, unreachable) exit 1."""
     reference_mocks.secrets_reference = AsyncMock(return_value=(None, {"code": "400"}))
 
-    result = await reference_secret.aio(name="nope", region="onprem-a", organization="acme")
+    with pytest.raises(typer.Exit) as excinfo:
+        await reference_secret.aio(name="nope", region="onprem-a", organization="acme")
 
-    assert isinstance(result, typer.Exit)
-    assert result.exit_code == 1
+    assert excinfo.value.exit_code == 1
 
 
 @pytest.mark.asyncio
@@ -76,10 +76,10 @@ async def test_invalid_region_rejected_client_side():
     ):
         mock_api.secrets_reference = AsyncMock()
 
-        result = await reference_secret.aio(name="bot-keys", region="bogus", organization="acme")
+        with pytest.raises(typer.Exit) as excinfo:
+            await reference_secret.aio(name="bot-keys", region="bogus", organization="acme")
 
-        assert isinstance(result, typer.Exit)
-        assert result.exit_code == 1
+        assert excinfo.value.exit_code == 1
         mock_api.secrets_reference.assert_not_awaited()
 
 

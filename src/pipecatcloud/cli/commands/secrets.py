@@ -720,7 +720,7 @@ async def reference_secret(
         console.print(
             f"[red]Error: Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
         )
-        return typer.Exit(1)
+        raise typer.Exit(1)
 
     with console.status(
         f"[dim]Verifying secret [bold]'{name}'[/bold] exists in [bold]{region}[/bold][/dim]",
@@ -729,7 +729,7 @@ async def reference_secret(
         data, error = await API.secrets_reference(name=name, region=region, org=org)
 
         if error:
-            return typer.Exit(1)
+            raise typer.Exit(1)
 
     set_type = (data or {}).get("type")
     type_info = " (image pull secret)" if set_type == "imagePullSecret" else ""
