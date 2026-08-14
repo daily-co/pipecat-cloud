@@ -301,6 +301,66 @@ class KrispVivaConfig:
         return {"audio_filter": self.audio_filter}
 
 
+# Mirrors the server-side k8s quantity validation (positive decimal + optional
+# suffix). Kept client-side so a typo fails before any network round-trip.
+K8S_QUANTITY_PATTERN = r"^[0-9]+(\.[0-9]+)?(m|k|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$"
+
+
+@dataclass
+class ResourcesConfig:
+    """Explicit sizing for agents in enterprise (self-hosted) regions.
+
+    Mutually exclusive with agent_profile: a deploy either references a named
+    profile or states cpu/memory directly. Only accepted by the API for
+    services in self-hosted regions.
+    """
+
+    cpu: str | None = None
+    memory: str | None = None
+
+    def __attrs_post_init__(self):
+        import re
+
+        if (self.cpu is None) != (self.memory is None):
+            raise ValueError("resources requires both 'cpu' and 'memory'")
+        for name, value in (("cpu", self.cpu), ("memory", self.memory)):
+            if value is not None and not re.match(K8S_QUANTITY_PATTERN, str(value)):
+                raise ValueError(
+                    f"Invalid {name} quantity '{value}' (expected e.g. '500m', '2', '4Gi')"
+                )
+
+    def is_set(self) -> bool:
+        return self.cpu is not None
+
+    def to_dict(self):
+        return {"cpu": self.cpu, "memory": self.memory}
+
+
+def parse_resources_option(value: str) -> "ResourcesConfig":
+    """Parse the --resources CLI value ("cpu=2,memory=4Gi") into a ResourcesConfig.
+
+    Raises ValueError with a specific message on malformed input (unknown keys,
+    missing cpu/memory, bad quantities) so the caller can surface exactly what
+    was wrong rather than a generic usage error.
+    """
+    parts: dict[str, str] = {}
+    for chunk in value.split(","):
+        key, sep, val = chunk.partition("=")
+        if not sep or not val.strip():
+            raise ValueError(
+                f"Malformed --resources segment '{chunk.strip()}'. "
+                "Expected key=value pairs, e.g. cpu=2,memory=4Gi"
+            )
+        parts[key.strip()] = val.strip()
+    if set(parts.keys()) != {"cpu", "memory"}:
+        raise ValueError(
+            "--resources requires exactly 'cpu' and 'memory', "
+            f"got: {', '.join(sorted(parts.keys())) or 'nothing'}"
+        )
+    # ResourcesConfig raises its own specific ValueError for bad quantities.
+    return ResourcesConfig(cpu=parts["cpu"], memory=parts["memory"])
+
+
 @dataclass
 class BuildConfig:
     """Configuration for cloud builds."""
@@ -329,6 +389,7 @@ class DeployConfigParams:
     docker_config: dict = field(factory=dict)
     build_config: BuildConfig = field(factory=BuildConfig)  # Cloud build configuration
     agent_profile: str | None = None
+    resources: ResourcesConfig = field(factory=ResourcesConfig)
     krisp_viva: KrispVivaConfig = field(factory=KrispVivaConfig)
     force_redeploy: bool = False
     websocket_auth: str | None = None
@@ -342,6 +403,10 @@ class DeployConfigParams:
             raise ValueError("Cannot specify both 'image' and 'build_id'")
         if self.max_session_duration is not None and not 60 <= self.max_session_duration <= 14400:
             raise ValueError("max_session_duration must be between 60 and 14400 seconds")
+        # Sizing is one of: a named profile, or explicit resources (enterprise
+        # regions). The API enforces this too; failing here is just faster.
+        if self.agent_profile is not None and self.resources.is_set():
+            raise ValueError("Cannot specify both 'agent_profile' and 'resources'")
 
     def to_dict(self):
         return {
@@ -355,6 +420,7 @@ class DeployConfigParams:
             "docker_config": self.docker_config,
             "build_config": self.build_config.to_dict() if self.build_config else None,
             "agent_profile": self.agent_profile,
+            "resources": self.resources.to_dict() if self.resources.is_set() else None,
             "krisp_viva": self.krisp_viva.to_dict() if self.krisp_viva else None,
             "websocket_auth": self.websocket_auth,
             "max_session_duration": self.max_session_duration,
@@ -385,6 +451,10 @@ def load_deploy_config_file() -> DeployConfigParams | None:
         krisp_viva_data = config_data.pop("krisp_viva", {})
         krisp_viva_config = KrispVivaConfig(**krisp_viva_data)
 
+        # Extract explicit resources if present (enterprise regions)
+        resources_data = config_data.pop("resources", {})
+        resources_config = ResourcesConfig(**resources_data)
+
         # Extract build configuration if present
         build_data = config_data.pop("build", {})
         exclude_data = build_data.pop("exclude", {})
@@ -410,6 +480,7 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             "krisp_viva",
             "websocket_auth",
             "max_session_duration",
+            "resources",
         }
 
         # TODO: Remove this enable_krisp migration hint in the 2.0.0 release.
@@ -429,6 +500,7 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             docker_config=docker_data,
             build_config=build_config,
             krisp_viva=krisp_viva_config,
+            resources=resources_config,
         )
 
         return validated_config

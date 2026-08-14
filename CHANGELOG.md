@@ -5,6 +5,37 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Explicit agent sizing for **enterprise (self-hosted) regions**. Deploys can
+  now state resources directly instead of selecting an agent profile:
+  `pipecat cloud deploy --resources cpu=2,memory=4Gi`, or a `[resources]`
+  section in `pcc-deploy.toml` with `cpu` and `memory` keys. Explicit
+  resources and `--profile` are mutually exclusive, and the API accepts
+  explicit resources only for agents in self-hosted regions.
+
+- `pipecat cloud agent status` now shows the agent's resolved resources
+  (cpu/memory) from the deployment. For agents deployed with explicit
+  resources rather than a profile, this is the sizing surface.
+
+- New `pipecat cloud agent profiles` command group. `list` shows the platform
+  catalog plus any profiles your organization has defined; `create`, `update`,
+  `disable`, and `enable` manage organization-defined profiles for self-hosted
+  regions. Profile edits apply to future deploys only: running agents keep the
+  resources their deployment captured. Disabling is reversible: a disabled
+  profile can't be selected for new deploys until re-enabled.
+
+- New `pipecat cloud secrets reference <name> --region <region>` command for
+  **self-hosted regions**. It registers an existing Kubernetes Secret from your
+  workloads namespace as a secret set, so agents can use it by set name exactly
+  as they use managed sets, and the Kubernetes Secret's name becomes the secret
+  set name. The secret stays in your cluster: Pipecat Cloud records only its
+  name, region, and readiness, never its values or keys, and you keep managing
+  its contents with your own tooling such as `kubectl`. `--region` is required
+  and must name a self-hosted region; cloud regions are rejected.
+
 ## [1.1.0] - 2026-08-05
 
 ### Added
