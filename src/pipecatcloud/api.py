@@ -755,6 +755,115 @@ class _API:
         """
         return self.create_api_method(self._regions)
 
+    # Self-hosted region lifecycle (PCC-1103). Registration is an
+    # omit-preserves upsert: fields absent from the payload keep their stored
+    # values on the server.
+
+    async def _region_register(self, org: str, payload: dict) -> dict:
+        url = self.construct_api_url("regions_path").format(org=org)
+        return await self._base_request("POST", url, json=payload) or {}
+
+    @property
+    def region_register(self):
+        """Register or update a self-hosted region (omit-preserves upsert).
+        Args:
+            org: Organization ID
+            payload: owner-declared fields (regionKey required; workloadsNamespace,
+                supportedArchitectures, defaultArchitecture, wsPublicEndpoint,
+                displayName all optional — omitted fields are preserved)
+        Returns:
+            The full region record.
+        """
+        return self.create_api_method(self._region_register)
+
+    async def _region_get(self, org: str, region_key: str) -> dict | None:
+        url = f"{self.construct_api_url('regions_path').format(org=org)}/{region_key}"
+        return await self._base_request("GET", url, not_found_is_empty=True)
+
+    @property
+    def region_get(self):
+        """Fetch one self-hosted region's full record (enrollment status,
+        intermediate expiry, ws endpoint, architectures, workloads namespace).
+        Args:
+            org: Organization ID
+            region_key: the region's key
+        """
+        return self.create_api_method(self._region_get)
+
+    async def _region_delete(self, org: str, region_key: str, force: bool = False) -> dict | None:
+        url = f"{self.construct_api_url('regions_path').format(org=org)}/{region_key}"
+        if force:
+            url += "?force=true"
+        return await self._base_request("DELETE", url)
+
+    @property
+    def region_delete(self):
+        """Revoke a self-hosted region. Without force the server refuses (409)
+        while the region has live sessions or deployed services.
+        Args:
+            org: Organization ID
+            region_key: the region's key
+            force: bypass the live-workload guard
+        """
+        return self.create_api_method(self._region_delete)
+
+    async def _region_enroll_token(self, org: str, region_key: str) -> dict:
+        url = f"{self.construct_api_url('regions_path').format(org=org)}/{region_key}/enrollment-tokens"
+        return await self._base_request("POST", url, json={}) or {}
+
+    @property
+    def region_enroll_token(self):
+        """Mint a one-time enrollment token for a self-hosted region. The
+        token is returned exactly once.
+        Args:
+            org: Organization ID
+            region_key: the region's key
+        """
+        return self.create_api_method(self._region_enroll_token)
+
+    # Registry pull keys (PCC-1082/PCC-1103): org-scoped, pull-only
+    # credentials for fetching the region package chart from the registry.
+
+    async def _registry_keys(self, org: str) -> dict:
+        url = self.construct_api_url("registry_keys_path").format(org=org)
+        return await self._base_request("GET", url) or {}
+
+    @property
+    def registry_keys(self):
+        """List the organization's registry keys (names and lifecycle
+        metadata only — key material is shown once, at mint).
+        Args:
+            org: Organization ID
+        """
+        return self.create_api_method(self._registry_keys)
+
+    async def _registry_key_mint(self, org: str, name: str) -> dict:
+        url = self.construct_api_url("registry_keys_path").format(org=org)
+        return await self._base_request("POST", url, json={"name": name}) or {}
+
+    @property
+    def registry_key_mint(self):
+        """Mint a registry pull key. The key material in the response is
+        shown exactly once and cannot be retrieved again.
+        Args:
+            org: Organization ID
+            name: human label for the key (the API requires one)
+        """
+        return self.create_api_method(self._registry_key_mint)
+
+    async def _registry_key_revoke(self, org: str, key_id: str) -> dict | None:
+        url = f"{self.construct_api_url('registry_keys_path').format(org=org)}/{key_id}"
+        return await self._base_request("DELETE", url)
+
+    @property
+    def registry_key_revoke(self):
+        """Revoke a registry key by id.
+        Args:
+            org: Organization ID
+            key_id: the key's id (from registry_keys)
+        """
+        return self.create_api_method(self._registry_key_revoke)
+
     # Organization Properties
 
     async def _properties(self, org: str) -> dict | None:
