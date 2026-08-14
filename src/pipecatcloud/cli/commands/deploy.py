@@ -36,7 +36,12 @@ from pipecatcloud._utils.deploy_utils import (
     parse_resources_option,
     with_deploy_config,
 )
-from pipecatcloud._utils.regions import get_region_codes, validate_region
+from pipecatcloud._utils.regions import (
+    get_region_codes,
+    get_regions,
+    validate_architecture_for_region,
+    validate_region,
+)
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -631,6 +636,17 @@ def create_deploy_command(app: typer.Typer):
             help="Region for service deployment",
             rich_help_panel="Deployment Configuration",
         ),
+        architecture: str = typer.Option(
+            None,
+            "--architecture",
+            help=(
+                "CPU architecture the agent image requires (amd64 or arm64). "
+                "Omitted, the region's default applies. Regions support "
+                "specific architectures — see 'regions list'. Must match how "
+                "the image was built."
+            ),
+            rich_help_panel="Deployment Configuration",
+        ),
         max_session_duration: int | None = typer.Option(
             None,
             "--max-session-duration",
@@ -750,6 +766,27 @@ def create_deploy_command(app: typer.Typer):
                 f"Invalid region '{deploy_region}'. Valid regions are: {', '.join(valid_regions)}"
             )
             raise typer.Exit(1)
+
+        # Architecture (PCC-1105): flag beats toml; vocabulary is exactly
+        # kubernetes.io/arch. Pre-validate against the region's capability
+        # when the regions payload carries it — a deploy-time error here
+        # beats an exec-format crashloop; older APIs defer to the server's
+        # own 400, which names the supported list.
+        partial_config.architecture = architecture or partial_config.architecture
+        if partial_config.architecture is not None:
+            if partial_config.architecture not in ("amd64", "arm64"):
+                console.error(
+                    f"Invalid architecture '{partial_config.architecture}'. "
+                    "Valid values are: amd64, arm64"
+                )
+                raise typer.Exit(1)
+            if deploy_region:
+                arch_error = validate_architecture_for_region(
+                    partial_config.architecture, deploy_region, await get_regions()
+                )
+                if arch_error:
+                    console.error(arch_error)
+                    raise typer.Exit(1)
 
         # Handle Krisp VIVA configuration
         if krisp_viva_audio_filter is not None:

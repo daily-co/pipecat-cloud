@@ -66,3 +66,24 @@ async def validate_region(region: str) -> bool:
     """
     valid_codes = await get_region_codes()
     return region in valid_codes
+
+
+def validate_architecture_for_region(
+    architecture: str, region: str, regions: list[dict]
+) -> str | None:
+    """Pre-validate an architecture choice against a region's capability
+    (PCC-1105). Returns an error message, or None when the choice is valid
+    or cannot be checked locally.
+
+    The regions payload carries ``supported_architectures`` only on newer
+    APIs — when absent, defer to the server's own validation (its 400 names
+    the supported list).
+    """
+    entry = next((r for r in regions if r.get("code") == region), None)
+    supported = (entry or {}).get("supported_architectures")
+    if not supported or architecture in supported:
+        return None
+    return (
+        f"Architecture '{architecture}' is not supported in region '{region}' "
+        f"(supported: {', '.join(supported)})"
+    )
