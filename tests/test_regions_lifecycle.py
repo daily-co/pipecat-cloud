@@ -25,7 +25,7 @@ from pipecatcloud.cli.commands.regions import (
     register_region,
     show_region,
 )
-from pipecatcloud.cli.commands.registry_keys import mint_key, registry_keys_cli
+from pipecatcloud.cli.commands.registry_keys import list_keys, mint_key, registry_keys_cli
 
 
 @pytest.fixture
@@ -170,6 +170,67 @@ async def test_registry_key_mint_reaches_json_output():
         assert out["key"] == "pcc_reg_abc"
         assert "pcc_reg_abc" in out["helmLoginCommand"]
         assert "registry.pipecat.daily.co" in out["helmLoginCommand"]
+
+
+@pytest.mark.asyncio
+async def test_registry_key_list_reads_registry_keys_envelope():
+    """The API's list envelope is `registry_keys`, not `keys` — reading the
+    wrong field renders every org as having no keys (cli#192 review)."""
+    with (
+        patch("pipecatcloud.cli.commands.registry_keys.API") as mock_api,
+        patch("pipecatcloud.cli.commands.registry_keys.console") as mock_console,
+    ):
+        mock_console.json_output = True
+        mock_api.registry_keys = AsyncMock(
+            return_value=({"registry_keys": [{"id": "k1", "name": "ws"}]}, None)
+        )
+
+        await list_keys.aio(organization=None)
+
+        out = mock_console.output_json.call_args.args[0]
+        assert out["keys"] == [{"id": "k1", "name": "ws"}]
+
+
+@pytest.mark.asyncio
+async def test_registry_key_mint_requires_name_when_noninteractive():
+    """The API's mint schema requires a name; without a terminal to prompt in,
+    the CLI must exit 2 before the request instead of collecting a 400."""
+    with (
+        patch("pipecatcloud.cli.commands.registry_keys.API") as mock_api,
+        patch("pipecatcloud.cli.commands.registry_keys.console") as mock_console,
+    ):
+        mock_console.is_terminal = False
+        mock_console.json_output = False
+        mock_api.registry_key_mint = AsyncMock()
+
+        with pytest.raises(typer.Exit) as excinfo:
+            await mint_key.aio(name=None, organization=None)
+        assert excinfo.value.exit_code == 2
+        mock_api.registry_key_mint.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_register_does_not_prompt_in_json_mode(region_mocks):
+    """`--output json` from a terminal is a scripting context: the display-name
+    question must not interrupt it (cli#192 review)."""
+    mock_api, mock_console = region_mocks
+    mock_console.is_terminal = True
+    mock_console.json_output = True
+    mock_api.region_register = AsyncMock(return_value=({}, None))
+
+    with patch("pipecatcloud.cli.commands.regions.questionary") as mock_questionary:
+        await register_region.aio(
+            "acme",
+            workloads_namespace=None,
+            architectures=None,
+            default_architecture=None,
+            ws_public_endpoint=None,
+            display_name=None,
+            organization=None,
+        )
+
+    mock_questionary.text.assert_not_called()
+    assert "displayName" not in mock_api.region_register.await_args.kwargs["payload"]
 
 
 def test_existing_regions_commands_untouched():

@@ -46,6 +46,18 @@ async def mint_key(
 ):
     org = organization or config.get("org")
 
+    # The API requires a name — it's how keys are told apart in `list` and
+    # revoked safely. Prompt when interactive; otherwise require --name.
+    if name is None and console.is_terminal and not console.json_output:
+        answer = await questionary.text(
+            "Name for this key (e.g. acme-us-east-workstation):"
+        ).ask_async()
+        if answer and answer.strip():
+            name = answer.strip()
+    if not name:
+        console.error("A key name is required. Pass --name.")
+        raise typer.Exit(2)
+
     with console.status("[dim]Minting registry key...[/dim]", spinner="dots"):
         data, error = await API.registry_key_mint(org=org, name=name)
         if error:
@@ -88,7 +100,7 @@ async def list_keys(
         if error:
             raise typer.Exit(1)
 
-    keys = (data or {}).get("keys") or []
+    keys = (data or {}).get("registry_keys") or []
     if console.json_output:
         console.output_json({"keys": keys})
         return

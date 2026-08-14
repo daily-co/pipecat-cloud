@@ -837,10 +837,9 @@ class _API:
         """
         return self.create_api_method(self._registry_keys)
 
-    async def _registry_key_mint(self, org: str, name: str | None = None) -> dict:
+    async def _registry_key_mint(self, org: str, name: str) -> dict:
         url = self.construct_api_url("registry_keys_path").format(org=org)
-        payload: dict = {"name": name} if name else {}
-        return await self._base_request("POST", url, json=payload) or {}
+        return await self._base_request("POST", url, json={"name": name}) or {}
 
     @property
     def registry_key_mint(self):
@@ -848,7 +847,7 @@ class _API:
         shown exactly once and cannot be retrieved again.
         Args:
             org: Organization ID
-            name: optional human label for the key
+            name: human label for the key (the API requires one)
         """
         return self.create_api_method(self._registry_key_mint)
 

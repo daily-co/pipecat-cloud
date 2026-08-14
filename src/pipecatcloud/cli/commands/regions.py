@@ -153,7 +153,7 @@ async def register_region(
     # A region without a display name renders as its uppercased key in every
     # picker — worth one interactive question, skippable with Enter (the
     # upsert preserves whatever is stored).
-    if display_name is None and console.is_terminal:
+    if display_name is None and console.is_terminal and not console.json_output:
         answer = await questionary.text(
             "Display name for region pickers (Enter to skip):"
         ).ask_async()
