@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default architectures (Daily-hosted regions are arm64-only today), and
   `pipecat cloud agent status` shows the deployment's architecture.
 
+- Region lifecycle commands for **self-hosted regions**. `pipecat cloud
+  regions register <key>` registers or updates a region (an omit-preserves
+  upsert: options you leave out keep their stored values), with a one-question
+  display-name prompt so region pickers show a friendly name instead of the
+  uppercased key. `regions show <key>` prints the full record, including the
+  enrollment status and intermediate certificate expiry. `regions delete
+  <key>` revokes a region, surfacing the server's refusal while live sessions
+  or deployed services exist; `--force` bypasses both the prompt and the
+  guard. `regions enroll-token <key>` mints the one-time enrollment token and
+  prints the ready-to-paste `kubectl create secret` command.
+
+- New `pipecat cloud organizations registry-keys` command group for the
+  pull-only registry credentials that fetch the region package chart:
+  `mint` (the key is shown exactly once, with the matching
+  `helm registry login` command), `list` (lifecycle metadata only, never key
+  material), and `revoke`. With these plus `regions register` and
+  `regions enroll-token`, a self-hosted region's control-plane setup needs no
+  raw API calls.
+
 - Explicit agent sizing for **enterprise (self-hosted) regions**. Deploys can
   now state resources directly instead of selecting an agent profile:
   `pipecat cloud deploy --resources cpu=2,memory=4Gi`, or a `[resources]`

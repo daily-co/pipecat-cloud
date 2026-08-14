@@ -16,6 +16,7 @@ from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console, stdin_is_interactive
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
+from pipecatcloud.cli.commands.registry_keys import registry_keys_cli
 from pipecatcloud.cli.config import (
     config,
     update_user_config,
@@ -30,6 +31,7 @@ properties_cli = typer.Typer(
     name="properties", help="Organization property management", no_args_is_help=True
 )
 organization_cli.add_typer(keys_cli)
+organization_cli.add_typer(registry_keys_cli)
 organization_cli.add_typer(properties_cli)
 
 
