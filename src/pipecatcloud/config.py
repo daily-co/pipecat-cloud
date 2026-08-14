@@ -37,6 +37,7 @@ _SETTINGS = {
     "api_keys_path": _Setting("/v1/organizations/{org}/apiKeys"),
     "secrets_path": _Setting("/v1/organizations/{org}/secrets"),
     "regions_path": _Setting("/v1/organizations/{org}/regions"),
+    "agent_profiles_path": _Setting("/v1/organizations/{org}/agent-profiles"),
     "properties_path": _Setting("/v1/organizations/{org}/properties"),
     "spend_limit_path": _Setting("/v1/organizations/{org}/spend-limit"),
     "builds_path": _Setting("/v1/organizations/{org}/builds"),

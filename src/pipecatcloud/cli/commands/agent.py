@@ -272,6 +272,16 @@ async def status(
                 str(agent_profile),
             )
 
+        # Resolved sizing from the deployment manifest. For an agent deployed
+        # with explicit resources (enterprise regions), there is no profile —
+        # this row is its only visible sizing.
+        resources = data.get("resources")
+        if resources and isinstance(resources, dict):
+            deployment_table.add_row(
+                "[bold]Resources:[/bold]",
+                f"cpu={resources.get('cpu', 'N/A')}, memory={resources.get('memory', 'N/A')}",
+            )
+
         deployment_table.add_row(
             "[bold]Active Deployment ID:[/bold]",
             str(data.get("activeDeploymentId", "N/A")),

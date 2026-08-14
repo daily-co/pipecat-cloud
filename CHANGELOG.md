@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Explicit agent sizing for **enterprise (self-hosted) regions**. Deploys can
+  now state resources directly instead of selecting an agent profile:
+  `pipecat cloud deploy --resources cpu=2,memory=4Gi`, or a `[resources]`
+  section in `pcc-deploy.toml` with `cpu` and `memory` keys. Explicit
+  resources and `--profile` are mutually exclusive, and the API accepts
+  explicit resources only for agents in self-hosted regions.
+
+- `pipecat cloud agent status` now shows the agent's resolved resources
+  (cpu/memory) from the deployment. For agents deployed with explicit
+  resources rather than a profile, this is the sizing surface.
+
+- New `pipecat cloud agent profiles` command group. `list` shows the platform
+  catalog plus any profiles your organization has defined; `create`, `update`,
+  `disable`, and `enable` manage organization-defined profiles for self-hosted
+  regions. Profile edits apply to future deploys only: running agents keep the
+  resources their deployment captured. Disabling is reversible: a disabled
+  profile can't be selected for new deploys until re-enabled.
+
 - New `pipecat cloud secrets reference <name> --region <region>` command for
   **self-hosted regions**. It registers an existing Kubernetes Secret from your
   workloads namespace as a secret set, so agents can use it by set name exactly
