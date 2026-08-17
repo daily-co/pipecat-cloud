@@ -65,6 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its contents with your own tooling such as `kubectl`. `--region` is required
   and must name a self-hosted region; cloud regions are rejected.
 
+### Fixed
+
+- `pipecat cloud agent status` plain output (`--output plain`, or any piped
+  invocation) now includes the Architecture and Resources rows. Both were
+  rendered only in the rich table, so scripted output silently omitted the
+  deployment's architecture and, for agents sized with explicit resources,
+  their only visible sizing.
+
 ## [1.1.0] - 2026-08-05
 
 ### Added

@@ -226,6 +226,19 @@ async def status(
             console.print(f"{image_label}: {image_value}")
             if data.get("agentProfile"):
                 console.print(f"Agent Profile: {data['agentProfile']}")
+            # Same rows as the rich table below (PCC-1064: plain carries the same
+            # information). Architecture is the deployment's pin (PCC-1105);
+            # Resources is the resolved sizing and, for a profile-less agent on
+            # explicit resources, its only visible sizing (PCC-1063).
+            arch = spec.get("arch")
+            if arch:
+                console.print(f"Architecture: {arch}")
+            resources = data.get("resources")
+            if resources and isinstance(resources, dict):
+                console.print(
+                    f"Resources: cpu={resources.get('cpu', 'N/A')}, "
+                    f"memory={resources.get('memory', 'N/A')}"
+                )
             console.print(f"Active Deployment ID: {data.get('activeDeploymentId', 'N/A')}")
             console.print(f"Created At: {data.get('createdAt', 'N/A')}")
             console.print(f"Updated At: {data.get('updatedAt', 'N/A')}")
