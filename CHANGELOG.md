@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GitHub integration**, at parity with the dashboard. Connect an
+  organization with `pipecat cloud github connect`: it opens the GitHub App
+  install page and waits while the install completes, so there is nothing to
+  copy back into the terminal. `github status` reports the connected account
+  and whether the App is suspended, `github disconnect` removes the
+  installation and every repository link under it, and `github repos` /
+  `github branches <owner/repo>` list what the App can see (`--query` runs the
+  server-side branch search for repositories with more branches than the list
+  returns).
+
+- Agents can be built from a repository instead of an image. `pipecat cloud
+  deploy --repo owner/repo --branch main` creates a GitHub-sourced agent,
+  skipping the image build and push entirely, and follows the first deploy
+  through its build; a `[git]` section in `pcc-deploy.toml` (`repo`, `branch`,
+  `dockerfile_path`, `subdirectory`) does the same, with flags taking
+  precedence. An existing agent's repository is changed with `pipecat cloud
+  agent link <name> --repo owner/repo --branch main` (also `--dockerfile-path`,
+  `--subdirectory` and `--no-auto-deploy`), and removed with `agent unlink`.
+  Linking never changes what is running.
+
+- `pipecat cloud agent deploy <name> --github` builds and deploys the linked
+  branch's current HEAD without waiting for a push, printing the deploy intent
+  and commit. `--wait` follows the deploy to success or failure and exits
+  non-zero when it fails, which makes it usable as a CI step.
+
+- `pipecat cloud agent list` gains a GitHub column, and `agent status` reports
+  the linked repository and branch, the Dockerfile path, whether pushes
+  auto-deploy, the commit actually running, and the latest deploy attempt with
+  its failure reason. A running commit that did not come from the current link
+  (a freshly linked agent, or one whose repository or branch was re-pointed)
+  says so and names where it did come from. `pipecat cloud build status` and
+  `build list` show the repository, ref and commit a build came from.
+
 - Architecture selection on deploy: `pipecat cloud deploy --architecture
   {amd64,arm64}` or an `architecture` key in `pcc-deploy.toml` (the flag
   wins). Omitted, the region's default applies — set it when your image is

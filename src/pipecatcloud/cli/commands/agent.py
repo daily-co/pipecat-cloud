@@ -30,8 +30,19 @@ from pipecatcloud._utils.console_utils import (
 from pipecatcloud._utils.deploy_utils import (
     CONFIG_FILE_OPTION,
     DeployConfigParams,
+    follow_git_deploy,
     format_health_lines,
     with_deploy_config,
+)
+from pipecatcloud._utils.github_utils import (
+    DEFAULT_DOCKERFILE_PATH,
+    binding_summary,
+    describe_deploy,
+    is_running_linked_binding,
+    is_valid_branch_name,
+    is_valid_repo_full_name,
+    ref_to_branch,
+    short_sha,
 )
 from pipecatcloud._utils.regions import get_region_codes, validate_region
 from pipecatcloud.cli import PIPECAT_CLI_NAME
@@ -99,6 +110,49 @@ def _image_display(deployment: dict) -> tuple[str, str]:
     return "Image", "N/A"
 
 
+def _git_status_rows(data: dict) -> list[tuple[str, str]]:
+    """GitHub rows for `agent status`, empty for an agent with no binding.
+
+    Reports the configured binding and what is actually running as separate
+    facts. They disagree in three legitimate states — just linked, repo
+    re-pointed, branch changed — and each means nothing from the binding is
+    live yet, which is worth saying rather than hiding.
+    """
+    git = data.get("git")
+    if not git:
+        return []
+
+    rows = [
+        ("GitHub Repository", str(git.get("repoFullName", "—"))),
+        ("GitHub Branch", str(git.get("branch", "—"))),
+        ("Dockerfile Path", str(git.get("dockerfilePath") or DEFAULT_DOCKERFILE_PATH)),
+    ]
+    if git.get("subdirectory"):
+        rows.append(("Build Subdirectory", str(git["subdirectory"])))
+    rows.append(("Auto-deploy On Push", "yes" if git.get("autoDeploy", True) else "no"))
+
+    deployed = data.get("deployedCommit")
+    if deployed and deployed.get("sha"):
+        running = short_sha(deployed["sha"])
+        repo = deployed.get("repoFullName")
+        if not is_running_linked_binding(git, deployed):
+            # Name the repo/branch it did come from, so "not from the link" is
+            # actionable rather than just a warning.
+            origin = repo or "another repository"
+            ref = deployed.get("ref")
+            if ref:
+                origin = f"{origin}@{ref_to_branch(ref)}"
+            running += f" (from {origin}, not the current link)"
+        rows.append(("Running Commit", running))
+    else:
+        rows.append(("Running Commit", "— (nothing from this link is live yet)"))
+
+    latest = data.get("latestDeploy")
+    if latest:
+        rows.append(("Latest Deploy", describe_deploy(latest)))
+    return rows
+
+
 # ----- Agent Commands -----
 
 
@@ -129,7 +183,9 @@ async def list_agents(
     with console.status(
         f"[dim]Fetching agents for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"
     ):
-        data, error = await API.agents(org=org, region=region)
+        # include=git adds the binding + source per service in one query; an
+        # older API just omits the fields, which renders as "—".
+        data, error = await API.agents(org=org, region=region, include=["git"])
 
         if error:
             raise typer.Exit(1)
@@ -145,7 +201,15 @@ async def list_agents(
             console.output_json({"agents": data})
         elif not console.rich_output:
             console.print_records(
-                ["Name", "Region", "Agent ID", "Active Deployment ID", "Created At", "Updated At"],
+                [
+                    "Name",
+                    "Region",
+                    "Agent ID",
+                    "Active Deployment ID",
+                    "Created At",
+                    "Updated At",
+                    "GitHub",
+                ],
                 [
                     (
                         service["name"],
@@ -154,6 +218,7 @@ async def list_agents(
                         service["activeDeploymentId"],
                         service["createdAt"],
                         service["updatedAt"],
+                        binding_summary(service.get("git")),
                     )
                     for service in data
                 ],
@@ -167,6 +232,7 @@ async def list_agents(
             table.add_column("Active Deployment ID")
             table.add_column("Created At")
             table.add_column("Updated At")
+            table.add_column("GitHub")
 
             for service in data:
                 table.add_row(
@@ -176,6 +242,7 @@ async def list_agents(
                     service["activeDeploymentId"],
                     service["createdAt"],
                     service["updatedAt"],
+                    binding_summary(service.get("git")),
                 )
 
             console.success(
@@ -239,6 +306,8 @@ async def status(
                     f"Resources: cpu={resources.get('cpu', 'N/A')}, "
                     f"memory={resources.get('memory', 'N/A')}"
                 )
+            for label, value in _git_status_rows(data):
+                console.print(f"{label}: {value}")
             console.print(f"Active Deployment ID: {data.get('activeDeploymentId', 'N/A')}")
             console.print(f"Created At: {data.get('createdAt', 'N/A')}")
             console.print(f"Updated At: {data.get('updatedAt', 'N/A')}")
@@ -303,6 +372,9 @@ async def status(
                 "[bold]Resources:[/bold]",
                 f"cpu={resources.get('cpu', 'N/A')}, memory={resources.get('memory', 'N/A')}",
             )
+
+        for label, value in _git_status_rows(data):
+            deployment_table.add_row(f"[bold]{label}:[/bold]", value)
 
         deployment_table.add_row(
             "[bold]Active Deployment ID:[/bold]",
@@ -1197,3 +1269,209 @@ async def stop(
             raise typer.Exit(1)
 
         console.success(f"Session '{session_id}' stopped successfully")
+
+
+# ----- GitHub source (PCC-933) -----
+
+
+def _print_git_binding(git: dict) -> None:
+    rows = [
+        ("Repository", str(git.get("repoFullName", "—"))),
+        ("Branch", str(git.get("branch", "—"))),
+        ("Dockerfile path", str(git.get("dockerfilePath") or DEFAULT_DOCKERFILE_PATH)),
+        ("Subdirectory", str(git.get("subdirectory") or "—")),
+        ("Auto-deploy on push", "yes" if git.get("autoDeploy", True) else "no"),
+    ]
+    if not console.rich_output:
+        console.print_records(["Field", "Value"], rows)
+        return
+    table = Table(show_header=False, box=box.SIMPLE)
+    table.add_column("Field", style="bold")
+    table.add_column("Value")
+    for label, value in rows:
+        table.add_row(label, value)
+    console.print(table)
+
+
+@agent_cli.command(
+    name="link",
+    help="Link an agent to a GitHub repository and branch, or re-point an existing link.",
+)
+@synchronizer.create_blocking
+@requires_login
+async def link(
+    agent_name: str = typer.Argument(..., help="Name of the agent to link e.g. 'my-agent'"),
+    repo: str = typer.Option(..., "--repo", help="Repository as 'owner/repo'"),
+    branch: str = typer.Option(..., "--branch", help="Branch to build and deploy from"),
+    dockerfile_path: str = typer.Option(
+        None,
+        "--dockerfile-path",
+        help=f"Path to the Dockerfile within the repository (default: {DEFAULT_DOCKERFILE_PATH})",
+    ),
+    subdirectory: str = typer.Option(
+        None, "--subdirectory", help="Build context subdirectory within the repository"
+    ),
+    auto_deploy: bool = typer.Option(
+        None,
+        "--auto-deploy/--no-auto-deploy",
+        help="Deploy automatically when the branch is pushed to (default: enabled)",
+    ),
+    organization: str = typer.Option(None, "--organization", "-o"),
+):
+    org = organization or config.get("org")
+
+    # Validate locally first: the same rules the API applies, so a typo fails
+    # before a round-trip rather than after one.
+    if not is_valid_repo_full_name(repo):
+        console.error(f"Invalid repository '{repo}'. Expected the form 'owner/repo'.")
+        raise typer.Exit(1)
+    if not is_valid_branch_name(branch):
+        console.error(
+            f"Invalid branch '{branch}'. A branch must be a valid git ref with no empty or "
+            "dot-only segments."
+        )
+        raise typer.Exit(1)
+
+    # An upsert where omitted optional fields keep their stored value, so only
+    # send what the caller actually asked for. Sending a default here would
+    # silently reset a stored dockerfile path on a branch-only change.
+    payload: dict = {"repoFullName": repo, "branch": branch}
+    if dockerfile_path is not None:
+        payload["dockerfilePath"] = dockerfile_path
+    if subdirectory is not None:
+        payload["subdirectory"] = subdirectory
+    if auto_deploy is not None:
+        payload["autoDeploy"] = auto_deploy
+
+    with console.status(
+        f"[dim]Linking agent [bold]'{agent_name}'[/bold] to [bold]{repo}@{branch}[/bold][/dim]",
+        spinner="dots",
+    ):
+        git_config, error = await API.agent_git_connect(
+            agent_name=agent_name, org=org, payload=payload
+        )
+        if error:
+            raise typer.Exit(1)
+
+    if console.json_output:
+        console.output_json({"gitConfig": git_config or {}})
+        return
+
+    console.success(
+        f"Linked agent '{agent_name}' to {binding_summary(git_config)}.\n"
+        "[dim]Linking does not change what is running. Deploy the branch now with "
+        f"[bold]{PIPECAT_CLI_NAME} agent deploy {agent_name} --github[/bold].[/dim]"
+    )
+    _print_git_binding(git_config or {})
+
+
+@agent_cli.command(name="unlink", help="Remove an agent's GitHub repository link.")
+@synchronizer.create_blocking
+@requires_login
+async def unlink(
+    agent_name: str = typer.Argument(..., help="Name of the agent to unlink"),
+    organization: str = typer.Option(None, "--organization", "-o"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip the confirmation prompt"),
+):
+    org = organization or config.get("org")
+
+    if not force:
+        console.require_interactive("--force")
+        if not await questionary.confirm(
+            f"Remove the GitHub link from agent '{agent_name}'? Pushes stop deploying it. "
+            "The running agent is not touched and its current deployment stays live."
+        ).ask_async():
+            console.print("[bold]Aborting unlink request[/bold]")
+            raise typer.Exit(1)
+
+    with console.status(f"[dim]Unlinking agent [bold]'{agent_name}'[/bold][/dim]", spinner="dots"):
+        _, error = await API.agent_git_disconnect(agent_name=agent_name, org=org)
+        if error:
+            raise typer.Exit(1)
+
+    if console.json_output:
+        console.output_json({"unlinked": agent_name})
+        return
+    console.success(
+        f"Unlinked agent '{agent_name}' from GitHub.\n"
+        "[dim]Its current deployment is still running.[/dim]"
+    )
+
+
+@agent_cli.command(
+    name="deploy",
+    help="Deploy a GitHub-linked agent from its connected branch's current HEAD.",
+)
+@synchronizer.create_blocking
+@requires_login
+async def agent_deploy(
+    agent_name: str = typer.Argument(..., help="Name of the agent to deploy"),
+    github: bool = typer.Option(
+        False,
+        "--github",
+        help="Build and deploy the agent's linked GitHub branch (currently required)",
+    ),
+    wait: bool = typer.Option(False, "--wait", help="Follow the deploy until it succeeds or fails"),
+    organization: str = typer.Option(None, "--organization", "-o"),
+):
+    org = organization or config.get("org")
+
+    # The flag is explicit rather than implied so that adding image-based
+    # deploys under this command later cannot change what an existing script
+    # does. Deploying an image today is still `pipecat cloud deploy`.
+    if not github:
+        console.error(
+            "Pass [bold]--github[/bold] to deploy an agent's linked GitHub branch.\n"
+            f"[dim]To deploy an image or a cloud build, use [bold]{PIPECAT_CLI_NAME} deploy"
+            "[/bold].[/dim]"
+        )
+        raise typer.Exit(1)
+
+    with console.status(
+        f"[dim]Queueing GitHub deploy for [bold]'{agent_name}'[/bold][/dim]", spinner="dots"
+    ):
+        intent, error = await API.agent_git_deploy(agent_name=agent_name, org=org)
+        if error:
+            raise typer.Exit(1)
+
+    if not intent:
+        console.error("The API did not return a deploy intent")
+        raise typer.Exit(1)
+
+    commit = intent.get("commitSha", "")
+    branch = ref_to_branch(intent.get("ref") or "")
+
+    if not console.json_output:
+        console.success(
+            f"Queued deploy of '{agent_name}' from {branch} at commit "
+            f"{short_sha(commit) if commit else 'unknown'}.\n"
+            f"[dim]Deploy intent: {intent.get('id', 'unknown')}[/dim]"
+        )
+
+    if not wait:
+        if console.json_output:
+            console.output_json({"deployIntent": intent})
+        return
+
+    final = await follow_git_deploy(agent_name=agent_name, org=org, commit_sha=commit)
+
+    if console.json_output:
+        console.output_json({"deployIntent": intent, "latestDeploy": final})
+        return
+
+    status_value = (final or {}).get("status")
+    if status_value == "succeeded":
+        console.success(f"Deployed '{agent_name}' from commit {short_sha(commit)}")
+        return
+    if status_value in ("failed", "cancelled"):
+        reason = (final or {}).get("reason") or "No reason reported."
+        console.error(f"Deploy of '{agent_name}' {status_value}.\n{reason}")
+        raise typer.Exit(1)
+    # Ran out of polling budget while the deploy was still moving. That is not
+    # a failure of the deploy, so say what is still true rather than implying
+    # one, and leave the exit code clean.
+    console.print(
+        f"[yellow]Still {status_value or 'in progress'} after waiting. The deploy continues "
+        f"server-side.[/yellow]\n[dim]Check it with [bold]{PIPECAT_CLI_NAME} agent status "
+        f"{agent_name}[/bold].[/dim]"
+    )

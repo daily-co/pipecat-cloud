@@ -29,13 +29,17 @@ from pipecatcloud._utils.deploy_utils import (
     CONFIG_FILE_OPTION,
     BuildConfig,
     DeployConfigParams,
+    GitSourceConfig,
     KrispVivaConfig,
     ResourcesConfig,
     ScalingParams,
+    follow_git_deploy,
     interpret_deployment_status,
     parse_resources_option,
+    validate_git_source_combination,
     with_deploy_config,
 )
+from pipecatcloud._utils.github_utils import short_sha
 from pipecatcloud._utils.regions import (
     get_region_codes,
     get_regions,
@@ -282,6 +286,45 @@ async def _cloud_build_flow(
 # ----- Command
 
 
+async def _report_git_first_deploy(params: DeployConfigParams, org: str) -> None:
+    """Follow the first deploy of a newly created git-sourced agent.
+
+    The create call returns as soon as the agent and its binding exist, so
+    everything the user cares about — the build, then the rollout — happens
+    afterwards and is only visible through the deploy attempt.
+    """
+    console.print(
+        f"[bold cyan]Created[/bold cyan] agent '{params.agent_name}' from "
+        f"{params.git.repo}@{params.git.branch}"
+    )
+
+    # No commit to match on: this is the agent's first attempt, so whatever
+    # attempt exists is the one that was just queued.
+    final = await follow_git_deploy(agent_name=params.agent_name or "", org=org, commit_sha="")
+    status_value = (final or {}).get("status")
+    commit = (final or {}).get("commitSha")
+
+    if status_value == "succeeded":
+        console.success(
+            f"Deployed '{params.agent_name}'"
+            + (f" from commit {short_sha(commit)}" if commit else "")
+        )
+        return
+    if status_value in ("failed", "cancelled"):
+        reason = (final or {}).get("reason") or "No reason reported."
+        console.error(f"First deploy of '{params.agent_name}' {status_value}.\n{reason}")
+        raise typer.Exit(1)
+
+    # Out of polling budget while the deploy was still moving. The agent and
+    # its binding exist and the build continues, so this is not a failure —
+    # say what is still true and keep the exit code clean.
+    console.print(
+        f"[yellow]The first deploy is still {status_value or 'in progress'}. It continues "
+        f"server-side.[/yellow]\n[dim]Check it with [bold]{PIPECAT_CLI_NAME} agent status "
+        f"{params.agent_name}[/bold].[/dim]"
+    )
+
+
 async def _deploy(params: DeployConfigParams, org, force: bool = False):
     existing_agent = False
 
@@ -297,6 +340,28 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
 
         if data:
             existing_agent = True
+
+            # `git` is accepted on create only — the update path ignores it —
+            # so re-pointing here would look like it worked and change nothing.
+            # Send the caller to the command that does bind a repo.
+            if params.git.is_set():
+                live.stop()
+                current = data.get("git")
+                console.error(
+                    f"Agent '{params.agent_name}' already exists, and a GitHub source can "
+                    "only be set when an agent is created.\n"
+                    + (
+                        f"[dim]It is currently linked to {current['repoFullName']}@"
+                        f"{current['branch']}.[/dim]\n"
+                        if current
+                        else ""
+                    )
+                    + f"[dim]Change its link with [bold]{PIPECAT_CLI_NAME} agent link "
+                    f"{params.agent_name} --repo {params.git.repo} --branch "
+                    f"{params.git.branch}[/bold], then deploy it with [bold]"
+                    f"{PIPECAT_CLI_NAME} agent deploy {params.agent_name} --github[/bold].[/dim]"
+                )
+                raise typer.Exit(1)
 
             if not force:
                 live.stop()
@@ -377,6 +442,14 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         # Surface API warning (e.g. when identical config was deployed without --force)
         if result and result.get("warning"):
             console.print(f"[yellow]Warning: {result['warning']}[/yellow]")
+
+    # A git-sourced create has no deployment to wait on yet: the API enqueues
+    # the first deploy and the worker builds the repo before anything is
+    # scheduled. Follow that attempt instead of the readiness poll below, which
+    # would time out long before a cold build finishes.
+    if params.git.is_set():
+        await _report_git_first_deploy(params, org)
+        return
 
     """
     # 3. Poll status until healthy
@@ -696,6 +769,30 @@ def create_deploy_command(app: typer.Typer):
             help="Use an existing cloud build ID",
             rich_help_panel="Cloud Build Options",
         ),
+        repo: str = typer.Option(
+            None,
+            "--repo",
+            help="Create the agent from a GitHub repository, as 'owner/repo'",
+            rich_help_panel="GitHub Source",
+        ),
+        branch: str = typer.Option(
+            None,
+            "--branch",
+            help="Branch to build and deploy from",
+            rich_help_panel="GitHub Source",
+        ),
+        git_dockerfile_path: str = typer.Option(
+            None,
+            "--dockerfile-path",
+            help="Path to the Dockerfile within the repository (default: Dockerfile)",
+            rich_help_panel="GitHub Source",
+        ),
+        subdirectory: str = typer.Option(
+            None,
+            "--subdirectory",
+            help="Build context subdirectory within the repository",
+            rich_help_panel="GitHub Source",
+        ),
     ):
         org = organization or config.get("org")
 
@@ -746,6 +843,27 @@ def create_deploy_command(app: typer.Typer):
             if max_session_duration is not None
             else partial_config.max_session_duration
         )
+
+        # GitHub source (PCC-933): flags beat the toml [git] section, field by
+        # field, the same way every other option here does.
+        toml_git = partial_config.git
+        try:
+            partial_config.git = GitSourceConfig(
+                repo=repo or toml_git.repo,
+                branch=branch or toml_git.branch,
+                dockerfile_path=git_dockerfile_path or toml_git.dockerfile_path,
+                subdirectory=subdirectory or toml_git.subdirectory,
+            )
+        except ValueError as e:
+            console.error(str(e))
+            raise typer.Exit(1) from None
+
+        using_git_source = partial_config.git.is_set()
+
+        git_conflict = validate_git_source_combination(partial_config)
+        if git_conflict:
+            console.error(git_conflict)
+            raise typer.Exit(1)
 
         # Override build config from CLI args
         if build_dir:
@@ -800,8 +918,10 @@ def create_deploy_command(app: typer.Typer):
         # Track if we're using cloud build (either from --build-id or interactive build)
         using_cloud_build = bool(partial_config.build_id)
 
-        # Handle image: if not provided, offer cloud build
-        if not partial_config.image and not partial_config.build_id:
+        # Handle image: if not provided, offer cloud build. A git-sourced agent
+        # skips this entirely — the deploy worker builds the repo, so there is
+        # no image for the caller to supply or for us to build locally.
+        if not using_git_source and not partial_config.image and not partial_config.build_id:
             if auto_yes:
                 # CI/CD mode: automatically use cloud build
                 console.print("[cyan]No image specified, using Pipecat Cloud Build...[/cyan]")
@@ -845,6 +965,7 @@ def create_deploy_command(app: typer.Typer):
         # Skip this check for cloud builds (they use managed credentials)
         if (
             not using_cloud_build
+            and not using_git_source
             and not no_credentials
             and not partial_config.image_credentials
             and not auto_yes
@@ -876,7 +997,12 @@ def create_deploy_command(app: typer.Typer):
             )
 
         # Build the image/build display line
-        if using_cloud_build:
+        if using_git_source:
+            image_display = (
+                f"[bold white]GitHub:[/bold white] [green]{partial_config.git.repo}"
+                f"@{partial_config.git.branch}[/green]"
+            )
+        elif using_cloud_build:
             image_display = (
                 f"[bold white]Cloud Build:[/bold white] [green]{partial_config.build_id}[/green]"
             )
@@ -892,8 +1018,19 @@ def create_deploy_command(app: typer.Typer):
             f"[bold white]Secret set:[/bold white] {'[dim]None[/dim]' if not partial_config.secret_set else '[green] ' + partial_config.secret_set + '[/green]'}",
         ]
 
+        if using_git_source:
+            content_items.append(
+                "[bold white]Dockerfile path:[/bold white] [green]"
+                f"{partial_config.git.dockerfile_path or 'Dockerfile'}[/green]"
+            )
+            if partial_config.git.subdirectory:
+                content_items.append(
+                    "[bold white]Subdirectory:[/bold white] "
+                    f"[green]{partial_config.git.subdirectory}[/green]"
+                )
+
         # Only show image pull secret for non-cloud builds
-        if not using_cloud_build:
+        if not using_cloud_build and not using_git_source:
             content_items.append(
                 f"[bold white]Image pull secret:[/bold white] {'[dim]None[/dim]' if not partial_config.image_credentials else '[green]' + partial_config.image_credentials + '[/green]'}"
             )

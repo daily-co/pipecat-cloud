@@ -4,8 +4,10 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import asyncio
 import functools
 import os
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import Enum
@@ -362,6 +364,60 @@ def parse_resources_option(value: str) -> "ResourcesConfig":
 
 
 @dataclass
+class GitSourceConfig:
+    """A GitHub repo/branch to build the agent from, instead of an image.
+
+    Only valid when creating an agent: the API accepts `git` on create and
+    ignores it on update, so a binding change on an existing agent goes
+    through `agent link` rather than silently doing nothing here.
+    """
+
+    repo: str | None = None
+    branch: str | None = None
+    dockerfile_path: str | None = None
+    subdirectory: str | None = None
+
+    def __attrs_post_init__(self):
+        # Same rules the API applies, so a typo fails before the round-trip.
+        from pipecatcloud._utils.github_utils import (
+            is_valid_branch_name,
+            is_valid_repo_full_name,
+        )
+
+        if self.repo is not None and not is_valid_repo_full_name(self.repo):
+            raise ValueError(f"Invalid repo '{self.repo}'. Expected the form 'owner/repo'.")
+        if self.branch is not None and not is_valid_branch_name(self.branch):
+            raise ValueError(
+                f"Invalid branch '{self.branch}'. A branch must be a valid git ref with no "
+                "empty or dot-only segments."
+            )
+        # A half-specified source would otherwise reach the API as a plain
+        # image deploy, which is a confusing way to learn the branch is missing.
+        if (self.repo is None) != (self.branch is None):
+            raise ValueError("A GitHub source requires both 'repo' and 'branch'")
+
+    def is_set(self) -> bool:
+        return self.repo is not None
+
+    def to_payload(self) -> dict:
+        """The `git` object for the create-service request."""
+        payload = {"repoFullName": self.repo, "branch": self.branch}
+        if self.dockerfile_path:
+            payload["dockerfilePath"] = self.dockerfile_path
+        if self.subdirectory:
+            payload["subdirectory"] = self.subdirectory
+        return payload
+
+    def to_dict(self):
+        return {
+            "repo": self.repo,
+            "branch": self.branch,
+            "dockerfile_path": self.dockerfile_path,
+            "subdirectory": self.subdirectory,
+        }
+
+
+@dataclass
 class BuildConfig:
     """Configuration for cloud builds."""
 
@@ -391,6 +447,7 @@ class DeployConfigParams:
     agent_profile: str | None = None
     resources: ResourcesConfig = field(factory=ResourcesConfig)
     krisp_viva: KrispVivaConfig = field(factory=KrispVivaConfig)
+    git: GitSourceConfig = field(factory=GitSourceConfig)
     force_redeploy: bool = False
     websocket_auth: str | None = None
     max_session_duration: int | None = None
@@ -404,6 +461,11 @@ class DeployConfigParams:
         # Cannot specify both image and build_id
         if self.image is not None and self.build_id is not None:
             raise ValueError("Cannot specify both 'image' and 'build_id'")
+        # A git-sourced agent's image is produced by the build its first deploy
+        # triggers, so there is nothing to supply up front. The API rejects the
+        # combination too; failing here just does it sooner.
+        if self.git.is_set() and (self.image is not None or self.build_id is not None):
+            raise ValueError("Cannot specify a GitHub source together with 'image' or 'build_id'")
         if self.max_session_duration is not None and not 60 <= self.max_session_duration <= 14400:
             raise ValueError("max_session_duration must be between 60 and 14400 seconds")
         # Sizing is one of: a named profile, or explicit resources (enterprise
@@ -427,10 +489,36 @@ class DeployConfigParams:
             "agent_profile": self.agent_profile,
             "resources": self.resources.to_dict() if self.resources.is_set() else None,
             "krisp_viva": self.krisp_viva.to_dict() if self.krisp_viva else None,
+            "git": self.git.to_dict() if self.git.is_set() else None,
             "websocket_auth": self.websocket_auth,
             "max_session_duration": self.max_session_duration,
             "architecture": self.architecture,
         }
+
+
+def validate_git_source_combination(config: DeployConfigParams) -> str | None:
+    """What a GitHub source cannot be combined with, or None when it is fine.
+
+    A separate check from DeployConfigParams' own validation because the deploy
+    command mutates the config field by field after constructing it, so
+    __attrs_post_init__ never sees the merged result.
+    """
+    if not config.git.is_set():
+        return None
+    if config.image or config.build_id:
+        return (
+            "Cannot deploy from a GitHub repository and an image or build at the same "
+            "time. Drop --image/--build-id, or drop --repo."
+        )
+    # A git agent's first-deploy config is stashed on its binding, and explicit
+    # resources are not plumbed through that path yet, so the API refuses the
+    # pair. Saying so here saves the round-trip.
+    if config.resources.is_set():
+        return (
+            "Explicit resources are not yet supported for GitHub-sourced agents. "
+            "Use [bold]--profile[/bold] instead."
+        )
+    return None
 
 
 def load_deploy_config_file() -> DeployConfigParams | None:
@@ -461,6 +549,10 @@ def load_deploy_config_file() -> DeployConfigParams | None:
         resources_data = config_data.pop("resources", {})
         resources_config = ResourcesConfig(**resources_data)
 
+        # Extract GitHub source if present (PCC-933)
+        git_data = config_data.pop("git", {})
+        git_config = GitSourceConfig(**git_data)
+
         # Extract build configuration if present
         build_data = config_data.pop("build", {})
         exclude_data = build_data.pop("exclude", {})
@@ -484,6 +576,7 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             "build",
             "agent_profile",
             "krisp_viva",
+            "git",
             "websocket_auth",
             "max_session_duration",
             "resources",
@@ -508,6 +601,7 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             build_config=build_config,
             krisp_viva=krisp_viva_config,
             resources=resources_config,
+            git=git_config,
         )
 
         return validated_config
@@ -556,3 +650,51 @@ def with_deploy_config(func: Callable) -> Callable:
         return func(*args, **kwargs)
 
     return wrapper
+
+
+# How long `--wait` follows a GitHub deploy before handing it back. A GitHub
+# deploy builds an image first, so it is legitimately slower than an image
+# deploy; the cap exists so a wedged build can't hang a CI job forever, not to
+# express an expected duration.
+GIT_DEPLOY_WAIT_SECONDS = 20 * 60
+GIT_DEPLOY_POLL_SECONDS = 5
+
+
+async def follow_git_deploy(agent_name: str, org: str | None, commit_sha: str) -> dict | None:
+    """Poll an agent's latest deploy attempt until it reaches a terminal state.
+
+    Polls the service read endpoint rather than a deploy-intent endpoint: the
+    API surfaces the attempt as `latestDeploy` (PCC-978), which is also what
+    `agent status` reads, so both agree on what a deploy is doing.
+    """
+    # Imported at call time: api.py imports this module for DeployConfigParams,
+    # so a module-level import of the API client would close that cycle.
+    from pipecatcloud._utils.console_utils import console
+    from pipecatcloud._utils.github_utils import is_deploy_in_flight
+    from pipecatcloud.cli.api import API
+
+    deadline = time.monotonic() + GIT_DEPLOY_WAIT_SECONDS
+    latest: dict | None = None
+    last_status: str | None = None
+
+    with console.status("[dim]Waiting for the deploy...[/dim]", spinner="bouncingBar") as live:
+        while time.monotonic() < deadline:
+            # A blip mid-deploy should not abort a wait that is otherwise
+            # healthy; keep polling and let the deadline decide.
+            data, error = await API.bubble_error().agent(agent_name=agent_name, org=org)
+            if not error and data:
+                candidate = data.get("latestDeploy")
+                # Only trust the attempt for the commit we queued. A push
+                # landing mid-wait supersedes ours, and reporting that one's
+                # result as ours would be wrong.
+                if candidate and (not commit_sha or candidate.get("commitSha") == commit_sha):
+                    latest = candidate
+                    status_value = candidate.get("status")
+                    if status_value != last_status:
+                        last_status = status_value
+                        live.update(f"[dim]Deploy {status_value}...[/dim]")
+                    if not is_deploy_in_flight(candidate):
+                        return latest
+            await asyncio.sleep(GIT_DEPLOY_POLL_SECONDS)
+
+    return latest

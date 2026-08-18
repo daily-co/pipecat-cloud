@@ -18,6 +18,7 @@ from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.build_utils import BuildStatus, format_size
 from pipecatcloud._utils.console_utils import console, format_timestamp
+from pipecatcloud._utils.github_utils import ref_to_branch, short_sha
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -36,6 +37,19 @@ def _format_build_status(status: str) -> str:
     }
     color = status_colors.get(status, "white")
     return f"[{color}]{status}[/{color}]"
+
+
+def _build_source(build: dict) -> str:
+    """Where a build's context came from, as `owner/repo@abc1234`.
+
+    Only GitHub-triggered builds carry commit provenance; a build from an
+    uploaded tarball has none, which renders as a dash rather than a guess.
+    """
+    commit = build.get("commitSha")
+    if not commit:
+        return "—"
+    repo = build.get("repoFullName")
+    return f"{repo}@{short_sha(commit)}" if repo else short_sha(commit)
 
 
 def _format_duration(seconds: int | None) -> str:
@@ -175,6 +189,14 @@ async def status(
         f"[bold]Created:[/bold] {format_timestamp(build.get('createdAt', ''))}",
     ]
 
+    # Git provenance, present only for GitHub-triggered builds (PCC-933).
+    if build.get("repoFullName"):
+        info_lines.append(f"[bold]Repository:[/bold] {build['repoFullName']}")
+    if build.get("ref"):
+        info_lines.append(f"[bold]Ref:[/bold] {ref_to_branch(build['ref'])}")
+    if build.get("commitSha"):
+        info_lines.append(f"[bold]Commit:[/bold] {build['commitSha']}")
+
     if build.get("startedAt"):
         info_lines.append(f"[bold]Started:[/bold] {format_timestamp(build.get('startedAt'))}")
 
@@ -290,7 +312,7 @@ async def list_builds(
 
     if not console.rich_output:
         console.print_records(
-            ["Build ID", "Status", "Region", "Duration", "Created"],
+            ["Build ID", "Status", "Region", "Duration", "Created", "Source"],
             [
                 (
                     build.get("id", "N/A"),
@@ -298,6 +320,7 @@ async def list_builds(
                     build.get("region", "N/A"),
                     _format_duration(build.get("buildDurationSeconds")),
                     format_timestamp(build.get("createdAt", "")),
+                    _build_source(build),
                 )
                 for build in builds
             ],
@@ -318,6 +341,7 @@ async def list_builds(
     table.add_column("Region", no_wrap=True)
     table.add_column("Duration", no_wrap=True)
     table.add_column("Created", no_wrap=True)
+    table.add_column("Source", no_wrap=True)
 
     for build in builds:
         table.add_row(
@@ -326,6 +350,7 @@ async def list_builds(
             build.get("region", "N/A"),
             _format_duration(build.get("buildDurationSeconds")),
             format_timestamp(build.get("createdAt", "")),
+            _build_source(build),
         )
 
     console.success(

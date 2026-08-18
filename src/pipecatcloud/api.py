@@ -8,6 +8,7 @@ import json
 import time
 from collections.abc import Callable
 from functools import wraps
+from urllib.parse import quote
 
 import aiohttp
 from loguru import logger
@@ -566,8 +567,14 @@ class _API:
             "architecture": deploy_config.architecture,
         }
 
-        # Use either build_id (cloud build) or image (user-provided)
-        if deploy_config.build_id:
+        # Exactly one image source. A git-sourced agent has none of the three:
+        # its image is produced by the build that its first deploy triggers.
+        if deploy_config.git.is_set():
+            payload["git"] = deploy_config.git.to_payload()
+            # Nothing is pulled for a git build, so never carry over a pull
+            # secret the caller set before switching to the GitHub source.
+            payload["imagePullSecretSet"] = None
+        elif deploy_config.build_id:
             payload["buildId"] = deploy_config.build_id
         else:
             payload["image"] = deploy_config.image
@@ -617,13 +624,22 @@ class _API:
         """
         return self.create_api_method(self._agent)
 
-    async def _agents(self, org: str, region: str | None = None) -> list[dict] | None:
+    async def _agents(
+        self, org: str, region: str | None = None, include: list[str] | None = None
+    ) -> list[dict] | None:
         url = f"{self.construct_api_url('services_path').format(org=org)}"
 
         # Build query params if region filter is specified
-        params = {"region": region} if region else None
+        params: dict[str, str] = {}
+        if region:
+            params["region"] = region
+        # Opt-in enrichments (PCC-933: `git` adds the binding + source). The
+        # API silently drops values it doesn't know, so an older server just
+        # omits the fields rather than failing the whole listing.
+        if include:
+            params["include"] = ",".join(include)
 
-        result = await self._base_request("GET", url, params=params) or {}
+        result = await self._base_request("GET", url, params=params or None) or {}
 
         if "services" in result:
             return result["services"]
@@ -636,6 +652,7 @@ class _API:
         Args:
             org: Organization ID
             region: (optional) filter by region
+            include: (optional) enrichments to request, e.g. ["git"]
         """
         return self.create_api_method(self._agents)
 
@@ -1069,3 +1086,161 @@ class _API:
             Dict with logs array or None if not found
         """
         return self.create_api_method(self._build_logs)
+
+    # GitHub (PCC-933)
+
+    async def _github_install_url(self, org: str) -> dict | None:
+        """Mint the GitHub App install URL for this org."""
+        url = self.construct_api_url("github_install_url_path").format(org=org)
+        return await self._base_request("GET", url)
+
+    @property
+    def github_install_url(self):
+        """Get the GitHub App install URL.
+
+        The URL carries a signed, single-use state that ties the resulting
+        installation back to this org, so it must be fetched fresh for every
+        connect attempt and never cached.
+
+        Args:
+            org: Organization ID
+        Returns:
+            Dict with `url`
+        """
+        return self.create_api_method(self._github_install_url)
+
+    async def _github_installation(self, org: str) -> dict | None:
+        """The GitHub installation linked to this org, or None when unlinked."""
+        url = self.construct_api_url("github_installation_path").format(org=org)
+        # A 404 is the normal not-connected state, not an error worth a panel.
+        result = await self._base_request("GET", url, not_found_is_empty=True)
+        return (result or {}).get("installation")
+
+    @property
+    def github_installation(self):
+        """Look up the org's GitHub installation.
+        Args:
+            org: Organization ID
+        Returns:
+            The installation dict, or None when nothing is linked
+        """
+        return self.create_api_method(self._github_installation)
+
+    async def _github_disconnect(self, org: str) -> dict | None:
+        url = self.construct_api_url("github_installation_path").format(org=org)
+        return await self._base_request("DELETE", url)
+
+    @property
+    def github_disconnect(self):
+        """Remove the org's installation and every repo binding under it.
+
+        Does not uninstall the App on GitHub; that is done from GitHub.
+
+        Args:
+            org: Organization ID
+        """
+        return self.create_api_method(self._github_disconnect)
+
+    async def _github_repositories(self, org: str) -> list[dict]:
+        url = self.construct_api_url("github_repositories_path").format(org=org)
+        result = await self._base_request("GET", url) or {}
+        return result.get("repositories") or []
+
+    @property
+    def github_repositories(self):
+        """Repositories the org's installation can access.
+        Args:
+            org: Organization ID
+        Returns:
+            List of dicts with id, fullName, private, defaultBranch
+        """
+        return self.create_api_method(self._github_repositories)
+
+    async def _github_branches(
+        self, org: str, repo_full_name: str, query: str | None = None
+    ) -> list[str]:
+        # owner and repo are separate path segments server-side. The caller
+        # validates the shape first (see validate_repo_full_name): quoting
+        # alone would not stop a ".." segment retargeting the path.
+        owner, _, repo = repo_full_name.partition("/")
+        base = self.construct_api_url("github_repositories_path").format(org=org)
+        url = f"{base}/{quote(owner, safe='')}/{quote(repo, safe='')}/branches"
+        params = {"query": query} if query else None
+        result = await self._base_request("GET", url, params=params) or {}
+        return result.get("branches") or []
+
+    @property
+    def github_branches(self):
+        """List a repo's branches.
+
+        Without a query this returns the bounded full list; with one, the API
+        runs a server-side prefix search, which is how branches past the
+        list's cap stay reachable.
+
+        Args:
+            org: Organization ID
+            repo_full_name: "owner/repo"
+            query: Optional prefix to search for
+        Returns:
+            List of branch names
+        """
+        return self.create_api_method(self._github_branches)
+
+    async def _agent_git_connect(self, agent_name: str, org: str, payload: dict) -> dict | None:
+        url = self.construct_api_url("service_git_path").format(org=org, service=agent_name)
+        result = await self._base_request("POST", url, json=payload) or {}
+        return result.get("gitConfig")
+
+    @property
+    def agent_git_connect(self):
+        """Bind a repo/branch to an agent, or update the binding it has.
+
+        An upsert: repoFullName and branch are required on every call even when
+        only one field is changing, and omitted optional fields keep their
+        stored value.
+
+        Args:
+            agent_name: Name of the agent
+            org: Organization ID
+            payload: repoFullName, branch, and optionally dockerfilePath,
+                subdirectory, autoDeploy
+        Returns:
+            The stored binding, with GitHub's canonical repo casing
+        """
+        return self.create_api_method(self._agent_git_connect)
+
+    async def _agent_git_disconnect(self, agent_name: str, org: str) -> dict | None:
+        url = self.construct_api_url("service_git_path").format(org=org, service=agent_name)
+        return await self._base_request("DELETE", url)
+
+    @property
+    def agent_git_disconnect(self):
+        """Remove an agent's repo binding.
+
+        Pushes stop deploying; the running agent is untouched.
+
+        Args:
+            agent_name: Name of the agent
+            org: Organization ID
+        """
+        return self.create_api_method(self._agent_git_disconnect)
+
+    async def _agent_git_deploy(self, agent_name: str, org: str) -> dict | None:
+        url = f"{self.construct_api_url('service_git_path').format(org=org, service=agent_name)}/deploy"
+        result = await self._base_request("POST", url, json={}) or {}
+        return result.get("deployIntent")
+
+    @property
+    def agent_git_deploy(self):
+        """Build and deploy the connected branch's current HEAD.
+
+        The API answers 202 as soon as the intent is queued, so the result
+        describes a pending deploy, never a finished one.
+
+        Args:
+            agent_name: Name of the agent
+            org: Organization ID
+        Returns:
+            The deploy intent: id, commitSha, ref, status
+        """
+        return self.create_api_method(self._agent_git_deploy)
