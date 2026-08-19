@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New `LiveKitSessionArguments` agent session type, exported from
+  `pipecatcloud`. Like the other `*SessionArguments` types it subclasses the
+  matching pipecat-ai runner type (`LiveKitRunnerArguments`), so it carries
+  `room_name`, `url`, `token`, and `session_id`, and works with pipecat's
+  `create_transport` and `isinstance` checks.
+
+  To start an agent with Pipecat Cloud, your app mints the room and tokens
+  then sends the connection details in the start request's `body`, in whatever
+  shape it defines. Build these arguments from that body and `create_transport`
+  takes it from there.
+
 - Architecture selection on deploy: `pipecat cloud deploy --architecture
   {amd64,arm64}` or an `architecture` key in `pcc-deploy.toml` (the flag
   wins). Omitted, the region's default applies — set it when your image is

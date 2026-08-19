@@ -32,6 +32,7 @@ logger.add(sys.stderr, level=str(os.getenv("PCC_LOG_LEVEL", "INFO")))
 # which raises a clear ImportError if pipecat-ai is not installed.
 _LAZY_AGENT_EXPORTS = (
     "DailySessionArguments",
+    "LiveKitSessionArguments",
     "PipecatSessionArguments",
     "SessionArguments",
     "SmallWebRTCSessionArguments",
@@ -54,6 +55,7 @@ def __dir__():
 __all__ = [
     # Agent classes
     "DailySessionArguments",
+    "LiveKitSessionArguments",
     "PipecatSessionArguments",
     "SessionArguments",
     "SmallWebRTCSessionArguments",

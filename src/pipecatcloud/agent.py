@@ -24,6 +24,7 @@ from dataclasses import dataclass
 try:
     from pipecat.runner.types import (
         DailyRunnerArguments,
+        LiveKitRunnerArguments,
         RunnerArguments,
         SmallWebRTCRunnerArguments,
         WebSocketRunnerArguments,
@@ -73,6 +74,11 @@ class PipecatSessionArguments(RunnerArguments, SessionArguments):
 @dataclass
 class DailySessionArguments(DailyRunnerArguments, SessionArguments):
     """Daily-based agent session arguments."""
+
+
+@dataclass
+class LiveKitSessionArguments(LiveKitRunnerArguments, SessionArguments):
+    """LiveKit-based agent session arguments."""
 
 
 @dataclass

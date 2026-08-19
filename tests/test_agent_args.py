@@ -10,6 +10,7 @@ import warnings
 
 from pipecat.runner.types import (
     DailyRunnerArguments,
+    LiveKitRunnerArguments,
     RunnerArguments,
     SmallWebRTCRunnerArguments,
     WebSocketRunnerArguments,
@@ -17,6 +18,7 @@ from pipecat.runner.types import (
 
 from pipecatcloud.agent import (
     DailySessionArguments,
+    LiveKitSessionArguments,
     PipecatSessionArguments,
     SessionArguments,
     SmallWebRTCSessionArguments,
@@ -30,6 +32,9 @@ def test_construction_does_not_warn():
         warnings.simplefilter("error")  # any warning becomes an error
         PipecatSessionArguments(session_id="s")
         DailySessionArguments(room_url="https://x.daily.co/r", token="t", session_id="s")
+        LiveKitSessionArguments(
+            room_name="r", url="wss://x.livekit.cloud", token="t", session_id="s"
+        )
         WebSocketSessionArguments(websocket=None, session_id="s")
         SmallWebRTCSessionArguments(webrtc_connection=None, session_id="s")
 
@@ -56,6 +61,14 @@ def test_subclasses_are_runner_argument_types():
     assert isinstance(daily, DailyRunnerArguments)
     assert isinstance(daily, RunnerArguments)
     assert isinstance(daily, SessionArguments)
+
+    livekit = LiveKitSessionArguments(
+        room_name="r", url="wss://x.livekit.cloud", token="t", session_id="s"
+    )
+    assert isinstance(livekit, LiveKitRunnerArguments)
+    assert livekit.room_name == "r"
+    assert livekit.url == "wss://x.livekit.cloud"
+    assert livekit.token == "t"
 
     assert isinstance(PipecatSessionArguments(session_id="s"), RunnerArguments)
     assert isinstance(WebSocketSessionArguments(websocket=None), WebSocketRunnerArguments)
