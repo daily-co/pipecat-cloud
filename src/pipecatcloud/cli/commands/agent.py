@@ -30,8 +30,10 @@ from pipecatcloud._utils.console_utils import (
 from pipecatcloud._utils.deploy_utils import (
     CONFIG_FILE_OPTION,
     DeployConfigParams,
+    GitDeployWait,
     follow_git_deploy,
     format_health_lines,
+    report_git_deploy_result,
     with_deploy_config,
 )
 from pipecatcloud._utils.github_utils import (
@@ -1453,25 +1455,22 @@ async def agent_deploy(
             console.output_json({"deployIntent": intent})
         return
 
-    final = await follow_git_deploy(agent_name=agent_name, org=org, commit_sha=commit)
+    result = await follow_git_deploy(agent_name=agent_name, org=org, commit_sha=commit)
 
     if console.json_output:
-        console.output_json({"deployIntent": intent, "latestDeploy": final})
+        # `waitOutcome` is the machine-readable half of what the human
+        # rendering says: a consumer has to tell "superseded" and "never
+        # observed" apart from a plain in-flight timeout.
+        console.output_json(
+            {
+                "deployIntent": intent,
+                "latestDeploy": result.deploy,
+                "waitOutcome": result.outcome.value,
+                "supersededBy": result.superseded_by,
+            }
+        )
+        if result.outcome is GitDeployWait.UNOBSERVED:
+            raise typer.Exit(1)
         return
 
-    status_value = (final or {}).get("status")
-    if status_value == "succeeded":
-        console.success(f"Deployed '{agent_name}' from commit {short_sha(commit)}")
-        return
-    if status_value in ("failed", "cancelled"):
-        reason = (final or {}).get("reason") or "No reason reported."
-        console.error(f"Deploy of '{agent_name}' {status_value}.\n{reason}")
-        raise typer.Exit(1)
-    # Ran out of polling budget while the deploy was still moving. That is not
-    # a failure of the deploy, so say what is still true rather than implying
-    # one, and leave the exit code clean.
-    console.print(
-        f"[yellow]Still {status_value or 'in progress'} after waiting. The deploy continues "
-        f"server-side.[/yellow]\n[dim]Check it with [bold]{PIPECAT_CLI_NAME} agent status "
-        f"{agent_name}[/bold].[/dim]"
-    )
+    report_git_deploy_result(result, agent_name)

@@ -36,6 +36,7 @@ from pipecatcloud._utils.deploy_utils import (
     follow_git_deploy,
     interpret_deployment_status,
     parse_resources_option,
+    report_git_deploy_result,
     validate_git_source_combination,
     with_deploy_config,
 )
@@ -299,30 +300,10 @@ async def _report_git_first_deploy(params: DeployConfigParams, org: str) -> None
     )
 
     # No commit to match on: this is the agent's first attempt, so whatever
-    # attempt exists is the one that was just queued.
-    final = await follow_git_deploy(agent_name=params.agent_name or "", org=org, commit_sha="")
-    status_value = (final or {}).get("status")
-    commit = (final or {}).get("commitSha")
-
-    if status_value == "succeeded":
-        console.success(
-            f"Deployed '{params.agent_name}'"
-            + (f" from commit {short_sha(commit)}" if commit else "")
-        )
-        return
-    if status_value in ("failed", "cancelled"):
-        reason = (final or {}).get("reason") or "No reason reported."
-        console.error(f"First deploy of '{params.agent_name}' {status_value}.\n{reason}")
-        raise typer.Exit(1)
-
-    # Out of polling budget while the deploy was still moving. The agent and
-    # its binding exist and the build continues, so this is not a failure —
-    # say what is still true and keep the exit code clean.
-    console.print(
-        f"[yellow]The first deploy is still {status_value or 'in progress'}. It continues "
-        f"server-side.[/yellow]\n[dim]Check it with [bold]{PIPECAT_CLI_NAME} agent status "
-        f"{params.agent_name}[/bold].[/dim]"
-    )
+    # attempt exists is the one that was just queued, and nothing can have
+    # superseded it.
+    result = await follow_git_deploy(agent_name=params.agent_name or "", org=org, commit_sha="")
+    report_git_deploy_result(result, params.agent_name or "", first_deploy=True)
 
 
 async def _deploy(params: DeployConfigParams, org, force: bool = False):

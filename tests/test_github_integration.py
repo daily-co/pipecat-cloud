@@ -19,8 +19,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pipecatcloud._utils.deploy_utils import (
     DeployConfigParams,
+    GitDeployResult,
+    GitDeployWait,
     GitSourceConfig,
     ResourcesConfig,
+    report_git_deploy_result,
     validate_git_source_combination,
 )
 from pipecatcloud._utils.github_utils import (
@@ -420,10 +423,64 @@ async def test_agent_deploy_wait_exits_nonzero_on_failure(agent_mocks):
         ) as mock_follow,
         pytest.raises(typer.Exit) as excinfo,
     ):
-        mock_follow.return_value = {"status": "failed", "reason": "build error"}
+        mock_follow.return_value = GitDeployResult(
+            GitDeployWait.TERMINAL, deploy={"status": "failed", "reason": "build error"}
+        )
         await agent_deploy.aio("my-agent", github=True, wait=True, organization="test-org")
 
     assert excinfo.value.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_deploy_wait_json_reports_the_outcome_and_exits_nonzero(agent_mocks):
+    """json consumers need to tell an unconfirmed deploy from a healthy one,
+    and the exit code has to agree with the payload."""
+    mock_api, mock_console = agent_mocks
+    mock_console.json_output = True
+    mock_api.agent_git_deploy = AsyncMock(
+        return_value=(
+            {"id": "i", "commitSha": "abc1234def", "ref": "refs/heads/main", "status": "pending"},
+            None,
+        )
+    )
+
+    with (
+        patch(
+            "pipecatcloud.cli.commands.agent.follow_git_deploy", new_callable=AsyncMock
+        ) as mock_follow,
+        pytest.raises(typer.Exit) as excinfo,
+    ):
+        mock_follow.return_value = GitDeployResult(GitDeployWait.UNOBSERVED)
+        await agent_deploy.aio("my-agent", github=True, wait=True, organization="test-org")
+
+    assert excinfo.value.exit_code == 1
+    out = mock_console.output_json.call_args.args[0]
+    assert out["waitOutcome"] == "unobserved"
+    assert out["latestDeploy"] is None
+
+
+@pytest.mark.asyncio
+async def test_agent_deploy_wait_json_reports_a_supersede(agent_mocks):
+    mock_api, mock_console = agent_mocks
+    mock_console.json_output = True
+    mock_api.agent_git_deploy = AsyncMock(
+        return_value=(
+            {"id": "i", "commitSha": "abc1234def", "ref": "refs/heads/main", "status": "pending"},
+            None,
+        )
+    )
+
+    with patch(
+        "pipecatcloud.cli.commands.agent.follow_git_deploy", new_callable=AsyncMock
+    ) as mock_follow:
+        mock_follow.return_value = GitDeployResult(
+            GitDeployWait.SUPERSEDED, superseded_by="999abcdef"
+        )
+        await agent_deploy.aio("my-agent", github=True, wait=True, organization="test-org")
+
+    out = mock_console.output_json.call_args.args[0]
+    assert out["waitOutcome"] == "superseded"
+    assert out["supersededBy"] == "999abcdef"
 
 
 @pytest.mark.asyncio
@@ -441,38 +498,177 @@ async def test_agent_deploy_wait_timeout_is_not_a_failure(agent_mocks):
     with patch(
         "pipecatcloud.cli.commands.agent.follow_git_deploy", new_callable=AsyncMock
     ) as mock_follow:
-        mock_follow.return_value = {"status": "building"}
+        mock_follow.return_value = GitDeployResult(
+            GitDeployWait.IN_FLIGHT, deploy={"status": "building"}
+        )
         await agent_deploy.aio("my-agent", github=True, wait=True, organization="test-org")
 
 
-@pytest.mark.asyncio
-async def test_follow_git_deploy_ignores_another_commits_attempt():
-    """A push landing mid-wait supersedes ours; reporting its result as ours
-    would be wrong, so a non-matching commit must not end the wait."""
-    from pipecatcloud._utils import deploy_utils
+def _follow_with(polls, commit_sha, max_polls=None):
+    """Drive follow_git_deploy over a scripted sequence of poll results.
 
-    other = {"status": "succeeded", "commitSha": "999"}
-    ours = {"status": "succeeded", "commitSha": "abc"}
+    The deadline is driven by a scripted monotonic() rather than wall time, so
+    "the budget ran out" lands after an exact number of polls instead of
+    whenever the test host happens to get there. `polls` repeats its last
+    entry, so a test only scripts the responses it cares about.
+    """
+    from pipecatcloud._utils import deploy_utils
 
     # bubble_error() is sync and returns the client, so the client itself must
     # be a MagicMock; only the request method is awaited.
     mock_api = MagicMock()
-    mock_api.bubble_error.return_value.agent = AsyncMock(
-        side_effect=[
-            ({"latestDeploy": other}, None),
+
+    responses = list(polls)
+
+    async def next_response(*_args, **_kwargs):
+        return responses.pop(0) if len(responses) > 1 else responses[0]
+
+    mock_api.bubble_error.return_value.agent = AsyncMock(side_effect=next_response)
+
+    budget = max_polls if max_polls is not None else len(responses)
+    # First call sets the deadline; each later call is one loop check. Hand out
+    # `budget` in-budget checks, then a value past the deadline.
+    clock = [0.0] + [0.0] * budget + [10_000.0]
+
+    async def run():
+        with (
+            patch("pipecatcloud.cli.api.API", mock_api),
+            patch.object(deploy_utils.asyncio, "sleep", new_callable=AsyncMock),
+            patch.object(deploy_utils.time, "monotonic", side_effect=clock),
+        ):
+            return await deploy_utils.follow_git_deploy(
+                agent_name="my-agent", org="test-org", commit_sha=commit_sha
+            )
+
+    return run(), mock_api
+
+
+@pytest.mark.asyncio
+async def test_follow_git_deploy_returns_our_terminal_attempt():
+    ours = {"status": "succeeded", "commitSha": "abc"}
+    coro, _ = _follow_with(
+        [
+            ({"latestDeploy": {"status": "building", "commitSha": "abc"}}, None),
             ({"latestDeploy": ours}, None),
-        ]
+        ],
+        commit_sha="abc",
     )
+    result = await coro
 
-    with (
-        patch("pipecatcloud.cli.api.API", mock_api),
-        patch.object(deploy_utils.asyncio, "sleep", new_callable=AsyncMock),
-    ):
-        result = await deploy_utils.follow_git_deploy(
-            agent_name="my-agent", org="test-org", commit_sha="abc"
+    assert result.outcome is GitDeployWait.TERMINAL
+    assert result.deploy == ours
+
+
+@pytest.mark.asyncio
+async def test_follow_git_deploy_reports_a_newer_attempt_as_superseded():
+    """A foreign commit holding `latestDeploy` is positive evidence that a
+    newer push took over, not an absence of evidence. Ours can never reclaim
+    the spot (the API orders by created_at DESC off the primary), so waiting
+    out the budget would report a stale snapshot twenty minutes later."""
+    coro, mock_api = _follow_with(
+        [({"latestDeploy": {"status": "building", "commitSha": "999"}}, None)],
+        commit_sha="abc",
+    )
+    result = await coro
+
+    assert result.outcome is GitDeployWait.SUPERSEDED
+    assert result.superseded_by == "999"
+    # Returned on the first sighting rather than polling to the deadline.
+    assert mock_api.bubble_error.return_value.agent.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_follow_git_deploy_never_reports_a_foreign_attempt_as_ours():
+    """The property the old ignore-and-keep-polling behaviour protected: a
+    succeeded attempt for someone else's commit must never be handed back as
+    our terminal result."""
+    coro, _ = _follow_with(
+        [({"latestDeploy": {"status": "succeeded", "commitSha": "999"}}, None)],
+        commit_sha="abc",
+    )
+    result = await coro
+
+    assert result.outcome is not GitDeployWait.TERMINAL
+    assert result.deploy is None
+
+
+@pytest.mark.asyncio
+async def test_follow_git_deploy_reports_never_seeing_an_attempt():
+    """Twenty minutes of failed polls is not the same fact as a deploy that is
+    still building, and must not be reported as one."""
+    coro, _ = _follow_with([(None, {"error": "boom"})], commit_sha="abc", max_polls=3)
+    result = await coro
+
+    assert result.outcome is GitDeployWait.UNOBSERVED
+    assert result.deploy is None
+
+
+@pytest.mark.asyncio
+async def test_follow_git_deploy_reports_an_unfinished_attempt_as_in_flight():
+    coro, _ = _follow_with(
+        [({"latestDeploy": {"status": "building", "commitSha": "abc"}}, None)],
+        commit_sha="abc",
+        max_polls=3,
+    )
+    result = await coro
+
+    assert result.outcome is GitDeployWait.IN_FLIGHT
+    assert result.deploy == {"status": "building", "commitSha": "abc"}
+
+
+class TestReportGitDeployResult:
+    """Exit codes carry the CI contract: only an observed failure and a
+    never-observed deploy are non-zero."""
+
+    def _report(self, result, first_deploy=False):
+        with patch("pipecatcloud._utils.console_utils.console") as mock_console:
+            mock_console.json_output = False
+            mock_console.rich_output = False
+            report_git_deploy_result(result, "my-agent", first_deploy=first_deploy)
+            return mock_console
+
+    def test_success_exits_zero(self):
+        console = self._report(
+            GitDeployResult(
+                GitDeployWait.TERMINAL, deploy={"status": "succeeded", "commitSha": "abc1234def"}
+            )
         )
+        console.success.assert_called_once()
 
-    assert result == ours
+    def test_observed_failure_exits_nonzero(self):
+        with pytest.raises(typer.Exit) as excinfo:
+            self._report(
+                GitDeployResult(
+                    GitDeployWait.TERMINAL,
+                    deploy={"status": "failed", "reason": "build error"},
+                )
+            )
+        assert excinfo.value.exit_code == 1
+
+    def test_in_flight_timeout_exits_zero(self):
+        console = self._report(
+            GitDeployResult(GitDeployWait.IN_FLIGHT, deploy={"status": "building"})
+        )
+        assert "continues" in console.print.call_args.args[0]
+
+    def test_superseded_names_the_newer_commit_and_exits_zero(self):
+        console = self._report(GitDeployResult(GitDeployWait.SUPERSEDED, superseded_by="999abcdef"))
+        assert "999abcd" in console.print.call_args.args[0]
+
+    def test_unobserved_exits_nonzero(self):
+        """A wait that saw nothing cannot tell a healthy build from an API
+        that was down the whole time, so it must not read as success."""
+        with pytest.raises(typer.Exit) as excinfo:
+            self._report(GitDeployResult(GitDeployWait.UNOBSERVED))
+        assert excinfo.value.exit_code == 1
+
+    def test_first_deploy_labels_the_failure(self):
+        with pytest.raises(typer.Exit):
+            console = self._report(
+                GitDeployResult(GitDeployWait.TERMINAL, deploy={"status": "failed"}),
+                first_deploy=True,
+            )
+            assert "First deploy" in console.error.call_args.args[0]
 
 
 # --- agent status / list ----------------------------------------------------

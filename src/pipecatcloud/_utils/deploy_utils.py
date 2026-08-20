@@ -660,12 +660,41 @@ GIT_DEPLOY_WAIT_SECONDS = 20 * 60
 GIT_DEPLOY_POLL_SECONDS = 5
 
 
-async def follow_git_deploy(agent_name: str, org: str | None, commit_sha: str) -> dict | None:
-    """Poll an agent's latest deploy attempt until it reaches a terminal state.
+class GitDeployWait(Enum):
+    """How a `--wait` ended. Four outcomes, because three of them are not
+    "succeeded" and collapsing them loses the distinction that matters."""
+
+    # A status we actually observed reach a terminal state.
+    TERMINAL = "terminal"
+    # Observed, still moving when the budget ran out. Says nothing bad about
+    # the deploy.
+    IN_FLIGHT = "in_flight"
+    # A newer attempt became the agent's latest, so ours is no longer
+    # observable (and, unless it had already reached `deploying`, was
+    # cancelled by the supersede).
+    SUPERSEDED = "superseded"
+    # Never saw our attempt at all: every poll failed, or no attempt was ever
+    # enqueued. We know nothing, which is different from knowing it is fine.
+    UNOBSERVED = "unobserved"
+
+
+@dataclass
+class GitDeployResult:
+    outcome: GitDeployWait
+    deploy: dict | None = None
+    superseded_by: str | None = None
+
+
+async def follow_git_deploy(agent_name: str, org: str | None, commit_sha: str) -> GitDeployResult:
+    """Poll an agent's latest deploy attempt until it resolves.
 
     Polls the service read endpoint rather than a deploy-intent endpoint: the
     API surfaces the attempt as `latestDeploy` (PCC-978), which is also what
     `agent status` reads, so both agree on what a deploy is doing.
+
+    `commit_sha` is the attempt we are entitled to report on. Empty means
+    "whatever attempt exists", which is only correct for an agent's first
+    deploy, where there is nothing that could have superseded it.
     """
     # Imported at call time: api.py imports this module for DeployConfigParams,
     # so a module-level import of the API client would close that cycle.
@@ -684,17 +713,93 @@ async def follow_git_deploy(agent_name: str, org: str | None, commit_sha: str) -
             data, error = await API.bubble_error().agent(agent_name=agent_name, org=org)
             if not error and data:
                 candidate = data.get("latestDeploy")
-                # Only trust the attempt for the commit we queued. A push
-                # landing mid-wait supersedes ours, and reporting that one's
-                # result as ours would be wrong.
-                if candidate and (not commit_sha or candidate.get("commitSha") == commit_sha):
+                if candidate:
+                    found_sha = candidate.get("commitSha")
+                    # A different commit is positive evidence, not an absence
+                    # of it. The API reads this from the primary ordered by
+                    # created_at DESC, and our own intent was already
+                    # committed when the trigger answered 202 — so anything
+                    # else holding "latest" is strictly newer, and ours can
+                    # never reclaim the spot. Waiting out the budget here
+                    # would report a stale snapshot twenty minutes later.
+                    if commit_sha and found_sha != commit_sha:
+                        return GitDeployResult(
+                            GitDeployWait.SUPERSEDED,
+                            deploy=latest,
+                            superseded_by=found_sha,
+                        )
                     latest = candidate
                     status_value = candidate.get("status")
                     if status_value != last_status:
                         last_status = status_value
                         live.update(f"[dim]Deploy {status_value}...[/dim]")
                     if not is_deploy_in_flight(candidate):
-                        return latest
+                        return GitDeployResult(GitDeployWait.TERMINAL, deploy=latest)
             await asyncio.sleep(GIT_DEPLOY_POLL_SECONDS)
 
-    return latest
+    if latest is None:
+        return GitDeployResult(GitDeployWait.UNOBSERVED)
+    return GitDeployResult(GitDeployWait.IN_FLIGHT, deploy=latest)
+
+
+def report_git_deploy_result(
+    result: GitDeployResult, agent_name: str, *, first_deploy: bool = False
+) -> None:
+    """Render a finished `--wait` and set the exit code.
+
+    Shared by both wait call sites so the four outcomes can't be interpreted
+    differently in two places.
+
+    On exit codes: only an observed failure and a never-observed deploy exit
+    non-zero. A deploy still building when the budget runs out has not failed,
+    and neither has one that a newer push took over. But a wait that never saw
+    anything cannot tell a healthy build from an API that was down the whole
+    time, and reporting that as success is what would make `--wait` unsafe as
+    a deploy gate.
+    """
+    from pipecatcloud._utils.console_utils import console
+    from pipecatcloud._utils.github_utils import short_sha
+    from pipecatcloud.cli import PIPECAT_CLI_NAME
+
+    check_hint = (
+        f"[dim]Check it with [bold]{PIPECAT_CLI_NAME} agent status {agent_name}[/bold].[/dim]"
+    )
+    label = "First deploy" if first_deploy else "Deploy"
+
+    if result.outcome is GitDeployWait.TERMINAL:
+        deploy = result.deploy or {}
+        status_value = deploy.get("status")
+        commit = deploy.get("commitSha")
+        if status_value == "succeeded":
+            console.success(
+                f"Deployed '{agent_name}'" + (f" from commit {short_sha(commit)}" if commit else "")
+            )
+            return
+        reason = deploy.get("reason") or "No reason reported."
+        console.error(f"{label} of '{agent_name}' {status_value}.\n{reason}")
+        raise typer.Exit(1)
+
+    if result.outcome is GitDeployWait.SUPERSEDED:
+        newer = short_sha(result.superseded_by) if result.superseded_by else "a newer commit"
+        console.print(
+            f"[yellow]Superseded: a newer deploy ({newer}) is now the latest attempt for "
+            f"'{agent_name}', so this one's result is no longer reported.[/yellow]\n" + check_hint
+        )
+        return
+
+    if result.outcome is GitDeployWait.IN_FLIGHT:
+        status_value = (result.deploy or {}).get("status") or "in progress"
+        console.print(
+            f"[yellow]Still {status_value} after waiting. The deploy continues "
+            f"server-side.[/yellow]\n" + check_hint
+        )
+        return
+
+    # UNOBSERVED. Never assert progress we did not see.
+    console.error(
+        f"Could not confirm the deploy of '{agent_name}': no deploy attempt was visible "
+        "while waiting.\n"
+        "[dim]The API may have been unreachable, or the attempt may never have been "
+        f"queued.[/dim]\n" + check_hint
+    )
+    raise typer.Exit(1)

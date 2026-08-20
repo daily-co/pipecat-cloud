@@ -31,8 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `pipecat cloud agent deploy <name> --github` builds and deploys the linked
   branch's current HEAD without waiting for a push, printing the deploy intent
-  and commit. `--wait` follows the deploy to success or failure and exits
-  non-zero when it fails, which makes it usable as a CI step.
+  and commit. `--wait` follows the deploy and reports one of four outcomes: it
+  succeeded, it failed, a newer push superseded it (naming the newer commit),
+  or it was still building when the wait ran out. Only an observed failure and
+  a deploy that was never visible at all exit non-zero, so a green `--wait`
+  means the deploy was observed and did not fail, never merely that the wait
+  finished. In `--output json` the outcome is reported as `waitOutcome`.
 
 - `pipecat cloud agent list` gains a GitHub column, and `agent status` reports
   the linked repository and branch, the Dockerfile path, whether pushes
