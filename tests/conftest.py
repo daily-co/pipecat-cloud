@@ -16,6 +16,18 @@ _tmp.write('token = "test-token"\norg = "test-org"\n')
 _tmp.close()
 os.environ["PIPECAT_CONFIG_PATH"] = _tmp.name
 
+# Rich decides is_terminal from the environment before ever asking the file:
+# TTY_COMPATIBLE and FORCE_COLOR (any non-empty value) both make a console
+# writing to a plain buffer claim to be a terminal. Developer shells commonly
+# export FORCE_COLOR, which flipped every auto-detection console into rich
+# mode locally and failed the plain-mode tests that pass in CI. The console
+# singleton holds a live reference to os.environ, so scrubbing here (before
+# any pipecatcloud import, like the config path above) makes detection depend
+# only on the file handed to the console — for the singleton and for every
+# console a test constructs.
+os.environ.pop("FORCE_COLOR", None)
+os.environ.pop("TTY_COMPATIBLE", None)
+
 import pytest  # noqa: E402
 
 

@@ -196,7 +196,9 @@ class TestCLIRegionValidation:
             # API returns (data, error) tuple
             mock_regions_api.regions = AsyncMock(return_value=(mock_regions, None))
             mock_config.get.return_value = "test-org"
-            mock_api.secrets_list = AsyncMock(return_value=(None, None))
+            # The existence check fetches the set itself (see cli#197 and the
+            # secrets-set sibling fix); None = no set of that name yet.
+            mock_api.secrets_get = AsyncMock(return_value=(None, None))
             mock_api.secrets_upsert = AsyncMock(return_value=({"status": "OK"}, None))
 
             # Act

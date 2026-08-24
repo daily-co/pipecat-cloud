@@ -361,14 +361,18 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         """
         if params.secret_set:
             live.update(f"[dim]Verifying secret set {params.secret_set} exists...[/dim]")
-            secrets_exist, error = await API.secrets_list(
+            # Fetch the set itself rather than its key names. Referenced sets
+            # (self-hosted regions) deliberately carry no key-name rows, so an
+            # empty key list means "contents are invisible by design", not
+            # "missing". Readiness stays a server-side deploy gate.
+            secret_set_data, error = await API.secrets_get(
                 secret_set=params.secret_set, org=org, live=live
             )
 
             if error:
                 raise typer.Exit(1)
 
-            if not secrets_exist:
+            if not secret_set_data:
                 live.stop()
                 console.error(
                     f"Secret set [bold]'{params.secret_set}'[/bold] not found in organization [bold]'{org}'[/bold]"
