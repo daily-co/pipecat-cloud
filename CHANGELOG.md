@@ -104,6 +104,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `pipecat cloud deploy` no longer rejects a referenced secret set as "not
+  found". The existence check read the set's array of key names and tested it
+  for truthiness, but referenced sets carry no key names by design (Daily
+  stores name, region and readiness, never the contents), so every healthy
+  referenced set failed the check and no self-hosted deploy could use one. The
+  check now fetches the set itself; readiness is still enforced server-side.
+
 - `pipecat cloud agent status` plain output (`--output plain`, or any piped
   invocation) now includes the Architecture and Resources rows. Both were
   rendered only in the rich table, so scripted output silently omitted the
