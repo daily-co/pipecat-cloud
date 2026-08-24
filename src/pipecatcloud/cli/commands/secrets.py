@@ -246,13 +246,25 @@ async def create_set(
         f"[dim]Checking for existing secret set with name [bold]'{name}'[/bold][/dim]",
         spinner="dots",
     ):
-        data, error = await API.secrets_list(org=org, secret_set=name)
+        # Fetch the set itself rather than its key names (same misread as the
+        # deploy guard, cli#197): a referenced set carries no key-name rows by
+        # design, so testing the key array reads "exists but referenced" as
+        # "does not exist".
+        set_data, error = await API.secrets_get(org=org, secret_set=name)
 
         if error:
             raise typer.Exit(1)
 
-        if data and len(data):
-            existing_set = data
+        if set_data and set_data.get("source") == "referenced":
+            console.error(
+                f"Secret set [bold]'{name}'[/bold] is a referenced secret set. Its "
+                "contents live in your cluster and are managed there (for example "
+                f"with kubectl), not with '{PIPECAT_CLI_NAME} secrets set'."
+            )
+            raise typer.Exit(1)
+
+        if set_data:
+            existing_set = set_data.get("secrets") or []
 
     # Check for overlapping secret names
     if existing_set:
