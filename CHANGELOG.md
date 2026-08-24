@@ -111,6 +111,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   referenced set failed the check and no self-hosted deploy could use one. The
   check now fetches the set itself; readiness is still enforced server-side.
 
+- `pipecat cloud secrets set` no longer treats an existing referenced secret
+  set as nonexistent. It had the same key-names misread as the deploy guard,
+  so it announced "Creating secret set" and then failed on the server's
+  name-uniqueness check. It now refuses before asking for confirmation,
+  pointing at the cluster as the place a referenced set's contents are
+  managed.
+
 - `pipecat cloud agent status` plain output (`--output plain`, or any piped
   invocation) now includes the Architecture and Resources rows. Both were
   rendered only in the rich table, so scripted output silently omitted the

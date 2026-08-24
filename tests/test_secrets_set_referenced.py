@@ -24,12 +24,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from pipecatcloud.cli.commands.secrets import create_set
 
 
-def _run(mock_api):
+def _run(mock_api, skip_confirm=True):
     return create_set.aio(
         name="bot-keys",
         secrets=["KEY1=value1"],
         from_file=None,
-        skip_confirm=True,
+        skip_confirm=skip_confirm,
         organization="acme",
         region=None,
     )
@@ -59,6 +59,34 @@ async def test_referenced_set_is_refused_client_side(set_mocks):
         await _run(set_mocks)
 
     assert excinfo.value.exit_code == 1
+    set_mocks.secrets_upsert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_referenced_set_refuses_before_the_confirmation_prompt(set_mocks):
+    """The refusal must land before the confirmation, not after it (cli#197
+    review). Asking "proceed with these secrets?" and only then saying the
+    command does not apply to this set wastes the one answer we ask for."""
+    set_mocks.secrets_get = AsyncMock(
+        return_value=(
+            {"secrets": [], "region": "onprem-a", "source": "referenced", "status": "ready"},
+            None,
+        )
+    )
+    set_mocks.properties = AsyncMock(return_value=({"defaultRegion": "us-west"}, None))
+
+    with patch("pipecatcloud.cli.commands.secrets.questionary") as mock_questionary:
+        # Answer "yes" if we are asked, so reaching the prompt fails on the
+        # assertion below rather than on an unawaitable mock.
+        mock_questionary.confirm.return_value.ask_async = AsyncMock(return_value=True)
+        with pytest.raises(typer.Exit) as excinfo:
+            await _run(set_mocks, skip_confirm=False)
+
+    assert excinfo.value.exit_code == 1
+    mock_questionary.confirm.assert_not_called()
+    # The region lookup only exists to render the confirmation panel, so it is
+    # a second witness that nothing was shown before the refusal.
+    set_mocks.properties.assert_not_awaited()
     set_mocks.secrets_upsert.assert_not_awaited()
 
 
