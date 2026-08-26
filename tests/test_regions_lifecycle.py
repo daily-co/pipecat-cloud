@@ -113,28 +113,60 @@ async def test_show_unknown_region_exits_nonzero(region_mocks):
 
 
 @pytest.mark.asyncio
-async def test_delete_without_force_requires_interactive(region_mocks):
-    """Non-interactive + no --force must fail fast (exit 2 via
+async def test_delete_without_yes_requires_interactive(region_mocks):
+    """Non-interactive + no --yes must fail fast (exit 2 via
     require_interactive), never hang on a prompt (PCC-1064 rules)."""
     _, mock_console = region_mocks
     mock_console.require_interactive.side_effect = typer.Exit(2)
 
     with pytest.raises(typer.Exit) as excinfo:
-        await delete_region.aio("acme", force=False, organization=None)
+        await delete_region.aio("acme", yes=False, organization=None)
     assert excinfo.value.exit_code == 2
-    mock_console.require_interactive.assert_called_once_with("--force")
+    # The hint must name --yes, not a flag that also bypasses a server guard:
+    # this message is what pushes CI callers onto their next command.
+    mock_console.require_interactive.assert_called_once_with("--yes")
 
 
 @pytest.mark.asyncio
-async def test_delete_force_passes_force_to_api(region_mocks):
+async def test_delete_never_sends_a_guard_bypass(region_mocks):
+    """--yes skips the prompt only (PCC-1141). No force reaches the API, so
+    the server's live-session/deployed-service guard always applies."""
     mock_api, _ = region_mocks
     mock_api.region_delete = AsyncMock(return_value=({}, None))
 
-    await delete_region.aio("acme", force=True, organization=None)
+    await delete_region.aio("acme", yes=True, organization=None)
 
     kwargs = mock_api.region_delete.await_args.kwargs
-    assert kwargs["force"] is True
     assert kwargs["region_key"] == "acme"
+    assert "force" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_delete_reports_pending_propagation(region_mocks):
+    """A 202 means the revocation is recorded but the cutoff was still landing.
+    Reporting a flat 'revoked' would claim more than the API did."""
+    mock_api, mock_console = region_mocks
+    mock_api.region_delete = AsyncMock(
+        return_value=({"status": "revoked", "propagation": "pending"}, None)
+    )
+
+    await delete_region.aio("acme", yes=True, organization=None)
+
+    printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
+    assert "propagating" in printed
+
+
+@pytest.mark.asyncio
+async def test_delete_says_nothing_extra_on_a_clean_revoke(region_mocks):
+    """204 is the API keeping its promise in full, so no caveat. The API client
+    maps that to None explicitly (see TestNoContentResponses); this pins what
+    the command does with it."""
+    mock_api, mock_console = region_mocks
+    mock_api.region_delete = AsyncMock(return_value=(None, None))
+
+    await delete_region.aio("acme", yes=True, organization=None)
+
+    mock_console.print.assert_not_called()
 
 
 @pytest.mark.asyncio

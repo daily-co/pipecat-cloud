@@ -63,8 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uppercased key. `regions show <key>` prints the full record, including the
   enrollment status and intermediate certificate expiry. `regions delete
   <key>` revokes a region, surfacing the server's refusal while live sessions
-  or deployed services exist; `--force` bypasses both the prompt and the
-  guard. `regions enroll-token <key>` mints the one-time enrollment token and
+  or deployed services exist; that guard has no bypass, so delete the region's
+  agents first, and `--yes` only skips the confirmation prompt.
+  `regions enroll-token <key>` mints the one-time enrollment token and
   prints the ready-to-paste `kubectl create secret` command.
 
 - New `pipecat cloud organizations registry-keys` command group for the

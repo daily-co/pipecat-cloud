@@ -427,3 +427,65 @@ class TestOrganizationsCurrent:
             result = await api_client._organizations_current(org=None)
 
             assert result is None
+
+
+class TestRegionDelete:
+    """Region revocation request construction (PCC-1141)."""
+
+    @pytest.fixture
+    def api_client(self):
+        return _API(token="test-token", is_cli=True)
+
+    @pytest.mark.asyncio
+    async def test_delete_url_carries_no_guard_bypass(self, api_client):
+        """The DELETE must be a bare resource URL. The server's live-session
+        and deployed-service guard has no bypass, and the CLI must never
+        reintroduce one by hand-appending a query parameter."""
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = None
+
+            await api_client._region_delete(org="test-org", region_key="acme-us-east")
+
+            method, url = mock_request.call_args[0][:2]
+            assert method == "DELETE"
+            assert url.endswith("/acme-us-east")
+            assert "?" not in url
+
+
+class TestNoContentResponses:
+    """A 204 must resolve to None deliberately, not via a swallowed parse error
+    (cli#198 review). Callers branch on the shape of this value."""
+
+    @pytest.fixture
+    def api_client(self):
+        return _API(token="test-token", is_cli=True)
+
+    @pytest.mark.asyncio
+    async def test_204_returns_none_without_parsing_a_body(self, api_client):
+        json_called = False
+
+        async def _json():
+            nonlocal json_called
+            json_called = True
+            raise AssertionError("must not parse a body on 204")
+
+        class _Resp:
+            ok = True
+            status = 204
+            json = staticmethod(_json)
+
+        class _Session:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            async def request(self, **_kwargs):
+                return _Resp()
+
+        with patch("aiohttp.ClientSession", lambda *a, **k: _Session()):
+            result = await api_client._base_request("DELETE", "https://example/x")
+
+        assert result is None
+        assert json_called is False

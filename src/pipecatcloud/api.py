@@ -162,6 +162,16 @@ class _API:
                     }
                 response.raise_for_status()
 
+            # 204 has no body, and Express strips Content-Type with it, so
+            # .json() raises ContentTypeError rather than returning anything.
+            # That exception used to be swallowed by create_api_method (self.error
+            # is unset on an ok response) and surface as a bare None, which is the
+            # right answer reached by accident. Return it deliberately: callers
+            # now branch on the shape of this value, and an accident is a poor
+            # thing to branch on.
+            if response.status == 204:
+                return None
+
             return await response.json()
 
     def create_api_method(self, method_func: Callable) -> Callable:
@@ -807,20 +817,18 @@ class _API:
         """
         return self.create_api_method(self._region_get)
 
-    async def _region_delete(self, org: str, region_key: str, force: bool = False) -> dict | None:
+    async def _region_delete(self, org: str, region_key: str) -> dict | None:
         url = f"{self.construct_api_url('regions_path').format(org=org)}/{region_key}"
-        if force:
-            url += "?force=true"
         return await self._base_request("DELETE", url)
 
     @property
     def region_delete(self):
-        """Revoke a self-hosted region. Without force the server refuses (409)
-        while the region has live sessions or deployed services.
+        """Revoke a self-hosted region. The server refuses (409) while the
+        region has live sessions or deployed services, and that guard has no
+        bypass (PCC-1141): the region's agents must be deleted first.
         Args:
             org: Organization ID
             region_key: the region's key
-            force: bypass the live-workload guard
         """
         return self.create_api_method(self._region_delete)
 
