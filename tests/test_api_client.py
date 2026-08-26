@@ -427,3 +427,26 @@ class TestOrganizationsCurrent:
             result = await api_client._organizations_current(org=None)
 
             assert result is None
+
+
+class TestRegionDelete:
+    """Region revocation request construction (PCC-1141)."""
+
+    @pytest.fixture
+    def api_client(self):
+        return _API(token="test-token", is_cli=True)
+
+    @pytest.mark.asyncio
+    async def test_delete_url_carries_no_guard_bypass(self, api_client):
+        """The DELETE must be a bare resource URL. The server's live-session
+        and deployed-service guard has no bypass, and the CLI must never
+        reintroduce one by hand-appending a query parameter."""
+        with patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = None
+
+            await api_client._region_delete(org="test-org", region_key="acme-us-east")
+
+            method, url = mock_request.call_args[0][:2]
+            assert method == "DELETE"
+            assert url.endswith("/acme-us-east")
+            assert "?" not in url

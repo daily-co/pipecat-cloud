@@ -215,22 +215,27 @@ async def show_region(
 @requires_login
 async def delete_region(
     region_key: str = typer.Argument(..., help="The region's key"),
-    force: bool = typer.Option(
+    # --yes skips the prompt and nothing else (PCC-1141). The guard on live
+    # sessions and deployed services is the server's and has no bypass, so a
+    # non-interactive caller reaching for this flag cannot destroy anything
+    # the interactive path would have refused.
+    yes: bool = typer.Option(
         False,
-        "--force",
-        "-f",
-        help="Bypass the confirmation prompt AND the server's live-workload guard",
+        "--yes",
+        "-y",
+        help="Skip the confirmation prompt",
     ),
     organization: str = typer.Option(None, "--organization", "-o"),
 ):
     org = organization or config.get("org")
 
-    if not force:
-        console.require_interactive("--force")
+    if not yes:
+        console.require_interactive("--yes")
         if not await questionary.confirm(
             f"Revoke region '{region_key}'? Its agent loses the control-plane "
             "channel; the cluster itself is not touched. The server refuses "
-            "while the region has live sessions or deployed services."
+            "while the region has live sessions or deployed services; remove "
+            "its agents first."
         ).ask_async():
             console.print("[bold]Aborting delete request[/bold]")
             raise typer.Exit(1)
@@ -238,7 +243,7 @@ async def delete_region(
     with console.status(f"[dim]Revoking region [bold]'{region_key}'[/bold][/dim]", spinner="dots"):
         # The 409 guard message (live session/service counts) is curated,
         # customer-safe API copy — the error panel passes it through.
-        data, error = await API.region_delete(org=org, region_key=region_key, force=force)
+        data, error = await API.region_delete(org=org, region_key=region_key)
         if error:
             raise typer.Exit(1)
 
@@ -246,6 +251,14 @@ async def delete_region(
         console.output_json({"deleted": region_key, "result": data or {}})
         return
     console.success(f"Region '{region_key}' revoked")
+    # A 202 carries propagation: pending — the revocation is recorded, but the
+    # cutoff had not finished landing when the call returned. Reporting a flat
+    # "revoked" would claim more than the API did.
+    if (data or {}).get("propagation") == "pending":
+        console.print(
+            "[yellow]The region's connection may persist briefly until the "
+            "change finishes propagating.[/yellow]"
+        )
 
 
 @regions_cli.command(
