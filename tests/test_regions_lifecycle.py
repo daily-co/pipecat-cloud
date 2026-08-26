@@ -158,7 +158,9 @@ async def test_delete_reports_pending_propagation(region_mocks):
 
 @pytest.mark.asyncio
 async def test_delete_says_nothing_extra_on_a_clean_revoke(region_mocks):
-    """204 (no body) is the API keeping its promise in full — no caveat."""
+    """204 is the API keeping its promise in full, so no caveat. The API client
+    maps that to None explicitly (see TestNoContentResponses); this pins what
+    the command does with it."""
     mock_api, mock_console = region_mocks
     mock_api.region_delete = AsyncMock(return_value=(None, None))
 

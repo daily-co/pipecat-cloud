@@ -450,3 +450,42 @@ class TestRegionDelete:
             assert method == "DELETE"
             assert url.endswith("/acme-us-east")
             assert "?" not in url
+
+
+class TestNoContentResponses:
+    """A 204 must resolve to None deliberately, not via a swallowed parse error
+    (cli#198 review). Callers branch on the shape of this value."""
+
+    @pytest.fixture
+    def api_client(self):
+        return _API(token="test-token", is_cli=True)
+
+    @pytest.mark.asyncio
+    async def test_204_returns_none_without_parsing_a_body(self, api_client):
+        json_called = False
+
+        async def _json():
+            nonlocal json_called
+            json_called = True
+            raise AssertionError("must not parse a body on 204")
+
+        class _Resp:
+            ok = True
+            status = 204
+            json = staticmethod(_json)
+
+        class _Session:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            async def request(self, **_kwargs):
+                return _Resp()
+
+        with patch("aiohttp.ClientSession", lambda *a, **k: _Session()):
+            result = await api_client._base_request("DELETE", "https://example/x")
+
+        assert result is None
+        assert json_called is False

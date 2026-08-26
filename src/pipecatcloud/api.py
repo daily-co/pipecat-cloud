@@ -162,6 +162,16 @@ class _API:
                     }
                 response.raise_for_status()
 
+            # 204 has no body, and Express strips Content-Type with it, so
+            # .json() raises ContentTypeError rather than returning anything.
+            # That exception used to be swallowed by create_api_method (self.error
+            # is unset on an ok response) and surface as a bare None, which is the
+            # right answer reached by accident. Return it deliberately: callers
+            # now branch on the shape of this value, and an accident is a poor
+            # thing to branch on.
+            if response.status == 204:
+                return None
+
             return await response.json()
 
     def create_api_method(self, method_func: Callable) -> Callable:
