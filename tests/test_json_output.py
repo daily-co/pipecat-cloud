@@ -86,7 +86,9 @@ class TestJsonMode:
             )
             result = runner.invoke(entrypoint_cli_typer, ["spend-limit", "show", "--json"])
         assert result.exit_code == 0
-        assert json.loads(result.stdout) == payload
+        # "test-org" is the active org from conftest; the CLI names it because
+        # the API response does not.
+        assert json.loads(result.stdout) == {**payload, "organization": "test-org"}
 
     def test_spend_limit_json_error_object_on_stdout(self):
         api_error = {"code": "500", "error": "boom"}
