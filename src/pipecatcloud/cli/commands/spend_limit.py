@@ -47,8 +47,31 @@ def _parse_amount_to_cents(amount: str) -> int:
     return int(cents)
 
 
-def _render_show(data: dict) -> None:
-    """Pretty-print the spend-limit payload for a human reader."""
+def _with_org(data: dict | None, org: str | None) -> dict:
+    """Return the payload with the organization it describes.
+
+    The API response does not name the organization, so JSON consumers had no
+    way to tell which org a limit belonged to. A server-supplied
+    `organization` key wins if one ever appears.
+
+    An absent payload stays empty. `spend_limit_get` returns None on a 404,
+    and `{}` is the sentinel JSON consumers test for; adding a key would make
+    the no-data result truthy.
+    """
+    if not data:
+        return {}
+    payload = dict(data)
+    if org:
+        payload.setdefault("organization", org)
+    return payload
+
+
+def _render_show(data: dict, org: str | None) -> None:
+    """Pretty-print the spend-limit payload for a human reader.
+
+    The organization is rendered as the first row so the numbers are never
+    ambiguous when several orgs are in play.
+    """
     limit_cents = data.get("limitCents")
     spend_cents = data.get("currentSpendCents", 0) or 0
     period_start = data.get("periodStart")
@@ -65,6 +88,9 @@ def _render_show(data: dict) -> None:
     )
     table.add_column("Field", style="cyan")
     table.add_column("Value", style="white")
+
+    if org:
+        table.add_row("Organization", org)
 
     if limit_cents is None:
         table.add_row("Limit", "[dim]no limit set[/dim]")
@@ -128,7 +154,7 @@ async def show(
         if error:
             console.output_json({"error": error})
             raise typer.Exit(1)
-        console.output_json(data if data is not None else {})
+        console.output_json(_with_org(data, org))
         return
 
     with console.status(
@@ -141,10 +167,12 @@ async def show(
             raise typer.Exit(1)
 
     if data is None:
-        console.print("[dim]No spend-limit data available for this organization.[/dim]")
+        console.print(
+            f"[dim]No spend-limit data available for organization [bold]'{org}'[/bold].[/dim]"
+        )
         return
 
-    _render_show(data)
+    _render_show(data, org)
 
 
 @spend_limit_cli.command(name="set", help="Set or update the spend limit.")
@@ -190,7 +218,8 @@ async def set_limit(
         if new_cents == 0:
             console.require_interactive("--yes")
             confirm = await questionary.confirm(
-                "Setting the limit to $0.00 blocks all new sessions until you raise it. Continue?",
+                f"Setting the limit for '{org}' to $0.00 blocks all new sessions "
+                "until you raise it. Continue?",
                 default=False,
             ).ask_async()
             if not confirm:
@@ -199,7 +228,7 @@ async def set_limit(
         elif current_spend > new_cents:
             console.require_interactive("--yes")
             confirm = await questionary.confirm(
-                f"Current spend ({format_cents(current_spend)}) exceeds the new limit "
+                f"Current spend for '{org}' ({format_cents(current_spend)}) exceeds the new limit "
                 f"({format_cents(new_cents)}). New sessions will be blocked. Continue?",
                 default=False,
             ).ask_async()
@@ -217,7 +246,7 @@ async def set_limit(
             raise typer.Exit(1)
 
     if console.json_output:
-        console.output_json(data or {})
+        console.output_json(_with_org(data, org))
         return
 
     console.success(
@@ -225,7 +254,7 @@ async def set_limit(
         f"[bold green]{format_cents(new_cents)}[/bold green]."
     )
     if data:
-        _render_show(data)
+        _render_show(data, org)
 
 
 @spend_limit_cli.command(name="clear", help="Remove the spend limit.")
@@ -267,9 +296,9 @@ async def clear(
             raise typer.Exit(1)
 
     if console.json_output:
-        console.output_json(data or {})
+        console.output_json(_with_org(data, org))
         return
 
     console.success(f"Spend limit for [bold]'{org}'[/bold] cleared.")
     if data:
-        _render_show(data)
+        _render_show(data, org)

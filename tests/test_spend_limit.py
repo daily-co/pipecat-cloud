@@ -200,7 +200,8 @@ class TestRenderShow:
                 "limitCents": 0,
                 "currentSpendCents": 0,
                 "blocked": False,
-            }
+            },
+            "test-org",
         )
         out = capsys.readouterr().out
         assert "$0.00" in out
@@ -211,12 +212,25 @@ class TestRenderShow:
                 "limitCents": None,
                 "currentSpendCents": 0,
                 "blocked": False,
-            }
+            },
+            "test-org",
         )
         out = capsys.readouterr().out
         assert "no limit set" in out
         # The percent suffix should not appear without a positive limit.
         assert "%" not in out
+
+    def test_organization_is_named_in_output(self, capsys):
+        _render_show(
+            {
+                "limitCents": 5000,
+                "currentSpendCents": 1234,
+                "blocked": False,
+            },
+            "acme-org",
+        )
+        out = capsys.readouterr().out
+        assert "acme-org" in out
 
 
 class TestSpendLimitShowCommand:
@@ -238,7 +252,34 @@ class TestSpendLimitShowCommand:
             show(organization="test-org", output_json=True)
 
         captured = capsys.readouterr().out
-        assert json.loads(captured) == payload
+        # The API response does not name the org, so the CLI adds it: JSON
+        # consumers need to know which organization the numbers describe.
+        assert json.loads(captured) == {**payload, "organization": "test-org"}
+
+    def test_show_json_keeps_server_supplied_organization(self, capsys):
+        payload = {"limitCents": 5000, "organization": "server-org"}
+
+        mock_api = MagicMock()
+        mock_api.bubble_error.return_value = mock_api
+        mock_api.spend_limit_get = AsyncMock(return_value=(payload, None))
+
+        with patch("pipecatcloud.cli.commands.spend_limit.API", mock_api):
+            show(organization="test-org", output_json=True)
+
+        assert json.loads(capsys.readouterr().out)["organization"] == "server-org"
+
+    def test_show_json_keeps_empty_payload_empty(self, capsys):
+        """A 404 yields (None, None) via not_found_is_empty. Consumers use the
+        empty object as the no-data sentinel, so the org must not be added:
+        `if not payload` has to keep working."""
+        mock_api = MagicMock()
+        mock_api.bubble_error.return_value = mock_api
+        mock_api.spend_limit_get = AsyncMock(return_value=(None, None))
+
+        with patch("pipecatcloud.cli.commands.spend_limit.API", mock_api):
+            show(organization="test-org", output_json=True)
+
+        assert json.loads(capsys.readouterr().out) == {}
 
 
 class TestSpendLimitSetCommand:
