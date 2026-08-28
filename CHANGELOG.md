@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the confirmation prompts on `set` name the org, and `--output json` adds an
   `organization` key to the payload (the API response does not carry one). A
   server-supplied `organization` field, should one appear, is left as-is.
+  The empty payload is unchanged: when the organization has no spend-limit
+  record, `show --output json` still emits `{}`, so consumers testing the
+  result for emptiness keep working.
 
 ## [1.2.0] - 2026-08-27
 

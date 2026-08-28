@@ -90,6 +90,28 @@ class TestJsonMode:
         # the API response does not.
         assert json.loads(result.stdout) == {**payload, "organization": "test-org"}
 
+    def test_spend_limit_set_json_names_organization(self):
+        """`set` and `clear` attribute their JSON the same way `show` does."""
+        with patch("pipecatcloud.cli.commands.spend_limit.API") as mock_api:
+            mock_api.spend_limit_get = AsyncMock(return_value=({"currentSpendCents": 0}, None))
+            mock_api.spend_limit_update = AsyncMock(return_value=({"limitCents": 5000}, None))
+            result = runner.invoke(
+                entrypoint_cli_typer,
+                ["--output", "json", "spend-limit", "set", "50", "--yes"],
+            )
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"limitCents": 5000, "organization": "test-org"}
+
+    def test_spend_limit_clear_json_names_organization(self):
+        with patch("pipecatcloud.cli.commands.spend_limit.API") as mock_api:
+            mock_api.spend_limit_update = AsyncMock(return_value=({"limitCents": None}, None))
+            result = runner.invoke(
+                entrypoint_cli_typer,
+                ["--output", "json", "spend-limit", "clear", "--yes"],
+            )
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"limitCents": None, "organization": "test-org"}
+
     def test_spend_limit_json_error_object_on_stdout(self):
         api_error = {"code": "500", "error": "boom"}
         with patch("pipecatcloud.cli.commands.spend_limit.API") as mock_api:

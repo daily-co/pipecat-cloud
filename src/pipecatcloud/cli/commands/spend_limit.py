@@ -53,14 +53,20 @@ def _with_org(data: dict | None, org: str | None) -> dict:
     The API response does not name the organization, so JSON consumers had no
     way to tell which org a limit belonged to. A server-supplied
     `organization` key wins if one ever appears.
+
+    An absent payload stays empty. `spend_limit_get` returns None on a 404,
+    and `{}` is the sentinel JSON consumers test for; adding a key would make
+    the no-data result truthy.
     """
-    payload = dict(data or {})
+    if not data:
+        return {}
+    payload = dict(data)
     if org:
         payload.setdefault("organization", org)
     return payload
 
 
-def _render_show(data: dict, org: str | None = None) -> None:
+def _render_show(data: dict, org: str | None) -> None:
     """Pretty-print the spend-limit payload for a human reader.
 
     The organization is rendered as the first row so the numbers are never
