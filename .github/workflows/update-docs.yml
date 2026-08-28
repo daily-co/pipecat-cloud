@@ -3,11 +3,14 @@
 # pipecat-ai/pipecat through the pipecat-dev-skills marketplace; the mapping it
 # applies is this repo's own .claude/skills/update-docs/SOURCE_DOC_MAPPING.md.
 #
-# Requires two repository secrets that do not exist here yet:
-#   DOCS_BOT_APP_ID, DOCS_BOT_PRIVATE_KEY  — the same GitHub App pipecat uses.
+# Requires three repository secrets, none of which exist here yet:
+#   DOCS_BOT_APP_ID, DOCS_BOT_PRIVATE_KEY  — the same GitHub App pipecat uses
+#   ANTHROPIC_API_KEY                      — for the agent that writes the docs
+#
 # This repo is in daily-co while the docs repo is in pipecat-ai, so the App
 # token is minted for owner pipecat-ai and scoped to `docs` alone. Reading this
-# repo's own PRs uses the default GITHUB_TOKEN, which needs no extra grant.
+# repo's own PRs uses the default GITHUB_TOKEN, which needs no extra grant. The
+# App therefore needs no installation on daily-co — only the credentials.
 #
 # Until those secrets are set, the workflow will fail at its first step rather
 # than run and do nothing.
