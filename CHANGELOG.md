@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pipecat cloud agent sessions` now shows how each session ended. The
   Status column distinguishes sessions where the caller hung up while
   waiting for agent capacity ("Ended before agent start") and activation
-  timeouts ("Timeout") from completed sessions — previously both rendered
+  timeouts ("Timeout") from completed sessions. Previously both rendered
   as "Complete". The session detail view lists the session's lifecycle
   events, and a new `--end-state` option filters the list (e.g.
   `--end-state ended_before_agent_start`).

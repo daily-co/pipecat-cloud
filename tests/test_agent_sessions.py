@@ -15,7 +15,6 @@ import typer
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pipecatcloud.cli.commands.agent import (
-    SessionEndState,
     _session_status_display,
     sessions,
 )
@@ -65,11 +64,39 @@ class TestAgentSessionsCommand:
             deploy_config=None,
             agent_name=TEST_AGENT,
             session_id=None,
-            end_state=SessionEndState.ENDED_BEFORE_AGENT_START,
+            end_state="ended_before_agent_start",
             organization=TEST_ORG,
         )
 
         assert mock_api.call_args.kwargs["end_state"] == "ended_before_agent_start"
+
+    def test_unknown_but_well_formed_end_state_passes_through(self, mock_api):
+        """The filter is deliberately open: a state added by the API after this
+        CLI release must still be filterable (review feedback on the PR)."""
+        mock_api.return_value = {"sessions": []}
+
+        sessions(
+            deploy_config=None,
+            agent_name=TEST_AGENT,
+            session_id=None,
+            end_state="some_future_state",
+            organization=TEST_ORG,
+        )
+
+        assert mock_api.call_args.kwargs["end_state"] == "some_future_state"
+
+    def test_malformed_end_state_is_rejected_locally(self, mock_api):
+        """Shape validation still catches obvious typos (uppercase, spaces)."""
+        with pytest.raises(typer.Exit) as exc_info:
+            sessions(
+                deploy_config=None,
+                agent_name=TEST_AGENT,
+                session_id=None,
+                end_state="Not A State",
+                organization=TEST_ORG,
+            )
+        assert exc_info.value.exit_code == 1
+        mock_api.assert_not_called()
 
     def test_no_end_state_filter_passes_none(self, mock_api):
         mock_api.return_value = {"sessions": []}

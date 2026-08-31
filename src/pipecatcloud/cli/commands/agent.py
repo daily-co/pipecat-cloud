@@ -5,6 +5,7 @@
 #
 
 import json
+import re
 from enum import Enum
 
 import aiohttp
@@ -535,14 +536,19 @@ async def status(
         )
 
 
-class SessionEndState(str, Enum):
-    ACTIVE = "active"
-    COMPLETED = "completed"
-    ENDED_BEFORE_AGENT_START = "ended_before_agent_start"
-    AGENT_START_TIMEOUT = "agent_start_timeout"
-    TERMINATED = "terminated"
-    UNKNOWN = "unknown"
-
+# Known endState values, for --help and display wording. The filter itself is
+# deliberately OPEN (a validated string, not an Enum): a state the API adds
+# later is filterable from this CLI without a release, matching the display
+# side's tolerance of unrecognized values. The API rejects invalid values.
+_KNOWN_END_STATES = (
+    "active",
+    "completed",
+    "ended_before_agent_start",
+    "agent_start_timeout",
+    "terminated",
+    "agent_error",
+    "unknown",
+)
 
 # Customer-facing wording for the API's derived session endState (PCC-1163),
 # as (plain, rich) pairs. Unrecognized future values render as a generic
@@ -556,6 +562,7 @@ _END_STATE_DISPLAY = {
     ),
     "agent_start_timeout": ("Timeout", "[red]Timeout[/red]"),
     "terminated": ("Terminated", "Terminated"),
+    "agent_error": ("Agent error", "[red]Agent error[/red]"),
     "unknown": ("Ended", "Ended"),
 }
 
@@ -601,10 +608,13 @@ async def sessions(
         "-i",
         help="Session ID to filter by",
     ),
-    end_state: SessionEndState | None = typer.Option(
+    end_state: str | None = typer.Option(
         None,
         "--end-state",
-        help="Filter sessions by how they ended e.g. 'ended_before_agent_start'",
+        help="Filter sessions by how they ended. Known values: "
+        + ", ".join(_KNOWN_END_STATES)
+        + ". Other values are passed to the API, so states added after this "
+        "CLI release still filter.",
     ),
     organization: str = typer.Option(
         None, "--organization", "-o", help="Organization to list sessions for"
@@ -621,8 +631,15 @@ async def sessions(
             raise typer.Exit(1)
 
     # Direct (non-Typer) calls leave the OptionInfo default in place; only a
-    # real enum member means the filter was set.
-    end_state_value = end_state.value if isinstance(end_state, SessionEndState) else None
+    # real string means the filter was set. Validation is shape-only
+    # (lowercase snake) so unknown states pass through to the API - see the
+    # note on _KNOWN_END_STATES.
+    end_state_value = end_state if isinstance(end_state, str) else None
+    if end_state_value and not re.fullmatch(r"[a-z][a-z0-9_]*", end_state_value):
+        console.error(
+            f"Invalid --end-state '{end_state_value}'. Known values: {', '.join(_KNOWN_END_STATES)}"
+        )
+        raise typer.Exit(1)
 
     # If session_id is specified, fetch single session with detailed metrics
     if session_id:
