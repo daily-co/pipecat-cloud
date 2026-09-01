@@ -722,9 +722,12 @@ class _API:
     def agent_logs(self):
         return self.create_api_method(self._agent_logs)
 
-    async def _agent_sessions(self, agent_name: str, org: str) -> dict | None:
+    async def _agent_sessions(
+        self, agent_name: str, org: str, end_state: str | None = None
+    ) -> dict | None:
         url = f"{self.construct_api_url('services_sessions_path').format(org=org, service=agent_name)}"
-        return await self._base_request("GET", url) or {}
+        params = {"endState": end_state} if end_state else None
+        return await self._base_request("GET", url, params=params) or {}
 
     @property
     def agent_sessions(self):

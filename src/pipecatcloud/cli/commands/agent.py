@@ -5,6 +5,7 @@
 #
 
 import json
+import re
 from enum import Enum
 
 import aiohttp
@@ -535,6 +536,62 @@ async def status(
         )
 
 
+# Known endState values, for --help and display wording. The filter itself is
+# deliberately OPEN (a validated string, not an Enum): a state the API adds
+# later is filterable from this CLI without a release, matching the display
+# side's tolerance of unrecognized values. The API rejects invalid values.
+_KNOWN_END_STATES = (
+    "active",
+    "completed",
+    "ended_before_agent_start",
+    "agent_start_timeout",
+    "terminated",
+    "agent_error",
+    "unknown",
+)
+
+# Customer-facing wording for the API's derived session endState (PCC-1163),
+# as (plain, rich) pairs. Unrecognized future values render as a generic
+# "Ended" so the API can add states without breaking older CLIs.
+_END_STATE_DISPLAY = {
+    "active": ("Active", "[yellow]Active[/yellow]"),
+    "completed": ("Complete", "Complete"),
+    "ended_before_agent_start": (
+        "Ended before agent start",
+        "[yellow]Ended before agent start[/yellow]",
+    ),
+    "agent_start_timeout": ("Timeout", "[red]Timeout[/red]"),
+    "terminated": ("Terminated", "Terminated"),
+    "agent_error": ("Agent error", "[red]Agent error[/red]"),
+    "unknown": ("Ended", "Ended"),
+}
+
+
+def _session_status_display(session: dict, rich: bool = True) -> str:
+    """Status cell for a session, preferring the derived endState.
+
+    Falls back to the legacy endedAt-based wording when the API predates the
+    field (older self-hosted deployments).
+    """
+    if session.get("completionStatus") == "500":
+        return "[red]Error (500)[/red]" if rich else "Error (500)"
+    end_state = session.get("endState")
+    if end_state:
+        plain, colored = _END_STATE_DISPLAY.get(end_state, ("Ended", "Ended"))
+        return colored if rich else plain
+    if session.get("endedAt"):
+        return "Complete"
+    return "[yellow]Active[/yellow]" if rich else "Active"
+
+
+_LIFECYCLE_EVENT_COPY = {
+    "SESSION_START_INITIATED": "Start request received",
+    "REQUEST_ARRIVED_AT_BOT": "Request arrived at agent",
+    "SESSION_COMPLETED": "Session completed",
+    "SESSION_TIMEOUT": "Session timed out waiting for an agent",
+}
+
+
 @agent_cli.command(name="sessions", help="List active sessions for an agent")
 @synchronizer.create_blocking
 @requires_login
@@ -551,6 +608,14 @@ async def sessions(
         "-i",
         help="Session ID to filter by",
     ),
+    end_state: str | None = typer.Option(
+        None,
+        "--end-state",
+        help="Filter sessions by how they ended. Known values: "
+        + ", ".join(_KNOWN_END_STATES)
+        + ". Other values are passed to the API, so states added after this "
+        "CLI release still filter.",
+    ),
     organization: str = typer.Option(
         None, "--organization", "-o", help="Organization to list sessions for"
     ),
@@ -564,6 +629,17 @@ async def sessions(
         else:
             console.error("No target agent name provided")
             raise typer.Exit(1)
+
+    # Direct (non-Typer) calls leave the OptionInfo default in place; only a
+    # real string means the filter was set. Validation is shape-only
+    # (lowercase snake) so unknown states pass through to the API - see the
+    # note on _KNOWN_END_STATES.
+    end_state_value = end_state if isinstance(end_state, str) else None
+    if end_state_value and not re.fullmatch(r"[a-z][a-z0-9_]*", end_state_value):
+        console.error(
+            f"Invalid --end-state '{end_state_value}'. Known values: {', '.join(_KNOWN_END_STATES)}"
+        )
+        raise typer.Exit(1)
 
     # If session_id is specified, fetch single session with detailed metrics
     if session_id:
@@ -589,10 +665,7 @@ async def sessions(
             # Display detailed session view
             session_duration = format_duration(data.get("createdAt"), data.get("endedAt")) or "N/A"
             status = data.get("completionStatus", "")
-            if data.get("endedAt"):
-                status_display = "[red]Error (500)[/red]" if status == "500" else "Complete"
-            else:
-                status_display = "[yellow]Active[/yellow]"
+            status_display = _session_status_display(data)
 
             # Build session info panel
             info_lines = [
@@ -607,6 +680,18 @@ async def sessions(
                 else "[bold]Bot Start:[/bold] [dim]N/A[/dim]",
                 f"[bold]Cold Start:[/bold] {'[red]Yes[/red]' if data.get('coldStart') else 'No'}",
             ]
+
+            # Lifecycle events (PCC-1163): a list missing "Request arrived at
+            # agent" means no agent ever served the caller.
+            events = data.get("events") or []
+            if events:
+                info_lines.append("")
+                info_lines.append("[bold]Lifecycle:[/bold]")
+                for event in events:
+                    event_label = _LIFECYCLE_EVENT_COPY.get(
+                        event.get("eventCode"), event.get("eventCode")
+                    )
+                    info_lines.append(f"  {format_timestamp(event.get('eventTs'))}  {event_label}")
 
             # Add resource metrics if available
             metrics = data.get("resourceMetrics")
@@ -656,7 +741,12 @@ async def sessions(
     with console.status(
         f"[dim]Looking up agent with name '{agent_name}'[/dim]", spinner="dots"
     ) as live:
-        data, error = await API.agent_sessions(agent_name=agent_name, org=org, live=live)
+        data, error = await API.agent_sessions(
+            agent_name=agent_name,
+            org=org,
+            live=live,
+            end_state=end_state_value,
+        )
 
         live.stop()
 
@@ -691,9 +781,7 @@ async def sessions(
                         format_timestamp(s["createdAt"]),
                         format_timestamp(s["endedAt"]) if s["endedAt"] else "",
                         format_duration(s["createdAt"], s["endedAt"]) or "",
-                        ("Error (500)" if s.get("completionStatus") == "500" else "Complete")
-                        if s["endedAt"]
-                        else "Active",
+                        _session_status_display(s, rich=False),
                         s["botStartSeconds"] if s["botStartSeconds"] is not None else "",
                         s["coldStart"],
                     )
@@ -768,14 +856,7 @@ async def sessions(
             session_duration = (
                 format_duration(session["createdAt"], session["endedAt"]) or "[dim]N/A[/dim]"
             )
-            status = session.get("completionStatus", "")
-            if session["endedAt"]:
-                if status == "500":
-                    status_display = "[red]Error (500)[/red]"
-                else:
-                    status_display = "Complete"
-            else:
-                status_display = "[yellow]Active[/yellow]"
+            status_display = _session_status_display(session)
 
             is_cold_start = session["coldStart"] is True
             row_style = "on red" if is_cold_start else ""
