@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Self-hosted region keys must start with `pce-` (for Pipecat Enterprise),
+  which keeps them apart from Pipecat Cloud's own regions: `pce-us-east` can
+  be yours while `us-east` stays a Pipecat Cloud region. Keys are unique
+  within your organization rather than across Pipecat Cloud.
+  `pipecat cloud regions register` does not check the key itself: Pipecat
+  Cloud refuses a key without the prefix, and the command shows its error.
+  The command's help now gives `pce-acme-us-east` as its example.
 - `pipecat cloud spend-limit` now names the organization the numbers belong
   to. `show`, `set` and `clear` render an Organization row above the limit,
   the confirmation prompts on `set` name the org, and `--output json` adds an
