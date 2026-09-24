@@ -16,9 +16,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as "Complete". The session detail view lists the session's lifecycle
   events, and a new `--end-state` option filters the list (e.g.
   `--end-state ended_before_agent_start`).
+- `pipecat cloud organizations registry-keys list` has a Region column,
+  naming the self-hosted region whose cluster holds a key. Those keys are
+  managed by the region: its renewal rotates them and deleting the region
+  revokes them, so they cannot be revoked on their own while the region
+  exists.
 
 ### Changed
 
+- `pipecat cloud organizations registry-keys list` shows only active keys by
+  default. Revoked and expired keys build up over time (each renewal of a
+  region leaves its previous key behind), so pass `--all` to include them. The
+  same filter applies to `--output json`, so a script looking up a revoked key
+  by id needs `--all`.
+- The yes/no Revoked column of `registry-keys list` is now a Status column
+  (`active`, `expired` or `revoked`) in the same position, and Region is
+  appended after it, so scripts that read the plain output by column keep
+  working.
+- `pipecat cloud organizations registry-keys mint` prints a login command that
+  names the registry of the environment you minted against, rather than always
+  production's, and passes the key to `helm` on stdin:
+  `printf '%s' '<key>' | helm registry login <registry> -u pcc --password-stdin`.
+  The key no longer appears as a `-p` argument, where other users on the
+  machine could read it from the process list. The command needs a POSIX
+  shell. `--output json` adds a `registryHost` field; `helmLoginCommand` is
+  now a shell pipeline, so scripts that run it without a shell should build
+  the login from `key`, `registryHost` and `username` instead.
+- The API no longer mints a registry key when a region is registered, so
+  `pipecat cloud regions register --output json` no longer includes a
+  `registry_key`, with this or any earlier CLI version. Mint a workstation key
+  with `pipecat cloud organizations registry-keys mint`.
 - `pipecat cloud spend-limit` now names the organization the numbers belong
   to. `show`, `set` and `clear` render an Organization row above the limit,
   the confirmation prompts on `set` name the org, and `--output json` adds an
