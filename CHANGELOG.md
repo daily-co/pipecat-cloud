@@ -19,8 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pipecat cloud organizations registry-keys list` has a Region column,
   naming the self-hosted region whose cluster holds a key. Those keys are
   managed by the region: its renewal rotates them and deleting the region
-  revokes them, so they cannot be revoked on their own while the region
-  exists.
+  revokes them, so an active one cannot be revoked on its own while the
+  region exists. Expired ones, which each renewal leaves behind, can be.
 
 ### Changed
 

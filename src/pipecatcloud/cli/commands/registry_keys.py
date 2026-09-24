@@ -172,8 +172,9 @@ async def list_keys(
 
 @registry_keys_cli.command(
     name="revoke",
-    help="Revoke a registry key. A key held by a live region is refused: "
-    "the region's renewal rotates it and deleting the region revokes it.",
+    help="Revoke a registry key. An active key held by a live region is "
+    "refused, because it is the region's pull credential: delete the region "
+    "to revoke it.",
 )
 @synchronizer.create_blocking
 @requires_login
