@@ -201,9 +201,12 @@ async def test_registry_key_mint_reaches_json_output():
         out = mock_console.output_json.call_args.args[0]
         assert out["key"] == "pcc_reg_abc"
         assert "pcc_reg_abc" in out["helmLoginCommand"]
-        # An API that does not name its registry gets production's.
+        # An API that does not name its registry gets production's, and says so
+        # (on stderr in JSON mode), since the absence is ambiguous.
         assert out["registryHost"] == "registry.pipecat.daily.co"
         assert "registry.pipecat.daily.co" in out["helmLoginCommand"]
+        printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
+        assert "did not name a registry" in printed
         # The key reaches helm on stdin, never as a -p argument.
         assert "--password-stdin" in out["helmLoginCommand"]
         assert " -p " not in out["helmLoginCommand"]
@@ -236,6 +239,8 @@ async def test_registry_key_mint_uses_the_registry_the_api_names():
         assert out["registryHost"] == "registry.staging.example"
         assert "registry.staging.example" in out["helmLoginCommand"]
         assert "registry.pipecat.daily.co" not in out["helmLoginCommand"]
+        printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
+        assert "did not name a registry" not in printed
 
 
 @pytest.mark.asyncio
@@ -280,6 +285,36 @@ async def test_registry_key_list_shows_only_active_keys_by_default():
 
         out = mock_console.output_json.call_args.args[0]
         assert [k["id"] for k in out["keys"]] == ["live", "held"]
+        # A script can tell "no keys" from "all hidden".
+        assert out["hidden"] == 2
+
+
+@pytest.mark.asyncio
+async def test_registry_key_list_keeps_a_status_it_does_not_know():
+    """Only statuses known to be dead are hidden, so a state a newer API adds
+    stays visible instead of being filed under revoked or expired."""
+    with (
+        patch("pipecatcloud.cli.commands.registry_keys.API") as mock_api,
+        patch("pipecatcloud.cli.commands.registry_keys.console") as mock_console,
+    ):
+        mock_console.json_output = True
+        mock_api.registry_keys = AsyncMock(
+            return_value=(
+                {
+                    "registry_keys": [
+                        *REGISTRY_KEYS_WITH_HISTORY,
+                        {"id": "new", "name": "ws-new", "status": "suspended"},
+                    ]
+                },
+                None,
+            )
+        )
+
+        await list_keys.aio(show_all=False, organization=None)
+
+        out = mock_console.output_json.call_args.args[0]
+        assert [k["id"] for k in out["keys"]] == ["live", "held", "new"]
+        assert out["hidden"] == 2
 
 
 @pytest.mark.asyncio

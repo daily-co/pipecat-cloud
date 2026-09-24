@@ -33,15 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   your organization rather than across Pipecat Cloud. A key without the prefix
   is refused with Pipecat Cloud's error, which the command prints before
   exiting 1.
-- `pipecat cloud organizations registry-keys list` shows only active keys by
-  default. Revoked and expired keys build up over time (each renewal of a
-  region leaves its previous key behind), so pass `--all` to include them. The
-  same filter applies to `--output json`, so a script looking up a revoked key
-  by id needs `--all`.
+- `pipecat cloud organizations registry-keys list` hides revoked and expired
+  keys by default. They build up over time (each renewal of a region leaves
+  its previous key behind), so pass `--all` to include them. The same filter
+  applies to `--output json`, so a script looking up a revoked key by id needs
+  `--all`; the JSON adds a `hidden` count, so a script can tell an
+  organization with no keys from one whose keys are all revoked or expired.
 - The yes/no Revoked column of `registry-keys list` is now a Status column
   (`active`, `expired` or `revoked`) in the same position, and Region is
-  appended after it, so scripts that read the plain output by column keep
-  working.
+  appended after it, so column positions are unchanged. The values in that
+  column are not: a script comparing it to `yes` or `no` now matches nothing.
+  Plain output carries no note about hidden keys, so pass `--all` if a script
+  needs the full set.
 - `pipecat cloud organizations registry-keys mint` prints a login command that
   names the registry of the environment you minted against, rather than always
   production's, and passes the key to `helm` on stdin:

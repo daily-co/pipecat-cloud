@@ -14,6 +14,8 @@ is shown exactly once, at mint; the cluster's own image-pull credential is
 delivered by enrollment and never passes through here.
 """
 
+import shlex
+
 import questionary
 import typer
 from rich.table import Table
@@ -24,9 +26,15 @@ from pipecatcloud._utils.console_utils import console
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
-# Used only when the API does not name its registry: the mint response carries
-# `registry_host` from the API version that added it on.
+# Used only when the API does not name its registry: an API older than the
+# `registry_host` field, or a deployment with no registry at all. The two look
+# the same in the response, so falling back to it comes with a warning.
 PROD_REGISTRY_HOST = "registry.pipecat.daily.co"
+
+# The statuses the default list hides. Hiding what is known to be dead, rather
+# than keeping only "active", keeps a status this CLI does not know about yet
+# visible instead of silently filing it under revoked or expired.
+DEAD_STATUSES = {"revoked", "expired"}
 
 registry_keys_cli = typer.Typer(
     name="registry-keys",
@@ -73,11 +81,20 @@ async def mint_key(
     username = data.get("username", "pcc")
     # The registry of the environment the key was minted against, so a key
     # minted on staging is not paired with production's host.
-    host = data.get("registry_host") or PROD_REGISTRY_HOST
+    host = data.get("registry_host")
+    if not host:
+        host = PROD_REGISTRY_HOST
+        # On stderr in JSON mode, like the rest of this console's output.
+        console.print(
+            f"[yellow]The API did not name a registry; assuming {PROD_REGISTRY_HOST}.[/yellow]"
+        )
     # The key goes to helm on stdin. printf is a shell builtin, so the key never
     # becomes a process argument that `ps` can read, and helm does not warn
     # about a password on its command line.
-    login_cmd = f"printf '%s' '{key}' | helm registry login {host} -u {username} --password-stdin"
+    login_cmd = (
+        f"printf '%s' {shlex.quote(key)} | "
+        f"helm registry login {shlex.quote(host)} -u {shlex.quote(username)} --password-stdin"
+    )
     if console.json_output:
         # Shown exactly once — stdout carries it, chrome goes to stderr.
         console.output_json(
@@ -122,10 +139,12 @@ async def list_keys(
     keys = (data or {}).get("registry_keys") or []
     # Revoked and expired keys are history: every renewal of a region leaves
     # one behind, and they crowd out the keys that still work.
-    shown = keys if show_all else [k for k in keys if _status(k) == "active"]
+    shown = keys if show_all else [k for k in keys if _status(k) not in DEAD_STATUSES]
     hidden = len(keys) - len(shown)
     if console.json_output:
-        console.output_json({"keys": shown})
+        # `hidden` lets a script tell an organization with no keys from one
+        # whose keys are all revoked or expired.
+        console.output_json({"keys": shown, "hidden": hidden})
         return
     if not shown:
         if hidden:
