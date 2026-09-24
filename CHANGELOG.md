@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `pipecat cloud regions register` now gives `pce-acme-us-east` as its example
+  region key, and its help says the key is a lowercase DNS label starting with
+  `pce-`. The rule is Pipecat Cloud's and applies to every CLI version:
+  self-hosted region keys must start with `pce-` (for Pipecat Enterprise),
+  which keeps them apart from Daily-hosted regions, so `pce-us-east` can be
+  yours while `us-east` stays a Daily-hosted region. Keys are unique within
+  your organization rather than across Pipecat Cloud. A key without the prefix
+  is refused with Pipecat Cloud's error, which the command prints before
+  exiting 1.
 - `pipecat cloud spend-limit` now names the organization the numbers belong
   to. `show`, `set` and `clear` render an Organization row above the limit,
   the confirmation prompts on `set` name the org, and `--output json` adds an
