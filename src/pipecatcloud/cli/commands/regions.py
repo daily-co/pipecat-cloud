@@ -120,7 +120,10 @@ def _print_region(region: dict) -> None:
 @synchronizer.create_blocking
 @requires_login
 async def register_region(
-    region_key: str = typer.Argument(..., help="The region's key, e.g. acme-us-east"),
+    region_key: str = typer.Argument(
+        ...,
+        help="The region's key: a lowercase DNS label starting with pce-, e.g. pce-acme-us-east",
+    ),
     workloads_namespace: str = typer.Option(
         None,
         "--workloads-namespace",
