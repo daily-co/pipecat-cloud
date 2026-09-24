@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as "Complete". The session detail view lists the session's lifecycle
   events, and a new `--end-state` option filters the list (e.g.
   `--end-state ended_before_agent_start`).
+- `pipecat cloud organizations registry-keys list` has a Region column,
+  naming the self-hosted region whose cluster holds a key. Those keys are
+  managed by the region: its renewal rotates them and deleting the region
+  revokes them, so an active one cannot be revoked on its own while the
+  region exists. Expired ones, which each renewal leaves behind, can be.
 
 ### Changed
 
@@ -28,6 +33,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   your organization rather than across Pipecat Cloud. A key without the prefix
   is refused with Pipecat Cloud's error, which the command prints before
   exiting 1.
+- `pipecat cloud organizations registry-keys list` hides revoked and expired
+  keys by default. They build up over time (each renewal of a region leaves
+  its previous key behind), so pass `--all` to include them. The same filter
+  applies to `--output json`, so a script looking up a revoked key by id needs
+  `--all`; the JSON adds a `hidden` count, so a script can tell an
+  organization with no keys from one whose keys are all revoked or expired.
+- The yes/no Revoked column of `registry-keys list` is now a Status column
+  (`active`, `expired` or `revoked`) in the same position, and Region is
+  appended after it, so column positions are unchanged. The values in that
+  column are not: a script comparing it to `yes` or `no` now matches nothing.
+  Plain output carries no note about hidden keys, so pass `--all` if a script
+  needs the full set.
+- `pipecat cloud organizations registry-keys mint` prints a login command that
+  names the registry of the environment you minted against, rather than always
+  production's, and passes the key to `helm` on stdin:
+  `printf '%s' '<key>' | helm registry login <registry> -u pcc --password-stdin`.
+  The key no longer appears as a `-p` argument, where other users on the
+  machine could read it from the process list. The command needs a POSIX
+  shell. `--output json` adds a `registryHost` field; `helmLoginCommand` is
+  now a shell pipeline, so scripts that run it without a shell should build
+  the login from `key`, `registryHost` and `username` instead.
+- The API no longer mints a registry key when a region is registered, so
+  `pipecat cloud regions register --output json` no longer includes a
+  `registry_key`, with this or any earlier CLI version. Mint a workstation key
+  with `pipecat cloud organizations registry-keys mint`.
 - `pipecat cloud spend-limit` now names the organization the numbers belong
   to. `show`, `set` and `clear` render an Organization row above the limit,
   the confirmation prompts on `set` name the org, and `--output json` adds an

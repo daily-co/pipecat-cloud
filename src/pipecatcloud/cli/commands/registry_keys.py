@@ -14,6 +14,8 @@ is shown exactly once, at mint; the cluster's own image-pull credential is
 delivered by enrollment and never passes through here.
 """
 
+import shlex
+
 import questionary
 import typer
 from rich.table import Table
@@ -24,7 +26,15 @@ from pipecatcloud._utils.console_utils import console
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
+# Used only when the API does not name its registry: an API older than the
+# `registry_host` field, or a deployment with no registry at all. The two look
+# the same in the response, so falling back to it comes with a warning.
 PROD_REGISTRY_HOST = "registry.pipecat.daily.co"
+
+# The statuses the default list hides. Hiding what is known to be dead, rather
+# than keeping only "active", keeps a status this CLI does not know about yet
+# visible instead of silently filing it under revoked or expired.
+DEAD_STATUSES = {"revoked", "expired"}
 
 registry_keys_cli = typer.Typer(
     name="registry-keys",
@@ -69,7 +79,22 @@ async def mint_key(
         raise typer.Exit(1)
 
     username = data.get("username", "pcc")
-    login_cmd = f"helm registry login {PROD_REGISTRY_HOST} -u {username} -p {key}"
+    # The registry of the environment the key was minted against, so a key
+    # minted on staging is not paired with production's host.
+    host = data.get("registry_host")
+    if not host:
+        host = PROD_REGISTRY_HOST
+        # On stderr in JSON mode, like the rest of this console's output.
+        console.print(
+            f"[yellow]The API did not name a registry; assuming {PROD_REGISTRY_HOST}.[/yellow]"
+        )
+    # The key goes to helm on stdin. printf is a shell builtin, so the key never
+    # becomes a process argument that `ps` can read, and helm does not warn
+    # about a password on its command line.
+    login_cmd = (
+        f"printf '%s' {shlex.quote(key)} | "
+        f"helm registry login {shlex.quote(host)} -u {shlex.quote(username)} --password-stdin"
+    )
     if console.json_output:
         # Shown exactly once — stdout carries it, chrome goes to stderr.
         console.output_json(
@@ -78,6 +103,7 @@ async def mint_key(
                 "name": data.get("name"),
                 "key": key,
                 "username": username,
+                "registryHost": host,
                 "helmLoginCommand": login_cmd,
             }
         )
@@ -87,10 +113,20 @@ async def mint_key(
     console.print(f"  {login_cmd}\n", soft_wrap=True)
 
 
+def _status(key: dict) -> str:
+    """The key's lifecycle state as the API reports it. An API older than the
+    `status` field only says whether a key was revoked, so an expired key from
+    one reads as active, as it did before."""
+    return key.get("status") or ("revoked" if key.get("revoked") else "active")
+
+
 @registry_keys_cli.command(name="list", help="List registry keys (no key material)")
 @synchronizer.create_blocking
 @requires_login
 async def list_keys(
+    show_all: bool = typer.Option(
+        False, "--all", help="Include revoked and expired keys, not only active ones"
+    ),
     organization: str = typer.Option(None, "--organization", "-o"),
 ):
     org = organization or config.get("org")
@@ -101,14 +137,31 @@ async def list_keys(
             raise typer.Exit(1)
 
     keys = (data or {}).get("registry_keys") or []
+    # Revoked and expired keys are history: every renewal of a region leaves
+    # one behind, and they crowd out the keys that still work.
+    shown = keys if show_all else [k for k in keys if _status(k) not in DEAD_STATUSES]
+    hidden = len(keys) - len(shown)
     if console.json_output:
-        console.output_json({"keys": keys})
+        # `hidden` lets a script tell an organization with no keys from one
+        # whose keys are all revoked or expired.
+        console.output_json({"keys": shown, "hidden": hidden})
         return
-    if not keys:
-        console.print("[yellow]No registry keys[/yellow]")
+    if not shown:
+        if hidden:
+            console.print(
+                f"[yellow]No active registry keys[/yellow] "
+                f"({hidden} revoked or expired; pass --all to show them)"
+            )
+        else:
+            console.print("[yellow]No registry keys[/yellow]")
         return
 
-    headers = ["ID", "Name", "Prefix", "Created", "Last used", "Revoked"]
+    # Plain output is read by position (`cut`, `awk`), so the columns keep the
+    # places they had: Status takes the old Revoked column's slot and Region is
+    # appended. Region names the region holding the key; those keys are its
+    # cluster's pull credential, so they cannot be revoked here while the
+    # region is live.
+    headers = ["ID", "Name", "Prefix", "Created", "Last used", "Status", "Region"]
     rows = [
         (
             str(k.get("id", "")),
@@ -116,9 +169,10 @@ async def list_keys(
             str(k.get("key_prefix") or "—"),
             str(k.get("created_at") or "—"),
             str(k.get("last_used_at") or "—"),
-            "yes" if k.get("revoked") else "no",
+            _status(k),
+            str(k.get("region") or "—"),
         )
-        for k in keys
+        for k in shown
     ]
     if not console.rich_output:
         console.print_records(headers, rows)
@@ -129,9 +183,18 @@ async def list_keys(
     for row in rows:
         table.add_row(*row)
     console.print(table)
+    if hidden:
+        console.print(
+            f"[dim]{hidden} revoked or expired key(s) hidden; pass --all to show them[/dim]"
+        )
 
 
-@registry_keys_cli.command(name="revoke", help="Revoke a registry key")
+@registry_keys_cli.command(
+    name="revoke",
+    help="Revoke a registry key. An active key held by a live region is "
+    "refused, because it is the region's pull credential: delete the region "
+    "to revoke it.",
+)
 @synchronizer.create_blocking
 @requires_login
 async def revoke_key(
