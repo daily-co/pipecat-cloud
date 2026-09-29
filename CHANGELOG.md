@@ -167,6 +167,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Session.start()` raises the underlying `aiohttp.ClientError` or
+  `TimeoutError` when the request fails before the API responds, such as a
+  refused connection or a timeout. It used to return `None`, which callers
+  reading `result["dailyRoom"]` saw as a `TypeError` far from the cause.
 - `pipecat cloud deploy` no longer rejects a referenced secret set as "not
   found". The existence check read the set's array of key names and tested it
   for truthiness, but referenced sets carry no key names by design (Daily

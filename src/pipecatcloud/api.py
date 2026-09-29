@@ -194,6 +194,12 @@ class _API:
                     else:
                         raise e
 
+                # A failure before any response (connection refused, DNS, timeout)
+                # leaves no API error to return. Outside the CLI, raise it rather
+                # than hand back (None, None), which reads as an empty success.
+                if not self.is_cli and not self.error and not self.bubble_next:
+                    raise e
+
                 if self.error and not self.bubble_next:
                     logger.debug(e)
                     self.print_error()

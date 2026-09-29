@@ -75,6 +75,8 @@ class Session:
                 - Agent not found
                 - Agent not ready
                 - Capacity limits reached
+            aiohttp.ClientError, TimeoutError: If the request fails before the
+                API responds, such as a refused connection or a timeout.
         """
         if not self.api_key:
             raise AgentStartError({"code": "PCC-1002", "error": "No API key provided"})
