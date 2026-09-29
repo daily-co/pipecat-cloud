@@ -32,6 +32,7 @@ logger.add(sys.stderr, level=str(os.getenv("PCC_LOG_LEVEL", "INFO")))
 # which raises a clear ImportError if pipecat-ai is not installed.
 _LAZY_AGENT_EXPORTS = (
     "DailySessionArguments",
+    "MOQSessionArguments",
     "PipecatSessionArguments",
     "SessionArguments",
     "SmallWebRTCSessionArguments",
@@ -52,7 +53,9 @@ def __dir__():
 
 
 __all__ = [
-    # Agent classes
+    # Agent classes. MOQSessionArguments is exported lazily above but left out
+    # of __all__: it needs pipecat-ai 1.12.0 or newer, and listing it here would
+    # make `from pipecatcloud import *` raise on every older pipecat-ai.
     "DailySessionArguments",
     "PipecatSessionArguments",
     "SessionArguments",

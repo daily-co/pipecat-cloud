@@ -36,3 +36,40 @@ jobs:
       - name: Run tests
         run: |
           uv run pytest -v
+
+  # The job above runs the agent session-argument types against the pipecat-ai
+  # in uv.lock. These legs run them against releases before MOQRunnerArguments
+  # gained relay_url, where pipecatcloud.agent must still import and refuse only
+  # MOQSessionArguments: 1.11.0 has the class without the field, 1.5.0 has no
+  # class at all.
+  agent-types:
+    name: 'Agent types on pipecat-ai ${{ matrix.pipecat-ai }}'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pipecat-ai: ['1.11.0', '1.5.0']
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: 'latest'
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: |
+          uv sync --group dev
+
+      # `python -m pytest`: a bare `pytest` can resolve to the locked
+      # environment's entry point instead of the layered one. The tests check,
+      # in their own process, that they run on the version this leg names.
+      - name: Run the agent type tests
+        env:
+          PCC_EXPECTED_PIPECAT_AI: ${{ matrix.pipecat-ai }}
+        run: |
+          uv run --with "pipecat-ai==${{ matrix.pipecat-ai }}" python -m pytest -v tests/test_agent_args.py

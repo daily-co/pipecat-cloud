@@ -17,7 +17,7 @@ Guidance for Claude Code working in this repo.
 - **setuptools** build backend. Version is derived from git tags via `setuptools_scm` (tag format `v0.6.0`), so there is no hand-edited version file.
 - **Ruff** for lint and format (100-char line length, `I` and `UP` rule sets).
 - **Pyright** for type checking.
-- **Pytest** with `pytest-asyncio` in `auto` mode.
+- **Pytest** with `pytest-asyncio` in strict mode: an async test needs `@pytest.mark.asyncio`. (`pytest.ini` asks for auto mode, but see Testing conventions.)
 
 ## Common commands
 
@@ -53,7 +53,7 @@ src/pipecatcloud/
   __init__.py            Public SDK surface (Session, exceptions, session argument types)
   api.py                 Async aiohttp API client (_API class)
   session.py             User-facing Session client
-  agent.py               Session argument types with fallbacks when pipecat-ai is absent
+  agent.py               Session argument types, subclasses of pipecat-ai's runner types
   config.py              Base settings, API path constants
   constants.py           Krisp VIVA models, region-related literals
   exception.py           Error hierarchy (AuthError, AgentStartError, etc.)
@@ -81,11 +81,11 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 - Layout mirrors `src/`. New tests go in `tests/test_<module>.py`.
 - `tests/conftest.py` sets `PIPECAT_CONFIG_PATH` to an isolated temp file **before imports**, pre-populated with `token = "test-token"` and `org = "test-org"`. This prevents tests from reading or clobbering real credentials. Do not bypass it.
 - Async tests use `@pytest.mark.asyncio`. Mock async calls with `unittest.mock.AsyncMock`.
-- `pytest.ini` uses `--import-mode=importlib`. Some tests manually insert `src/` onto `sys.path`, which is expected.
+- `pytest.ini` opens with `[tool:pytest]`, the `setup.cfg` spelling, so pytest reads none of its settings (the file still marks the rootdir): its `--import-mode=importlib`, `asyncio_mode = auto` and `testpaths` do not apply, and pytest runs with its defaults. Some tests manually insert `src/` onto `sys.path`, which is expected.
 
 ## CI
 
-- `tests.yml` runs the full suite (`uv run pytest -v`) on push to main and PRs.
+- `tests.yml` runs the full suite (`uv run pytest -v`) on push to main and PRs, and runs `tests/test_agent_args.py` again with pipecat-ai 1.11.0 and 1.5.0 layered over the lock (`uv run --with ... python -m pytest`, with `PCC_EXPECTED_PIPECAT_AI` so the tests confirm the version they run on).
 - `format.yml` runs `ruff format --diff` and `ruff check`. Both must pass.
 - `publish-pypi.yml` and `publish-test.yml` are manual dispatches that build and publish a specific git tag.
 
@@ -101,7 +101,7 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 
 - The CLI is sync (Typer) but the API client is async. Bridge with `@synchronizer` from `_utils/async_utils.py`. Do not invent a new bridging pattern.
 - Auth uses OAuth2 with PKCE (RFC 7636). OAuth endpoints are discovered from the API server, not hardcoded. The callback server tries ports 8400-8404.
-- `SmallWebRTCSessionArguments` and `SmallWebRTCRunnerArguments` have fallback definitions in `agent.py` for when `pipecat-ai` isn't installed. Keep the two paths in sync.
+- The session argument types in `agent.py` subclass pipecat-ai's runner types and need pipecat-ai (>= 1.0.0); there are no fallback definitions. `MOQSessionArguments` needs 1.12.0 (`MOQRunnerArguments.relay_url`), so it is imported and defined under its own guard: on older pipecat-ai the module still imports and only that name raises `ImportError`. It stays out of `__all__` for the same reason.
 - Krisp VIVA audio filter names are `Literal["tel", "pro"]` in `constants.py`. These must match the server-side ConfigMap, so coordinate changes with the backend.
 
 ## Release flow
