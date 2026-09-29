@@ -27,12 +27,12 @@ class SmallWebRTCSessionManager:
         if self._pending_future is not None:
             raise RuntimeError("Already waiting for WebRTC connection")
 
-        self._pending_future = asyncio.Future()
+        future = self._pending_future = asyncio.Future()
 
         async def timeout_handler():
             await asyncio.sleep(self._timeout_seconds)
-            if self._pending_future and not self._pending_future.done():
-                self._pending_future.set_exception(
+            if not future.done():
+                future.set_exception(
                     TimeoutError(
                         f"WebRTC connection not received within {self._timeout_seconds} seconds"
                     )
@@ -42,7 +42,7 @@ class SmallWebRTCSessionManager:
         self._timeout_task = asyncio.create_task(timeout_handler())
 
         try:
-            await self._pending_future
+            await future
         finally:
             self._cleanup()
 
@@ -75,6 +75,9 @@ class SmallWebRTCSessionManager:
 
     def _cleanup(self) -> None:
         """Cleans up all resources."""
+        # Stop the timer so it cannot outlive this wait, for example when the
+        # waiting task is cancelled, and fire on a later one.
+        self.cancel_timeout()
         self._pending_future = None
         self._timeout_task = None
 

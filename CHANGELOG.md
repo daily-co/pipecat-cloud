@@ -67,6 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record, `show --output json` still emits `{}`, so consumers testing the
   result for emptiness keep working.
 
+### Fixed
+
+- `SmallWebRTCSessionManager` no longer lets the timeout of a cancelled
+  `wait_for_webrtc()` call fail a later call. A second wait started after the
+  first was cancelled used to raise `TimeoutError` early, when the first
+  wait's timeout expired.
+
 ## [1.2.0] - 2026-08-27
 
 ### Added
