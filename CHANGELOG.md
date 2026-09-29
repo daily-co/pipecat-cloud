@@ -67,6 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record, `show --output json` still emits `{}`, so consumers testing the
   result for emptiness keep working.
 
+### Fixed
+
+- `pipecat cloud deploy` names the exception type when the build-context
+  upload fails. Timeouts and dropped connections carry no message, so the
+  log previously read `Upload error:` with nothing after it.
+
 ## [1.2.0] - 2026-08-27
 
 ### Added

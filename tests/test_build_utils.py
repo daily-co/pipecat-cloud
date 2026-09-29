@@ -11,8 +11,11 @@ normalization behavior so those forms keep working.
 
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
+import aiohttp
 import pytest
+from loguru import logger
 
 # Import from source, not installed package.
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -24,6 +27,7 @@ from pipecatcloud._utils.build_utils import (
     create_deterministic_tarball,
     get_exclusions,
     load_dockerignore,
+    upload_to_s3,
 )
 
 
@@ -149,3 +153,29 @@ def load_dockerignore_from_text(root: Path, text: str) -> set[str]:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestUploadToS3Errors:
+    """The upload failure log has to name the cause, even for errors with no message."""
+
+    @pytest.mark.parametrize(
+        "error, expected",
+        [
+            (TimeoutError(), "TimeoutError"),
+            (aiohttp.ServerDisconnectedError(), "ServerDisconnectedError"),
+            (aiohttp.ClientOSError(104, "Connection reset by peer"), "ClientOSError"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_transport_error_is_logged_with_its_type(self, error, expected):
+        messages = []
+        sink_id = logger.add(lambda m: messages.append(m.record["message"]), level="ERROR")
+        try:
+            with patch.object(aiohttp.ClientSession, "post", side_effect=error):
+                result = await upload_to_s3(b"tarball", "https://example.invalid/upload", {})
+        finally:
+            logger.remove(sink_id)
+
+        assert result is False
+        assert len(messages) == 1
+        assert expected in messages[0]

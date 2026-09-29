@@ -379,7 +379,10 @@ async def upload_to_s3(
                     logger.error(f"Upload failed: {response.status} - {body}")
                     return False
     except Exception as e:
-        logger.error(f"Upload error: {e}")
+        # str(e) is empty for many aiohttp and asyncio errors (timeouts,
+        # dropped connections), so name the exception type as well.
+        detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+        logger.error(f"Upload error: {detail}")
         return False
 
 
