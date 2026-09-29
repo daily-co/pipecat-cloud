@@ -46,7 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version to install, so check for it with
   `try: from pipecatcloud.agent import MOQSessionArguments` and
   `except ImportError`. On such a pipecat-ai, `hasattr` raises that
-  `ImportError` too rather than returning `False`. It is also available as
+  `ImportError` too rather than returning `False`, and so do
+  `help(pipecatcloud)` and `inspect.getmembers(pipecatcloud)`, which list
+  the name and then fetch it. It is also available as
   `pipecatcloud.MOQSessionArguments`, but not through
   `from pipecatcloud import *`, which keeps working on older pipecat-ai.
 

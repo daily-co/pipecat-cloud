@@ -1404,6 +1404,7 @@ pipecat = [
 dev = [
     { name = "build" },
     { name = "grpcio-tools" },
+    { name = "packaging" },
     { name = "pipecat-ai" },
     { name = "pre-commit" },
     { name = "pyright" },
@@ -1433,6 +1434,7 @@ provides-extras = ["pipecat"]
 dev = [
     { name = "build", specifier = "~=1.4.0" },
     { name = "grpcio-tools", specifier = "~=1.78.0" },
+    { name = "packaging", specifier = ">=25.0" },
     { name = "pipecat-ai", specifier = ">=1.0.0" },
     { name = "pre-commit", specifier = "~=4.5.1" },
     { name = "pyright", specifier = ">=1.1.404,<1.2" },

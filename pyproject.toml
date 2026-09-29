@@ -43,6 +43,8 @@ dev = [
     "ruff>=0.12.11,<1",
     "setuptools>=83.0.0,<84",
     "setuptools_scm~=8.3.1",
+    # Imported by the tests to compare pipecat-ai versions.
+    "packaging>=25.0",
     # Needed to import/test pipecatcloud.agent (the optional pipecat surface).
     "pipecat-ai>=1.0.0",
 ]

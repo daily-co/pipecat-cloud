@@ -145,10 +145,27 @@ def test_relay_url_token_stays_out_of_repr():
     assert args.relay_url == RELAY_URL
 
 
+def _field_spec(f: dataclasses.Field) -> tuple:
+    """Every attribute of a dataclass field except its name, type and repr."""
+    return (
+        f.default,
+        f.default_factory,
+        f.init,
+        f.hash,
+        f.compare,
+        dict(f.metadata),
+        f.kw_only,
+        getattr(f, "doc", None),  # Python 3.14+
+    )
+
+
 @needs_moq
 def test_relay_url_redeclaration_changes_only_repr():
     """Against the same class without the redeclared field: same fields, same
-    order, same signature; relay_url differs in repr alone."""
+    order, same signature; relay_url differs in repr alone.
+
+    A redeclared field replaces the base's whole Field, so every attribute that
+    field() can set is compared, not only those that show in the signature."""
 
     @dataclass
     class Undeclared(runner_types.MOQRunnerArguments, SessionArguments):
@@ -158,14 +175,8 @@ def test_relay_url_redeclaration_changes_only_repr():
     plain = dataclasses.fields(Undeclared)
     assert [f.name for f in ours] == [f.name for f in plain]
     assert inspect.signature(agent.MOQSessionArguments) == inspect.signature(Undeclared)
-    relay, plain_relay = (
-        next(f for f in fields if f.name == "relay_url") for fields in (ours, plain)
-    )
-    assert (relay.default, relay.kw_only, relay.init) == (
-        plain_relay.default,
-        plain_relay.kw_only,
-        plain_relay.init,
-    )
+    relay, plain_relay = (next(f for f in fs if f.name == "relay_url") for fs in (ours, plain))
+    assert _field_spec(relay) == _field_spec(plain_relay)
     assert (relay.repr, plain_relay.repr) == (False, True)
 
 
@@ -278,10 +289,20 @@ class _MOQRunnerArgumentsWithoutRelayURL(RunnerArguments):
     namespace: str = "pipecat"
 
 
+class _MOQRunnerArgumentsNotADataclass:
+    """A MOQRunnerArguments that is not a dataclass: dataclasses.fields() raises on it."""
+
+    relay_url: str | None = None
+
+
 @pytest.mark.parametrize(
     "moq_runner_arguments",
-    [None, _MOQRunnerArgumentsWithoutRelayURL],
-    ids=["pipecat-ai before 1.6 (no MOQRunnerArguments)", "pipecat-ai 1.6 to 1.11 (no relay_url)"],
+    [None, _MOQRunnerArgumentsWithoutRelayURL, _MOQRunnerArgumentsNotADataclass],
+    ids=[
+        "pipecat-ai before 1.6 (no MOQRunnerArguments)",
+        "pipecat-ai 1.6 to 1.11 (no relay_url)",
+        "MOQRunnerArguments not a dataclass",
+    ],
 )
 def test_older_pipecat_keeps_the_module_importable(monkeypatch, moq_runner_arguments):
     module = _load_agent_copy(monkeypatch, moq_runner_arguments)

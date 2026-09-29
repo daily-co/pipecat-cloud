@@ -29,10 +29,11 @@ Detect it by catching that ``ImportError``::
         ...  # this environment cannot serve MoQ sessions
 
 ``hasattr`` and ``getattr(..., default)`` raise that ``ImportError`` too, rather
-than reporting the name as missing.
+than reporting the name as missing, and so do ``help(pipecatcloud)`` and
+``inspect.getmembers(pipecatcloud)``, which list the name and then fetch it.
 """
 
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
@@ -110,8 +111,10 @@ class SmallWebRTCSessionArguments(SmallWebRTCRunnerArguments, SessionArguments):
     """SmallWebRTCTransport-based agent session arguments."""
 
 
-if _MOQRunnerArguments is not None and any(
-    f.name == "relay_url" for f in fields(_MOQRunnerArguments)
+# Read from __dataclass_fields__ rather than dataclasses.fields(), which raises
+# TypeError, out of this module's import, for a class that is not a dataclass.
+if _MOQRunnerArguments is not None and "relay_url" in getattr(
+    _MOQRunnerArguments, "__dataclass_fields__", {}
 ):
 
     @dataclass
