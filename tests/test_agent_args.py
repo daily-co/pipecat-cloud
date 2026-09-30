@@ -242,14 +242,25 @@ async def test_create_transport_dials_the_relay_url(monkeypatch):
 @without_moq
 def test_moq_session_arguments_refused_on_older_pipecat():
     """On the pipecat-ai this suite runs with, if it is older than 1.12.0."""
-    with pytest.raises(ImportError, match=r"pipecat-ai\[moq\]>=1\.12\.0"):
+    with pytest.raises(ImportError, match="cannot import name 'MOQSessionArguments'"):
         from pipecatcloud.agent import MOQSessionArguments
 
 
 @without_moq
 def test_package_import_refused_on_older_pipecat():
-    with pytest.raises(ImportError, match=r"pipecat-ai\[moq\]>=1\.12\.0"):
+    with pytest.raises(ImportError, match="cannot import name 'MOQSessionArguments'"):
         from pipecatcloud import MOQSessionArguments
+
+
+@without_moq
+def test_introspection_still_works_on_older_pipecat():
+    """dir(pipecatcloud) lists the lazy name; fetching it must fail as a missing
+    attribute, which hasattr, help() and inspect.getmembers all expect."""
+    assert not hasattr(agent, "MOQSessionArguments")
+    assert not hasattr(pipecatcloud, "MOQSessionArguments")
+    names = [name for name, _ in inspect.getmembers(pipecatcloud)]
+    assert "DailySessionArguments" in names
+    assert "MOQSessionArguments" not in names
 
 
 @without_moq
@@ -311,17 +322,8 @@ def test_older_pipecat_keeps_the_module_importable(monkeypatch, moq_runner_argum
     module.DailySessionArguments(room_url="https://x.daily.co/r", session_id="s")
     module.PipecatSessionArguments(session_id="s")
 
-    # Reaching for MOQSessionArguments says what to install, and which
-    # pipecat-ai the environment has, by attribute and by `from ... import`.
-    with pytest.raises(ImportError) as refused:
-        module.MOQSessionArguments
-    message = str(refused.value)
-    assert "pipecat-ai[moq]>=1.12.0" in message
-    assert f"pipecat-ai {version('pipecat-ai')}" in message
-    with pytest.raises(ImportError, match=r"pipecat-ai\[moq\]>=1\.12\.0"):
+    # MOQSessionArguments is simply not defined: hasattr says so, and importing
+    # it raises the standard ImportError.
+    assert not hasattr(module, "MOQSessionArguments")
+    with pytest.raises(ImportError, match="cannot import name 'MOQSessionArguments'"):
         exec("from _pipecatcloud_agent_copy import MOQSessionArguments", {})
-
-
-def test_unknown_module_attribute_is_still_an_attribute_error():
-    with pytest.raises(AttributeError):
-        getattr(agent, "NoSuchSessionArguments")

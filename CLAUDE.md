@@ -101,7 +101,7 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 
 - The CLI is sync (Typer) but the API client is async. Bridge with `@synchronizer` from `_utils/async_utils.py`. Do not invent a new bridging pattern.
 - Auth uses OAuth2 with PKCE (RFC 7636). OAuth endpoints are discovered from the API server, not hardcoded. The callback server tries ports 8400-8404.
-- The session argument types in `agent.py` subclass pipecat-ai's runner types and need pipecat-ai (>= 1.0.0); there are no fallback definitions. `MOQSessionArguments` needs 1.12.0 (`MOQRunnerArguments.relay_url`), so it is imported and defined under its own guard: on older pipecat-ai the module still imports and only that name raises `ImportError`. It stays out of `__all__` for the same reason.
+- The session argument types in `agent.py` subclass pipecat-ai's runner types and need pipecat-ai (>= 1.0.0); there are no fallback definitions. `MOQSessionArguments` needs 1.12.0 (`MOQRunnerArguments.relay_url`), so it is imported and defined under its own guard: on older pipecat-ai the module still imports and only that name is missing. It stays out of `__all__` for the same reason.
 - Krisp VIVA audio filter names are `Literal["tel", "pro"]` in `constants.py`. These must match the server-side ConfigMap, so coordinate changes with the backend.
 
 ## Release flow

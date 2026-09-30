@@ -19,23 +19,16 @@ your own ``pipecat-ai``. Importing this module without pipecat-ai raises a clear
 ``ImportError``.
 
 ``MOQSessionArguments`` needs pipecat-ai 1.12.0 or newer. On an older pipecat-ai
-the rest of this module imports as usual, and reaching for
-``MOQSessionArguments`` raises an ``ImportError`` that says what to install.
-Detect it by catching that ``ImportError``::
+the rest of this module imports as usual and ``MOQSessionArguments`` is not
+defined, so importing it raises ``ImportError``::
 
     try:
         from pipecatcloud.agent import MOQSessionArguments
     except ImportError:
         ...  # this environment cannot serve MoQ sessions
-
-``hasattr`` and ``getattr(..., default)`` raise that ``ImportError`` too, rather
-than reporting the name as missing, and so do ``help(pipecatcloud)`` and
-``inspect.getmembers(pipecatcloud)``, which list the name and then fetch it.
 """
 
 from dataclasses import dataclass, field
-from importlib.metadata import PackageNotFoundError, version
-from typing import TYPE_CHECKING
 
 try:
     from pipecat.runner.types import (
@@ -58,8 +51,6 @@ try:
     from pipecat.runner.types import MOQRunnerArguments as _MOQRunnerArguments
 except ImportError:  # pipecat-ai older than 1.6.0
     _MOQRunnerArguments = None
-
-_MOQ_REQUIREMENT = "pipecat-ai[moq]>=1.12.0"
 
 
 @dataclass
@@ -137,23 +128,3 @@ if _MOQRunnerArguments is not None and "relay_url" in getattr(
         # line or traceback that prints the arguments. Same default and
         # keyword-only as pipecat-ai's field, so the signature is unchanged.
         relay_url: str | None = field(default=None, kw_only=True, repr=False)
-
-
-# Hidden from type checkers so a misspelt name imported from this module is still
-# reported; to them MOQSessionArguments is simply defined above.
-if not TYPE_CHECKING:
-
-    def __getattr__(name: str):
-        # Reached only for names this module does not define, so only when the
-        # installed pipecat-ai cannot back MOQSessionArguments.
-        if name == "MOQSessionArguments":
-            try:
-                installed = f"pipecat-ai {version('pipecat-ai')}"
-            except PackageNotFoundError:  # pragma: no cover - e.g. a source checkout
-                installed = "an unknown pipecat-ai"
-            raise ImportError(
-                "MOQSessionArguments needs pipecat-ai 1.12.0 or newer, where "
-                f"MOQRunnerArguments carries relay_url; this environment has {installed}. "
-                f'Install it with `pip install "{_MOQ_REQUIREMENT}"`.'
-            )
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

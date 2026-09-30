@@ -41,14 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   It needs pipecat-ai 1.12.0 or newer, with the `moq` extra for the
   transport (`pip install "pipecat-ai[moq]>=1.12.0"`). With an older
-  pipecat-ai the rest of `pipecatcloud.agent` imports as before, and
-  importing `MOQSessionArguments` raises an `ImportError` that names the
-  version to install, so check for it with
+  pipecat-ai the rest of `pipecatcloud.agent` imports as before and
+  `MOQSessionArguments` is not defined, so check for it with
   `try: from pipecatcloud.agent import MOQSessionArguments` and
-  `except ImportError`. On such a pipecat-ai, `hasattr` raises that
-  `ImportError` too rather than returning `False`, and so do
-  `help(pipecatcloud)` and `inspect.getmembers(pipecatcloud)`, which list
-  the name and then fetch it. It is also available as
+  `except ImportError`. It is also available as
   `pipecatcloud.MOQSessionArguments`, but not through
   `from pipecatcloud import *`, which keeps working on older pipecat-ai.
 
