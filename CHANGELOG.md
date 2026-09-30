@@ -21,6 +21,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   managed by the region: its renewal rotates them and deleting the region
   revokes them, so an active one cannot be revoked on its own while the
   region exists. Expired ones, which each renewal leaves behind, can be.
+- `pipecatcloud.agent.MOQSessionArguments`, the session arguments of a Media
+  over QUIC (MoQ) session. It subclasses pipecat-ai's `MOQRunnerArguments`,
+  so a bot passes it to `create_transport` like any other session type, and
+  the transport dials the relay at `relay_url`:
+
+  ```python
+  from pipecat.runner.utils import create_transport
+  from pipecat.transports.moq.transport import MOQParams
+
+  transport = await create_transport(
+      runner_args,
+      {"moq": lambda: MOQParams(audio_in_enabled=True, audio_out_enabled=True)},
+  )
+  ```
+
+  `relay_url` carries the session's token, so it is left out of the
+  arguments' `repr()`; keep it out of your own log lines too.
+
+  It needs pipecat-ai 1.12.0 or newer, with the `moq` extra for the
+  transport (`pip install "pipecat-ai[moq]>=1.12.0"`). With an older
+  pipecat-ai the rest of `pipecatcloud.agent` imports as before and
+  `MOQSessionArguments` is not defined, so check for it with
+  `try: from pipecatcloud.agent import MOQSessionArguments` and
+  `except ImportError`. It is also available as
+  `pipecatcloud.MOQSessionArguments`, but not through
+  `from pipecatcloud import *`, which keeps working on older pipecat-ai.
 
 ### Changed
 
