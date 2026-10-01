@@ -1120,6 +1120,27 @@ class _API:
         """
         return self.create_api_method(self._github_install_url)
 
+    async def _github_link_url(self, org: str) -> dict | None:
+        """Mint the GitHub URL that links an installation already on GitHub."""
+        url = self.construct_api_url("github_link_url_path").format(org=org)
+        return await self._base_request("GET", url)
+
+    @property
+    def github_link_url(self):
+        """Get the GitHub URL for linking an existing installation.
+
+        The URL asks the user to authorize the App on GitHub, with no install
+        step. The dashboard then offers the installations GitHub confirms they
+        installed or asked for, to link to this org. Like the install URL, it
+        carries a single-use flow, so it must be fetched fresh every time.
+
+        Args:
+            org: Organization ID
+        Returns:
+            Dict with `url`
+        """
+        return self.create_api_method(self._github_link_url)
+
     async def _github_installation(self, org: str) -> dict | None:
         """The GitHub installation linked to this org, or None when unlinked."""
         url = self.construct_api_url("github_installation_path").format(org=org)

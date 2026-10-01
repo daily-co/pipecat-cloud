@@ -5,6 +5,29 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `pipecat cloud github connect --existing` links a GitHub App installation
+  that is already on GitHub to your Pipecat Cloud organization. Use it when
+  an owner of the GitHub account approved your request to install the App,
+  or when you installed the App from GitHub yourself. You authorize the App
+  on GitHub, then confirm the installation to link on the Pipecat Cloud
+  dashboard. `github status` and the `github connect` timeout message point
+  to it.
+
+### Changed
+
+- Connecting an organization to GitHub now finishes on the Pipecat Cloud
+  dashboard, where you may need to sign in as the same Pipecat Cloud user the
+  CLI is logged in as. GitHub also asks you to authorize the App after you
+  install it. This happens on the server side, so it applies to every CLI
+  version. `pipecat cloud github connect` now says so, and waits up to 26
+  minutes for the connection instead of 15, to cover both steps. Older
+  versions stop waiting after 15 minutes; the connection still completes,
+  and `pipecat cloud github status` shows it.
+
 ## [1.3.0] - 2026-10-01
 
 ### Added

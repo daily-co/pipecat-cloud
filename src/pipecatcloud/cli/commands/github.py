@@ -6,10 +6,11 @@
 
 """Org-scoped GitHub App commands (PCC-933).
 
-The connect flow deliberately has no local callback server: GitHub redirects
-the browser to the API's own setup callback, which links the installation
-server-side, so the terminal only has to open a URL and poll until the link
-shows up. That is the same flow the dashboard runs.
+The connect flow deliberately has no local callback server. GitHub sends the
+browser on to the Pipecat Cloud dashboard, which links the installation once
+GitHub confirms that the signed-in user installed the App or asked for it. The
+terminal only has to open a URL and poll until the link shows up. That is the
+same flow the dashboard's own Connect button runs.
 """
 
 import asyncio
@@ -34,11 +35,17 @@ github_cli = typer.Typer(
     name="github", help="GitHub App connection management", no_args_is_help=True
 )
 
-# Poll cadence while waiting for the install to land. The timeout matches the
-# server's signed install-state TTL: giving up sooner would abandon a connect
-# that can still complete, and later would wait on a state that has expired.
+# Poll cadence while waiting for the link to land. Each timeout is how long the
+# server keeps that flow alive, plus a minute for the link itself to commit:
+# giving up sooner would abandon a connect that can still complete, and later
+# would wait on a flow that has expired. An install's signed state lasts 15
+# minutes, and redeeming it starts GitHub's authorization step, which lasts 10
+# more. Linking an existing installation is the authorization step, then a
+# confirmation on the dashboard, 10 minutes each.
 _POLL_INTERVAL_SECONDS = 2.5
-_POLL_TIMEOUT_SECONDS = 15 * 60
+_COMMIT_GRACE_SECONDS = 60
+_INSTALL_TIMEOUT_SECONDS = (15 + 10) * 60 + _COMMIT_GRACE_SECONDS
+_LINK_TIMEOUT_SECONDS = (10 + 10) * 60 + _COMMIT_GRACE_SECONDS
 
 
 def _installation_rows(installation: dict) -> list[tuple[str, str]]:
@@ -65,42 +72,79 @@ def _print_installation(installation: dict) -> None:
     console.print(table)
 
 
+def _report_already_connected(org: str | None, installation: dict) -> None:
+    if console.json_output:
+        console.output_json({"installation": installation, "connected": True})
+        return
+    console.print(
+        f"[yellow]Organization '{org}' is already connected to GitHub "
+        f"({installation.get('githubAccountLogin')}).[/yellow]\n"
+        "[dim]Change which repositories the App can see from GitHub, or run "
+        f"[bold]{PIPECAT_CLI_NAME} github disconnect[/bold] first to connect a "
+        "different account.[/dim]"
+    )
+    _print_installation(installation)
+
+
 @github_cli.command(
     name="connect",
-    help="Connect this organization to GitHub by installing the Pipecat Cloud App",
+    short_help="Connect this organization to GitHub",
+    help=(
+        "Connect this organization to GitHub by installing the Pipecat Cloud App, "
+        "or with --existing, by linking an installation already on GitHub"
+    ),
 )
 @synchronizer.create_blocking
 @requires_login
 async def connect(
     organization: str = typer.Option(None, "--organization", "-o"),
+    existing: bool = typer.Option(
+        False,
+        "--existing",
+        help=(
+            "Link an installation already on GitHub that you installed yourself, "
+            "or that an owner of the GitHub account approved at your request"
+        ),
+    ),
 ):
     org = organization or config.get("org")
 
-    existing, error = await API.github_installation(org=org)
+    linked, error = await API.github_installation(org=org)
     if error:
         raise typer.Exit(1)
-    if existing:
-        if console.json_output:
-            console.output_json({"installation": existing, "connected": True})
-            return
-        console.print(
-            f"[yellow]Organization '{org}' is already connected to GitHub "
-            f"({existing.get('githubAccountLogin')}).[/yellow]\n"
-            "[dim]Change which repositories the App can see from GitHub, or run "
-            f"[bold]{PIPECAT_CLI_NAME} github disconnect[/bold] first to connect a "
-            "different account.[/dim]"
-        )
-        _print_installation(existing)
+    if linked:
+        _report_already_connected(org, linked)
         return
 
-    # Fetched per attempt, never cached: the URL carries a single-use state
-    # that the setup callback redeems.
-    data, error = await API.github_install_url(org=org)
-    if error:
-        raise typer.Exit(1)
-    install_url = (data or {}).get("url")
-    if not install_url:
-        console.error("The API did not return a GitHub install URL")
+    # Fetched per attempt, never cached: the URL carries a single-use flow that
+    # the dashboard redeems.
+    if existing:
+        # bubble_error: another member can link the org between the check above
+        # and this call, and that is the same answer the check gives.
+        data, error = await API.bubble_error().github_link_url(org=org)
+        if isinstance(error, dict) and error.get("reason") == "org_has_one":
+            linked, error = await API.github_installation(org=org)
+            if linked:
+                _report_already_connected(org, linked)
+                return
+            if not error:
+                console.error(
+                    f"The GitHub connection for organization '{org}' changed while this "
+                    f"ran. Run [bold]{PIPECAT_CLI_NAME} github connect --existing[/bold] again."
+                )
+            raise typer.Exit(1)
+        if error:
+            API.print_error()
+            raise typer.Exit(1)
+        verb, timeout = "authorize", _LINK_TIMEOUT_SECONDS
+    else:
+        data, error = await API.github_install_url(org=org)
+        if error:
+            raise typer.Exit(1)
+        verb, timeout = "install", _INSTALL_TIMEOUT_SECONDS
+    flow_url = (data or {}).get("url")
+    if not flow_url:
+        console.error(f"The API did not return a GitHub {verb} URL")
         raise typer.Exit(1)
 
     # Imported at call time: this is the only place github.py needs auth.py,
@@ -109,21 +153,31 @@ async def connect(
     from pipecatcloud.cli.commands.auth import _open_url
 
     if not console.json_output:
-        console.print("[dim]Opening browser to install the Pipecat Cloud GitHub App...[/dim]")
-    opened = _open_url(install_url)
+        console.print(f"[dim]Opening browser to {verb} the Pipecat Cloud GitHub App...[/dim]")
+    opened = _open_url(flow_url)
     if not opened and not console.json_output:
         console.print(
-            f"\nOpen this URL in your browser to install the App:\n[blue]{install_url}[/blue]\n"
+            f"\nOpen this URL in your browser to {verb} the App:\n[blue]{flow_url}[/blue]\n"
         )
     elif not opened:
         # In json mode stdout is reserved for the final payload, so the URL a
         # headless caller needs goes to the console's stream (stderr).
-        console.print(f"Open this URL to install the App: {install_url}")
+        console.print(f"Open this URL to {verb} the App: {flow_url}")
+    if not console.json_output:
+        # The browser half runs on the dashboard, under its own sign-in, and
+        # only for the user this terminal is logged in as. This terminal can't
+        # see the dashboard refuse, so it says where to look.
+        finish = ", where you confirm the installation to link" if existing else " to finish"
+        console.print(
+            f"[dim]GitHub returns you to the Pipecat Cloud dashboard{finish}. "
+            "Sign in there as the same Pipecat Cloud user as this CLI if it asks. If the "
+            "dashboard shows an error, press Ctrl+C here and follow what it says.[/dim]"
+        )
 
-    deadline = time.monotonic() + _POLL_TIMEOUT_SECONDS
+    deadline = time.monotonic() + timeout
     installation = None
     with console.status(
-        "[dim]Waiting for GitHub. Approve the installation in your browser...[/dim]",
+        "[dim]Waiting for GitHub. Finish in your browser...[/dim]",
         spinner="dots",
     ):
         while time.monotonic() < deadline:
@@ -136,10 +190,21 @@ async def connect(
                 break
 
     if not installation:
+        link_existing = f"[bold]{PIPECAT_CLI_NAME} github connect --existing[/bold]"
+        if existing:
+            retry = f"Otherwise run {link_existing} again."
+        else:
+            # A member who cannot install on the GitHub account sends an owner a
+            # request instead, and nothing links until they come back to it.
+            retry = (
+                f"If GitHub sent an owner a request to approve, run {link_existing} once "
+                f"they have. Otherwise run [bold]{PIPECAT_CLI_NAME} github connect[/bold] "
+                "again."
+            )
         console.error(
-            "Timed out waiting for the GitHub App installation.\n"
-            f"[dim]If you completed the install, run [bold]{PIPECAT_CLI_NAME} github status[/bold] "
-            "to check. Otherwise run connect again.[/dim]"
+            "Timed out waiting for the GitHub connection.\n"
+            f"[dim]If you finished in the browser, run [bold]{PIPECAT_CLI_NAME} github status"
+            f"[/bold] to check. {retry}[/dim]"
         )
         raise typer.Exit(1)
 
@@ -170,7 +235,9 @@ async def status(
     if not installation:
         console.print(
             f"[yellow]Organization '{org}' is not connected to GitHub.[/yellow]\n"
-            f"[dim]Run [bold]{PIPECAT_CLI_NAME} github connect[/bold] to connect it.[/dim]"
+            f"[dim]Run [bold]{PIPECAT_CLI_NAME} github connect[/bold] to connect it. If you "
+            "installed the App on GitHub yourself, or an owner approved your request, run "
+            f"[bold]{PIPECAT_CLI_NAME} github connect --existing[/bold] instead.[/dim]"
         )
         return
 
