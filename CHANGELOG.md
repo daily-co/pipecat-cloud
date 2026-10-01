@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   revokes them, so an active one cannot be revoked on its own while the
   region exists. Expired ones, which each renewal leaves behind, can be.
 - `pipecatcloud.agent.MOQSessionArguments`, the session arguments of a Media
-  over QUIC (MoQ) session. It subclasses pipecat-ai's `MOQRunnerArguments`,
+  over QUIC (MoQ) session. Pipecat Cloud does not start MoQ sessions yet; the
+  type ships ahead of that so agent images can be built against it. It
+  subclasses pipecat-ai's `MOQRunnerArguments`,
   so a bot passes it to `create_transport` like any other session type, and
   the transport dials the relay at `relay_url`:
 
