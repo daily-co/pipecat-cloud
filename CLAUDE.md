@@ -110,6 +110,8 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 2. Tag the commit with `v<MAJOR>.<MINOR>.<PATCH>`.
 3. Trigger `publish-pypi.yml` manually with that tag. `setuptools_scm` picks up the version from the tag.
 
+After publishing to PyPI, the workflow creates (or updates) the GitHub Release for the tag. Its notes are the tag's `CHANGELOG.md` section, reformatted by `scripts/release-changelog.py`, so fix release-note wording in the changelog rather than on GitHub: a re-run overwrites edits made there. Preview the notes locally with `python scripts/release-changelog.py --no-heading 1.3.0`.
+
 ## Writing style for generated content in this repo
 
 - No emdashes.
