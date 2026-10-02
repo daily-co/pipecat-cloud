@@ -301,7 +301,7 @@ async def test_connect_existing_short_circuits_when_already_connected(github_moc
 
 @pytest.mark.asyncio
 async def test_connect_existing_waits_as_long_as_the_flow_lives(github_mocks):
-    """The link flow lives 20 minutes, not an install's 25. The timeout must
+    """The link flow lives 13 minutes, not an install's 25. The timeout must
     follow the flow that was started, and its message the command to rerun."""
     mock_api, mock_console = github_mocks
     mock_api.github_installation = AsyncMock(return_value=(None, None))

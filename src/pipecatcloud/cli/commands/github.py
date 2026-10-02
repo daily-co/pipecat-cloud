@@ -40,12 +40,12 @@ github_cli = typer.Typer(
 # giving up sooner would abandon a connect that can still complete, and later
 # would wait on a flow that has expired. An install's signed state lasts 15
 # minutes, and redeeming it starts GitHub's authorization step, which lasts 10
-# more. Linking an existing installation is the authorization step, then a
-# confirmation on the dashboard, 10 minutes each.
+# more. Linking an existing installation is the authorization step (10
+# minutes), then a confirmation on the dashboard (3).
 _POLL_INTERVAL_SECONDS = 2.5
 _COMMIT_GRACE_SECONDS = 60
 _INSTALL_TIMEOUT_SECONDS = (15 + 10) * 60 + _COMMIT_GRACE_SECONDS
-_LINK_TIMEOUT_SECONDS = (10 + 10) * 60 + _COMMIT_GRACE_SECONDS
+_LINK_TIMEOUT_SECONDS = (10 + 3) * 60 + _COMMIT_GRACE_SECONDS
 
 
 def _installation_rows(installation: dict) -> list[tuple[str, str]]:
