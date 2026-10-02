@@ -23,8 +23,6 @@ _SETTINGS = {
     ),
     "onboarding_path": _Setting("/v1/onboarding"),
     "auth_config_path": _Setting("/auth/config"),
-    "login_path": _Setting("/auth/login"),
-    "login_status_path": _Setting("/auth/status"),
     "logout_path": _Setting("/auth/logout"),
     "whoami_path": _Setting("/v1/users"),
     "organization_path": _Setting("/v1/organizations"),
