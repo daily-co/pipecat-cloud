@@ -8,9 +8,11 @@
 
 The connect flow deliberately has no local callback server. GitHub sends the
 browser on to the Pipecat Cloud dashboard, which links the installation once
-GitHub confirms that the signed-in user installed the App or asked for it. The
-terminal only has to open a URL and poll until the link shows up. That is the
-same flow the dashboard's own Connect button runs.
+GitHub confirms that the signed-in user may: they installed the App or asked
+for it, while a member of the GitHub organization it is on, or they own the
+GitHub account it is on. The terminal only has to open a URL and poll until
+the link shows up. That is the same flow the dashboard's own Connect button
+runs.
 """
 
 import asyncio
@@ -102,8 +104,10 @@ async def connect(
         False,
         "--existing",
         help=(
-            "Link an installation already on GitHub that you installed yourself, "
-            "or that an owner of the GitHub account approved at your request"
+            "Link an installation already on GitHub: one you installed or had "
+            "an owner approve, while still a member of the GitHub organization "
+            "it is on, or one on your personal account or a GitHub "
+            "organization you own"
         ),
     ),
 ):
