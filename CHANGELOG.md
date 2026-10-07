@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   versions stop waiting after 15 minutes; the connection still completes,
   and `pipecat cloud github status` shows it.
 
+### Removed
+
+- The `login_path` and `login_status_path` settings and their
+  `PIPECAT_LOGIN_PATH` and `PIPECAT_LOGIN_STATUS_PATH` overrides. They
+  pointed at the device-code sign-in that 0.4.1 replaced with OAuth and
+  PKCE, and nothing has read them since, so setting them had no effect.
+  Removing them is not a breaking change: the only difference is that they
+  no longer appear in `--show-cli-config` output. Pipecat Cloud is retiring
+  that sign-in, so a CLI older than 0.4.1 has to be upgraded to log in.
+  `pipecat cloud auth login` is unchanged.
+
 ## [1.3.0] - 2026-10-01
 
 ### Added
