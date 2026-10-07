@@ -45,6 +45,13 @@ github_cli = typer.Typer(
 # more. Linking an existing installation is the authorization step (10
 # minutes), then a confirmation on the dashboard (3).
 _POLL_INTERVAL_SECONDS = 2.5
+# Answers no later poll can change, by status, and how many in a row it takes
+# to believe one: this CLI's sign-in is no longer valid (401), or its user may
+# no longer see the organization (403). A 401 can also follow a token refresh
+# that failed on a network blip, which the next poll tries again, so it takes
+# two. Anything else, a dropped connection or a 5xx, is polled through. "Not
+# linked yet" is no error at all: the API's 404 comes back as no installation.
+_POLL_REFUSALS_TO_GIVE_UP = {401: 2, 403: 1}
 _COMMIT_GRACE_SECONDS = 60
 _INSTALL_TIMEOUT_SECONDS = (15 + 10) * 60 + _COMMIT_GRACE_SECONDS
 _LINK_TIMEOUT_SECONDS = (10 + 3) * 60 + _COMMIT_GRACE_SECONDS
@@ -146,7 +153,16 @@ async def connect(
         if error:
             raise typer.Exit(1)
         verb, timeout = "install", _INSTALL_TIMEOUT_SECONDS
-    flow_url = (data or {}).get("url")
+    if data is None:
+        # No error and no body: no usable response came back (a dropped
+        # connection, a DNS or TLS failure, or a non-JSON page from a proxy),
+        # which the API client reports as nothing.
+        console.error(
+            f"Could not reach Pipecat Cloud to {verb} the GitHub App. Check your "
+            "connection and try again."
+        )
+        raise typer.Exit(1)
+    flow_url = data.get("url")
     if not flow_url:
         console.error(f"The API did not return a GitHub {verb} URL")
         raise typer.Exit(1)
@@ -167,19 +183,22 @@ async def connect(
         # In json mode stdout is reserved for the final payload, so the URL a
         # headless caller needs goes to the console's stream (stderr).
         console.print(f"Open this URL to {verb} the App: {flow_url}")
-    if not console.json_output:
-        # The browser half runs on the dashboard, under its own sign-in, and
-        # only for the user this terminal is logged in as. This terminal can't
-        # see the dashboard refuse, so it says where to look.
-        finish = ", where you confirm the installation to link" if existing else " to finish"
-        console.print(
-            f"[dim]GitHub returns you to the Pipecat Cloud dashboard{finish}. "
-            "Sign in there as the same Pipecat Cloud user as this CLI if it asks. If the "
-            "dashboard shows an error, press Ctrl+C here and follow what it says.[/dim]"
-        )
+    # The browser half runs on the dashboard, under its own sign-in, and only
+    # for the user this terminal is logged in as. This terminal can't see the
+    # dashboard refuse, so it says where to look. In json mode too, where it
+    # goes to stderr with the URL above: a headless caller needs it more, not
+    # less.
+    finish = ", where you confirm the installation to link" if existing else " to finish"
+    console.print(
+        f"[dim]GitHub returns you to the Pipecat Cloud dashboard{finish}. "
+        "Sign in there as the same Pipecat Cloud user as this CLI if it asks. If the "
+        "dashboard shows an error, press Ctrl+C here and follow what it says.[/dim]"
+    )
 
     deadline = time.monotonic() + timeout
     installation = None
+    refused = False
+    refusals_in_a_row = 0
     with console.status(
         "[dim]Waiting for GitHub. Finish in your browser...[/dim]",
         spinner="dots",
@@ -192,7 +211,20 @@ async def connect(
             if found:
                 installation = found
                 break
+            status = API.error_status if error else None
+            needed = None if status is None else _POLL_REFUSALS_TO_GIVE_UP.get(status)
+            if needed is None:
+                refusals_in_a_row = 0
+                continue
+            refusals_in_a_row += 1
+            if refusals_in_a_row >= needed:
+                refused = True
+                break
 
+    if refused:
+        # Printed once the spinner is gone.
+        API.print_error()
+        raise typer.Exit(1)
     if not installation:
         link_existing = f"[bold]{PIPECAT_CLI_NAME} github connect --existing[/bold]"
         if existing:

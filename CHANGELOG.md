@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   account or a GitHub organization you own. That covers an install request
   an owner approved and an install made from GitHub, neither of which linked
   before. You authorize the App on GitHub, then confirm the installation to
-  link on the Pipecat Cloud dashboard. `github status` and the `github connect` timeout message point
-  to it.
+  link on the Pipecat Cloud dashboard, and the CLI waits up to 14 minutes
+  for it. `github status` and the `github connect` timeout message point to
+  it.
 
 ### Changed
 
@@ -25,10 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dashboard, where you may need to sign in as the same Pipecat Cloud user the
   CLI is logged in as. GitHub also asks you to authorize the App after you
   install it. This happens on the server side, so it applies to every CLI
-  version. `pipecat cloud github connect` now says so, and waits up to 26
-  minutes for the connection instead of 15, to cover both steps. Older
-  versions stop waiting after 15 minutes; the connection still completes,
-  and `pipecat cloud github status` shows it.
+  version. `pipecat cloud github connect` now says so, also with `--json`
+  (on stderr), and waits up to 26 minutes for the connection instead of 15,
+  to cover both steps. Older versions stop waiting after 15 minutes; the
+  connection still completes, and `pipecat cloud github status` shows it.
+- `pipecat cloud github connect` stops waiting as soon as Pipecat Cloud
+  refuses the CLI's sign-in or its access to the organization, instead of
+  waiting until it times out.
 
 ### Removed
 
@@ -40,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer appear in `--show-cli-config` output. Pipecat Cloud is retiring
   that sign-in, so a CLI older than 0.4.1 has to be upgraded to log in.
   `pipecat cloud auth login` is unchanged.
+
+### Fixed
+
+- `pipecat cloud github connect` says it could not reach Pipecat Cloud when
+  no usable response comes back, such as on a dropped connection, instead
+  of saying the API returned no URL.
 
 ## [1.3.0] - 2026-10-01
 

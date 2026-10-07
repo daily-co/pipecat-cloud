@@ -37,6 +37,12 @@ class _API:
     def __init__(self, token: str | None = None, is_cli: bool = False):
         self.token = token
         self.error = None
+        # The HTTP status of the last failed response, beside `error`, which
+        # is its body. A body's `code` is the API's own error code, which is
+        # not always the status (a 403 for someone outside the organization
+        # carries a code of its own), so a caller that decides on the status
+        # reads it here. None when the request got no response at all.
+        self.error_status: int | None = None
         self.bubble_next = False
         self.is_cli = is_cli
 
@@ -149,6 +155,7 @@ class _API:
                 if self.is_cli and not_found_is_empty and response.status == 404:
                     return None
 
+                self.error_status = response.status
                 # Extract PCC error code, where applicable
                 try:
                     # Try to parse the error as JSON
@@ -180,6 +187,7 @@ class _API:
         @wraps(method_func)
         async def wrapper(*args, live=None, **kwargs):
             self.error = None
+            self.error_status = None
             try:
                 result = await method_func(*args, **kwargs)
                 self.bubble_next = False

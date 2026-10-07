@@ -430,8 +430,9 @@ async def test_connect_says_the_dashboard_finishes_it(github_mocks, existing):
 
 @pytest.mark.asyncio
 async def test_connect_json_keeps_stdout_for_the_payload(github_mocks):
-    """In json mode the hints stay off, a URL the browser didn't take goes to
-    the console's stream, and stdout gets the final payload alone."""
+    """In json mode a URL the browser didn't take, and where the flow finishes,
+    go to the console's stream: a headless caller needs both. Stdout gets the
+    final payload alone."""
     mock_api, mock_console = github_mocks
     mock_console.json_output = True
     mock_api.github_installation = AsyncMock(return_value=(None, None))
@@ -447,10 +448,113 @@ async def test_connect_json_keeps_stdout_for_the_payload(github_mocks):
         await connect.aio(organization="test-org", existing=False)
 
     printed = [str(call.args[0]) for call in mock_console.print.call_args_list]
-    assert printed == ["Open this URL to install the App: https://github.test"]
+    assert printed[0] == "Open this URL to install the App: https://github.test"
+    assert len(printed) == 2
+    assert "Pipecat Cloud dashboard" in printed[1]
+    assert "same Pipecat Cloud user" in printed[1]
     mock_console.output_json.assert_called_once_with(
         {"installation": INSTALLATION, "connected": True}
     )
+
+
+_REFUSED = (None, {"error": "Refused", "code": "NOT_A_MEMBER"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "answers"),
+    [
+        # Its access to the organization: once is enough.
+        (403, [_REFUSED]),
+        # Its sign-in: twice in a row, since one can follow a failed refresh.
+        (401, [_REFUSED, _REFUSED]),
+    ],
+)
+async def test_connect_stops_waiting_when_the_api_refuses_the_poll(github_mocks, status, answers):
+    """A poll refused for the CLI's sign-in or its access to the organization
+    can't succeed later: say why now, not after the whole timeout."""
+    mock_api, mock_console = github_mocks
+    mock_api.github_installation = AsyncMock(return_value=(None, None))
+    mock_api.github_install_url = AsyncMock(return_value=({"url": "https://github.test"}, None))
+    # Exactly the answers it should take: a loop that kept polling would raise.
+    mock_api.bubble_error.return_value.github_installation = AsyncMock(side_effect=answers)
+    mock_api.error_status = status
+
+    with (
+        patch("pipecatcloud.cli.commands.github.asyncio.sleep", new_callable=AsyncMock),
+        patch("pipecatcloud.cli.commands.auth._open_url", return_value=True),
+        pytest.raises(typer.Exit) as excinfo,
+    ):
+        await connect.aio(organization="test-org", existing=False)
+
+    assert excinfo.value.exit_code == 1
+    mock_api.print_error.assert_called_once()
+    # Not the timeout's message.
+    mock_console.error.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_polls_through_a_single_unauthorized(github_mocks):
+    """One 401 can follow a token refresh that failed on a network blip, and
+    the next poll refreshes again: keep polling."""
+    mock_api, mock_console = github_mocks
+    mock_api.github_installation = AsyncMock(return_value=(None, None))
+    mock_api.github_install_url = AsyncMock(return_value=({"url": "https://github.test"}, None))
+    mock_api.bubble_error.return_value.github_installation = AsyncMock(
+        side_effect=[_REFUSED, (INSTALLATION, None)]
+    )
+    mock_api.error_status = 401
+
+    with (
+        patch("pipecatcloud.cli.commands.github.asyncio.sleep", new_callable=AsyncMock),
+        patch("pipecatcloud.cli.commands.auth._open_url", return_value=True),
+    ):
+        await connect.aio(organization="test-org", existing=False)
+
+    mock_api.print_error.assert_not_called()
+    mock_console.success.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_connect_polls_through_a_server_error(github_mocks):
+    """A 5xx mid-poll may clear up, so the poll carries on."""
+    mock_api, mock_console = github_mocks
+    mock_api.github_installation = AsyncMock(return_value=(None, None))
+    mock_api.github_install_url = AsyncMock(return_value=({"url": "https://github.test"}, None))
+    mock_api.bubble_error.return_value.github_installation = AsyncMock(
+        side_effect=[(None, {"error": "Bad Gateway", "code": "502"}), (INSTALLATION, None)]
+    )
+    mock_api.error_status = 502
+
+    with (
+        patch("pipecatcloud.cli.commands.github.asyncio.sleep", new_callable=AsyncMock),
+        patch("pipecatcloud.cli.commands.auth._open_url", return_value=True),
+    ):
+        await connect.aio(organization="test-org", existing=False)
+
+    mock_api.print_error.assert_not_called()
+    mock_console.success.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("existing", [False, True])
+async def test_connect_says_when_it_could_not_reach_the_api(github_mocks, existing):
+    """No response at all comes back from the API client as nothing: say the
+    API couldn't be reached, not that it answered without a URL."""
+    mock_api, mock_console = github_mocks
+    mock_api.github_installation = AsyncMock(return_value=(None, None))
+    mock_api.github_install_url = AsyncMock(return_value=(None, None))
+    mock_api.bubble_error.return_value.github_link_url = AsyncMock(return_value=(None, None))
+
+    with (
+        patch("pipecatcloud.cli.commands.auth._open_url") as open_url,
+        pytest.raises(typer.Exit) as excinfo,
+    ):
+        await connect.aio(organization="test-org", existing=existing)
+
+    assert excinfo.value.exit_code == 1
+    open_url.assert_not_called()
+    assert "Could not reach Pipecat Cloud" in mock_console.error.call_args.args[0]
 
 
 @pytest.mark.asyncio
