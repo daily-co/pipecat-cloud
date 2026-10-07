@@ -10,11 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `pipecat cloud github connect --existing` links a GitHub App installation
-  that is already on GitHub to your Pipecat Cloud organization. Use it when
-  an owner of the GitHub account approved your request to install the App,
-  or when you installed the App from GitHub yourself. You authorize the App
-  on GitHub, then confirm the installation to link on the Pipecat Cloud
-  dashboard. `github status` and the `github connect` timeout message point
+  that is already on GitHub to your Pipecat Cloud organization. Use it for
+  an installation you installed or had an owner approve, while still a
+  member of the GitHub organization it is on, or one on your personal
+  account or a GitHub organization you own. That covers an install request
+  an owner approved and an install made from GitHub, neither of which linked
+  before. You authorize the App on GitHub, then confirm the installation to
+  link on the Pipecat Cloud dashboard. `github status` and the `github connect` timeout message point
   to it.
 
 ### Changed
