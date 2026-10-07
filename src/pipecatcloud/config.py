@@ -45,6 +45,7 @@ _SETTINGS = {
     # per service, so the binding path hardcodes "production" the same way the
     # dashboard does; it becomes a parameter when multi-environment lands.
     "github_install_url_path": _Setting("/v1/organizations/{org}/github/install-url"),
+    "github_link_url_path": _Setting("/v1/organizations/{org}/github/link-url"),
     "github_installation_path": _Setting("/v1/organizations/{org}/github/installation"),
     "github_repositories_path": _Setting("/v1/organizations/{org}/github/repositories"),
     "service_git_path": _Setting(

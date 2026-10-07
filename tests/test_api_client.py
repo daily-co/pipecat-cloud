@@ -489,3 +489,71 @@ class TestNoContentResponses:
 
         assert result is None
         assert json_called is False
+
+
+def _session_answering(*responses):
+    """An aiohttp session stand-in that answers each request with the next
+    response."""
+    answers = iter(responses)
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def request(self, **_kwargs):
+            return next(answers)
+
+    return lambda *a, **k: _Session()
+
+
+def _response(status, body):
+    class _Resp:
+        def __init__(self):
+            self.status = status
+            self.ok = status < 400
+            self.reason = "Reason"
+
+        async def json(self):
+            return body
+
+        def raise_for_status(self):
+            if not self.ok:
+                raise RuntimeError(f"HTTP {status}")
+
+    return _Resp()
+
+
+class TestErrorStatus:
+    """A failed response's HTTP status is kept beside its body, since the
+    body's `code` is the API's own error code and not always the status."""
+
+    @pytest.fixture
+    def api_client(self):
+        return _API(token="test-token", is_cli=True)
+
+    @pytest.mark.asyncio
+    async def test_keeps_the_status_of_a_refusal_and_clears_it_on_the_next_call(self, api_client):
+        refusal = {"error": "Not a member", "code": "NOT_A_MEMBER"}
+        session = _session_answering(
+            _response(403, refusal), _response(200, {"installation": {"id": 1}})
+        )
+        with patch("aiohttp.ClientSession", session):
+            found, error = await api_client.bubble_error().github_installation(org="o")
+            assert (found, error) == (None, refusal)
+            assert api_client.error_status == 403
+
+            found, error = await api_client.github_installation(org="o")
+            assert (found, error) == ({"id": 1}, None)
+            assert api_client.error_status is None
+
+    @pytest.mark.asyncio
+    async def test_a_not_found_read_as_empty_has_no_status(self, api_client):
+        session = _session_answering(_response(404, {"error": "Not found"}))
+        with patch("aiohttp.ClientSession", session):
+            found, error = await api_client.github_installation(org="o")
+
+        assert (found, error) == (None, None)
+        assert api_client.error_status is None
