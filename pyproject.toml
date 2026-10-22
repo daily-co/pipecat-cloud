@@ -11,7 +11,7 @@ license = { text = "BSD 2-Clause License" }
 readme = "README.md"
 keywords = ["pipecat", "pipecat-ai", "voice", "ai", "llm"]
 dependencies = [
-    "aiohttp>=3.11.12,<4.0.0",
+    "aiohttp>=3.14.4,<4.0.0",
     "fastapi>=0.115.6,<1.0.0",
     "loguru~=0.7.3",
     "python-dotenv>=1.0.1,<2.0.0",

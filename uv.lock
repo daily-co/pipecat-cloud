@@ -1500,7 +1500,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiohttp", specifier = ">=3.11.12,<4.0.0" },
+    { name = "aiohttp", specifier = ">=3.14.4,<4.0.0" },
     { name = "fastapi", specifier = ">=0.115.6,<1.0.0" },
     { name = "loguru", specifier = "~=0.7.3" },
     { name = "pipecat-ai", marker = "extra == 'pipecat'", specifier = ">=1.0.0" },
