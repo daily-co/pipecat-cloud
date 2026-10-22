@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pipecat cloud github connect` stops waiting as soon as Pipecat Cloud
   refuses the CLI's sign-in or its access to the organization, instead of
   waiting until it times out.
+- The `aiohttp` minimum version is now `3.14.4`, the first release with fixes
+  for several security advisories. The SDK makes its API requests with
+  `aiohttp`, and `pipecat cloud auth login` uses it for the local server that
+  receives the sign-in callback.
 
 ### Removed
 
