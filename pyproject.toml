@@ -41,7 +41,7 @@ dev = [
     "pytest>=9.0.0,<10",
     "pytest-asyncio>=1.0.0,<2",
     "ruff>=0.12.11,<1",
-    "setuptools>=83.0.0,<84",
+    "setuptools>=84.1.0,<85",
     "setuptools_scm~=8.3.1",
     # Imported by the tests to compare pipecat-ai versions.
     "packaging>=25.0",
