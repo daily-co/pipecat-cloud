@@ -9,6 +9,7 @@ Tests for the bounded retry on secrets writes (503 with Retry-After) and for
 region validation against the organization actually in use.
 """
 
+import json
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -109,14 +110,29 @@ class TestSecretsWriteRetry:
         assert len(calls) == 1
         sleeps.assert_not_awaited()
 
-    @pytest.mark.parametrize("value", ["soon", "Wed, 21 Oct 2026 07:28:00 GMT", "31", "-1"])
-    async def test_unusable_or_too_long_retry_after_is_not_retried(self, sleeps, notices, value):
+    @pytest.mark.parametrize("value", ["soon", "Wed, 21 Oct 2026 07:28:00 GMT", "-1"])
+    async def test_unusable_retry_after_is_not_retried(self, sleeps, notices, value):
         api = _API("t", is_cli=True)
         (_, error), calls = await _upsert(api, [(503, value), {}])
 
         assert error["code"] == "503"
+        assert "asked to wait" not in error["error"]
         assert len(calls) == 1
         sleeps.assert_not_awaited()
+
+    async def test_retry_after_above_the_cap_is_not_waited_out_and_says_why(self, sleeps, notices):
+        api = _API("t", is_cli=True)
+        (_, error), calls = await _upsert(api, [(503, "60"), {}])
+
+        assert error["code"] == "503"
+        assert (
+            "The region asked to wait 60 seconds, longer than the CLI will wait (30)"
+            in (error["error"])
+        )
+        assert "Run the command again after that." in error["error"]
+        assert len(calls) == 1  # not clamped to 30 either: that would be early
+        sleeps.assert_not_awaited()
+        notices.print.assert_not_called()
 
     @pytest.mark.parametrize("status", [400, 429, 500, 502])
     async def test_other_statuses_are_not_retried(self, sleeps, notices, status):
@@ -197,7 +213,7 @@ class TestSecretsSetMidWayFailure:
         printed = " ".join(str(c) for c in self.console.print.call_args_list)
         assert "stopped at 'B'" in printed
         assert "Stored before the failure: A." in printed
-        assert "Run the same command again to finish it." in printed
+        assert "Wait for the region to become ready, then run the same command again" in printed
         assert "Fix the error" not in printed
 
     async def test_non_503_failure_says_to_fix_the_error_first(self, sleeps):
@@ -370,23 +386,44 @@ class TestRegionCommandsPassTheOrganization:
 
 
 class TestFailedRegionFetchOutput:
-    """The real console, rich-off and json: one clear message, no second API
-    error, no 'Invalid region ... Valid regions are:' with an empty list."""
+    """The region list cannot be fetched (the real client and console run; only
+    the HTTP call is replaced). The client prints its own error first, then the
+    command says it stopped. In json mode stdout carries exactly one document,
+    the client's error object, and the human message is on stderr."""
+
+    @staticmethod
+    def _refuse_with_403():
+        calls = []
+
+        async def refused(self, method, url, **kwargs):
+            calls.append(url)
+            self.error = {"error": "Not a member of this organization", "code": "403"}
+            self.error_status = 403
+            raise _http_error(403)
+
+        return refused, calls
 
     @pytest.mark.parametrize("output", ["plain", "json"])
     def test_unlistable_regions_say_so(self, output, json_mode):
         regions._regions_cache = None
-        with patch("pipecatcloud._utils.regions.API") as mock_api:
-            mock_api.regions = AsyncMock(return_value=(None, {"code": "403"}))
+        refused, calls = self._refuse_with_403()
+        with patch.object(_API, "_base_request", new=refused):
             result = runner.invoke(
                 entrypoint_cli_typer,
                 ["--output", output, "agent", "list", "-r", "rgn", "-o", "other"],
             )
 
         assert result.exit_code == 1
-        assert mock_api.regions.await_count == 1
-        out = result.output
-        assert "Could not list the regions of organization 'other'" in out
-        assert "Valid regions are" not in out
+        assert len(calls) == 1  # fetched once
+        message = "Could not list the regions of organization 'other'"
+        assert message in result.output
+        assert "could not be checked. Not continuing." in result.output
+        assert "Valid regions are" not in result.output
+        # The client's own error comes first.
+        assert result.output.index("Not a member") < result.output.index(message)
         if output == "json":
-            assert result.stdout.strip() == ""
+            assert json.loads(result.stdout) == {
+                "error": {"error": "Not a member of this organization", "code": "403"}
+            }
+            assert message in result.stderr
+            assert message not in result.stdout

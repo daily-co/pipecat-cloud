@@ -42,23 +42,23 @@ def api_method(func):
 # 3 x 30 seconds; each of the 4 attempts can also take up to the client's own
 # request timeout, so the worst case is those waits plus 4 timeouts. A larger
 # `Retry-After` than the cap means the server wants longer than we are willing
-# to wait, so the request is not retried.
+# to wait. The request is not retried, and not clamped either: repeating it
+# before the time the server named goes against the header. The error says so.
 SECRETS_WRITE_MAX_RETRIES = 3
 SECRETS_WRITE_MAX_RETRY_AFTER = 30
 
 
 def _parse_retry_after(value: str | None) -> int | None:
-    """Seconds from a `Retry-After` header, or None when absent, not a whole
-    number of seconds (the HTTP-date form is not honoured), or above the cap."""
+    """Seconds from a `Retry-After` header, or None when absent, negative, or not
+    a whole number of seconds (the HTTP-date form is not honoured). A value above
+    the cap is returned as sent; the caller decides not to wait it out."""
     if value is None:
         return None
     try:
         seconds = int(value.strip())
     except ValueError:
         return None
-    if seconds < 0 or seconds > SECRETS_WRITE_MAX_RETRY_AFTER:
-        return None
-    return seconds
+    return seconds if seconds >= 0 else None
 
 
 class _API:
@@ -450,15 +450,33 @@ class _API:
                 return await self._base_request("PUT", url, json=data) or {}
             except aiohttp.ClientResponseError as e:
                 wait = _parse_retry_after(self.error_retry_after)
-                if e.status != 503 or wait is None or attempt >= SECRETS_WRITE_MAX_RETRIES:
-                    if attempt and isinstance(self.error, dict):
-                        # Say the retries happened, so the user does not think
-                        # the first refusal was final.
-                        self.error = {
-                            **self.error,
-                            "error": f"{self.error.get('error')} Still unavailable after "
-                            f"{attempt} {'retry' if attempt == 1 else 'retries'}.",
-                        }
+                too_long = wait is not None and wait > SECRETS_WRITE_MAX_RETRY_AFTER
+                if (
+                    e.status != 503
+                    or wait is None
+                    or too_long
+                    or attempt >= SECRETS_WRITE_MAX_RETRIES
+                ):
+                    if e.status == 503 and isinstance(self.error, dict):
+                        note = ""
+                        if attempt:
+                            # Say the retries happened, so the user does not
+                            # think the first refusal was final.
+                            noun = "retry" if attempt == 1 else "retries"
+                            note = f" Still unavailable after {attempt} {noun}."
+                        elif too_long:
+                            # Waiting less than the server named would go
+                            # against the header, so say why nothing was retried.
+                            note = (
+                                f" The region asked to wait {wait} seconds, longer than the "
+                                f"CLI will wait ({SECRETS_WRITE_MAX_RETRY_AFTER}). "
+                                "Run the command again after that."
+                            )
+                        if note:
+                            self.error = {
+                                **self.error,
+                                "error": f"{self.error.get('error')}{note}",
+                            }
                     raise
                 attempt += 1
                 self._notify_retry(wait, attempt)

@@ -59,16 +59,18 @@ async def region_error(region: str, org: str | None = None) -> str | None:
     Check a region code against the regions of the organization in use.
 
     Fetches the list once. Returns None when the region is valid, otherwise a
-    message for the user. When the list cannot be fetched (the API call has
-    already reported why), the message says so rather than calling the region
-    invalid.
+    message for the user. When the list cannot be fetched, the message says so
+    rather than calling the region invalid. The API client prints its own error
+    for the failed call before this message is returned (in json mode that error
+    goes to stdout as the error object), so the caller shows both: why the call
+    failed, then that the command stopped.
     """
     org = org or config.get("org")
     regions = await get_regions(org)
     if not regions:
         return (
-            f"Could not list the regions of organization '{org}', "
-            f"so region '{region}' was not checked."
+            f"Could not list the regions of organization '{org}', so region "
+            f"'{region}' could not be checked. Not continuing."
         )
     codes = [r["code"] for r in regions]
     if region in codes:

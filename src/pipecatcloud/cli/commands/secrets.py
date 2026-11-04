@@ -312,7 +312,8 @@ async def create_set(
                     # Only a 503 is the region not being ready yet; any other
                     # error fails at the same key again until it is fixed.
                     next_step = (
-                        "Run the same command again to finish it."
+                        "Wait for the region to become ready, then run the same "
+                        "command again to finish it."
                         if API.error_status == 503
                         else "Fix the error above, then run the same command again."
                     )

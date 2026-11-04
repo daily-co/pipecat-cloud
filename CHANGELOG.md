@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   API answers a write with a 503 and a `Retry-After` of up to 30 seconds, as
   a region can on its first secrets write. They retry up to 3 times, say they
   are waiting, and fail as before if the 503 persists. Other errors, and a 503
-  without a usable `Retry-After`, are not retried.
+  without a usable `Retry-After`, are not retried. A `Retry-After` above 30
+  seconds is not waited out; the error says how long the region asked for.
 
 ### Fixed
 
