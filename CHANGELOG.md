@@ -5,6 +5,25 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `secrets set` and `secrets image-pull-secret` now wait and retry when the
+  API answers a write with a 503 and a `Retry-After` of up to 30 seconds, as
+  a region can on its first secrets write. They retry up to 3 times, say they
+  are waiting, and fail as before if the 503 persists. Other errors, and a 503
+  without a usable `Retry-After`, are not retried.
+
+### Fixed
+
+- `--region` is now checked against the regions of the organization given
+  with `--organization`, not only the organization in your config file. This
+  affects `secrets set`, `secrets list`, `secrets image-pull-secret`,
+  `secrets reference`, `agent list` and `deploy`. A region that belongs only
+  to the other organization, such as a self-hosted region, was refused as
+  invalid.
+
 ## [1.4.0] - 2026-10-22
 
 ### Added

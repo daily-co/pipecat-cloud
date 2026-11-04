@@ -26,8 +26,8 @@ def reference_mocks():
         patch("pipecatcloud.cli.commands.secrets.API") as mock_api,
         patch("pipecatcloud.cli.commands.secrets.console"),
         patch(
-            "pipecatcloud.cli.commands.secrets.validate_region",
-            new=AsyncMock(return_value=True),
+            "pipecatcloud.cli.commands.secrets.region_error",
+            new=AsyncMock(return_value=None),
         ),
     ):
         mock_api.secrets_reference = AsyncMock(
@@ -66,12 +66,8 @@ async def test_invalid_region_rejected_client_side():
         patch("pipecatcloud.cli.commands.secrets.API") as mock_api,
         patch("pipecatcloud.cli.commands.secrets.console"),
         patch(
-            "pipecatcloud.cli.commands.secrets.validate_region",
-            new=AsyncMock(return_value=False),
-        ),
-        patch(
-            "pipecatcloud.cli.commands.secrets.get_region_codes",
-            new=AsyncMock(return_value=["us-west"]),
+            "pipecatcloud.cli.commands.secrets.region_error",
+            new=AsyncMock(return_value="Invalid region 'bogus'. Valid regions are: us-west"),
         ),
     ):
         mock_api.secrets_reference = AsyncMock()

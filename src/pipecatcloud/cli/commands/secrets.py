@@ -19,7 +19,7 @@ from rich.table import Table
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
-from pipecatcloud._utils.regions import get_region_codes, validate_region
+from pipecatcloud._utils.regions import region_error
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -197,11 +197,8 @@ async def create_set(
 
     # Validate region if explicitly provided
     # If not provided, API will use org's default region
-    if region and not await validate_region(region):
-        valid_regions = await get_region_codes()
-        console.print(
-            f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
-        )
+    if region and (region_message := await region_error(region, org=org)):
+        console.error(region_message)
         raise typer.Exit(1)
 
     # Resolve the set before prompting. A referenced set is refused outright, so
@@ -302,6 +299,27 @@ async def create_set(
             )
 
             if error:
+                if len(secrets_dict) > 1:
+                    # Keys go one request at a time. Say how far it got: each
+                    # write replaces its key, so running the command again is
+                    # safe and finishes the set.
+                    stored_keys = list(secrets_dict)[: list(secrets_dict).index(key)]
+                    stored = (
+                        f"Stored before the failure: {', '.join(stored_keys)}."
+                        if stored_keys
+                        else "No keys were stored."
+                    )
+                    # Only a 503 is the region not being ready yet; any other
+                    # error fails at the same key again until it is fixed.
+                    next_step = (
+                        "Run the same command again to finish it."
+                        if API.error_status == 503
+                        else "Fix the error above, then run the same command again."
+                    )
+                    console.print(
+                        f"[yellow]Secret set '{name}' was not fully written, stopped at "
+                        f"'{key}'. {stored} {next_step}[/yellow]"
+                    )
                 raise typer.Exit(1)
 
             # Capture the region that was used (from API response)
@@ -403,11 +421,8 @@ async def list_sets(
     status_title = "Retrieving secret sets"
 
     # Validate region if provided
-    if region and not await validate_region(region):
-        valid_regions = await get_region_codes()
-        console.print(
-            f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
-        )
+    if region and (region_message := await region_error(region, org=org)):
+        console.error(region_message)
         raise typer.Exit(1)
 
     logger.debug(f"Secret set name to lookup: {name}")
@@ -641,11 +656,8 @@ async def image_pull_secret(
 
     # Validate region if explicitly provided
     # If not provided, API will use org's default region
-    if region and not await validate_region(region):
-        valid_regions = await get_region_codes()
-        console.print(
-            f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
-        )
+    if region and (region_message := await region_error(region, org=org)):
+        console.error(region_message)
         raise typer.Exit(1)
 
     # Check if secret already exists
@@ -730,11 +742,8 @@ async def reference_secret(
     """
     org = organization or config.get("org")
 
-    if region and not await validate_region(region):
-        valid_regions = await get_region_codes()
-        console.print(
-            f"[red]Error: Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
-        )
+    if region and (region_message := await region_error(region, org=org)):
+        console.error(region_message)
         raise typer.Exit(1)
 
     with console.status(

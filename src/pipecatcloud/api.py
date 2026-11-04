@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import asyncio
 import json
 import time
 from collections.abc import Callable
@@ -33,6 +34,33 @@ def api_method(func):
     return wrapper
 
 
+# A secrets write can be refused with a 503 and `Retry-After` while the region
+# is not ready to store secrets yet (a self-hosted region's first write). The
+# CLI waits and repeats the request, bounded so a region that stays unready
+# fails rather than hanging. Three retries cover a short warm-up (the server
+# asks for about 5 seconds) with room to spare. The waits total at most
+# 3 x 30 seconds; each of the 4 attempts can also take up to the client's own
+# request timeout, so the worst case is those waits plus 4 timeouts. A larger
+# `Retry-After` than the cap means the server wants longer than we are willing
+# to wait, so the request is not retried.
+SECRETS_WRITE_MAX_RETRIES = 3
+SECRETS_WRITE_MAX_RETRY_AFTER = 30
+
+
+def _parse_retry_after(value: str | None) -> int | None:
+    """Seconds from a `Retry-After` header, or None when absent, not a whole
+    number of seconds (the HTTP-date form is not honoured), or above the cap."""
+    if value is None:
+        return None
+    try:
+        seconds = int(value.strip())
+    except ValueError:
+        return None
+    if seconds < 0 or seconds > SECRETS_WRITE_MAX_RETRY_AFTER:
+        return None
+    return seconds
+
+
 class _API:
     def __init__(self, token: str | None = None, is_cli: bool = False):
         self.token = token
@@ -43,6 +71,9 @@ class _API:
         # carries a code of its own), so a caller that decides on the status
         # reads it here. None when the request got no response at all.
         self.error_status: int | None = None
+        # The `Retry-After` header of the last failed response, as sent, or
+        # None when it had none.
+        self.error_retry_after: str | None = None
         self.bubble_next = False
         self.is_cli = is_cli
 
@@ -156,6 +187,7 @@ class _API:
                     return None
 
                 self.error_status = response.status
+                self.error_retry_after = response.headers.get("Retry-After")
                 # Extract PCC error code, where applicable
                 try:
                     # Try to parse the error as JSON
@@ -188,6 +220,7 @@ class _API:
         async def wrapper(*args, live=None, **kwargs):
             self.error = None
             self.error_status = None
+            self.error_retry_after = None
             try:
                 result = await method_func(*args, **kwargs)
                 self.bubble_next = False
@@ -408,7 +441,42 @@ class _API:
         if region:
             data = {**data, "region": region}
 
-        return await self._base_request("PUT", url, json=data) or {}
+        # A PUT to one key of a set replaces that key's value, so repeating it
+        # is safe. A 503 with `Retry-After` is the server saying it did not
+        # store the value yet; wait and repeat, a bounded number of times.
+        attempt = 0
+        while True:
+            try:
+                return await self._base_request("PUT", url, json=data) or {}
+            except aiohttp.ClientResponseError as e:
+                wait = _parse_retry_after(self.error_retry_after)
+                if e.status != 503 or wait is None or attempt >= SECRETS_WRITE_MAX_RETRIES:
+                    if attempt and isinstance(self.error, dict):
+                        # Say the retries happened, so the user does not think
+                        # the first refusal was final.
+                        self.error = {
+                            **self.error,
+                            "error": f"{self.error.get('error')} Still unavailable after "
+                            f"{attempt} {'retry' if attempt == 1 else 'retries'}.",
+                        }
+                    raise
+                attempt += 1
+                self._notify_retry(wait, attempt)
+                await asyncio.sleep(wait)
+                self.error = None
+                self.error_status = None
+                self.error_retry_after = None
+
+    def _notify_retry(self, wait: int, attempt: int) -> None:
+        """Tell the CLI user the request is waiting to be repeated, so a pause is not silent."""
+        if not self.is_cli:
+            return
+        from pipecatcloud._utils.console_utils import console
+
+        console.print(
+            f"[yellow]The region is not ready to store secrets yet. Retrying in {wait}s "
+            f"(attempt {attempt} of {SECRETS_WRITE_MAX_RETRIES})...[/yellow]"
+        )
 
     @property
     def secrets_upsert(self):

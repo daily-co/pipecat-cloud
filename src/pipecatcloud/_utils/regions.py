@@ -13,18 +13,26 @@ Provides functions to fetch and cache available regions from the API.
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
-# Module-level cache for regions
-_regions_cache: list[dict[str, str]] | None = None
+# Module-level cache of region lists, keyed by organization. Each organization
+# has its own list (a self-hosted region is visible only to its organization),
+# so one list must never answer for another.
+_regions_cache: dict[str, list[dict[str, str]]] | None = None
 
 
-async def get_regions() -> list[dict[str, str]]:
+async def get_regions(org: str | None = None) -> list[dict[str, str]]:
     """
-    Fetch available regions from the API with caching.
+    Fetch available regions for an organization from the API with caching.
 
-    This function is cached so the API is only called once per CLI session.
+    The list is cached per organization, so the API is called once per
+    organization per CLI session.
+
+    Args:
+        org: Organization to list regions for. Defaults to the organization in
+            the config file.
 
     Returns:
-        List of region objects with 'code' and 'display_name' fields
+        List of region objects with 'code' and 'display_name' fields, or an
+        empty list when the list cannot be fetched.
         Example: [
             {"code": "us-west", "display_name": "US West"},
             {"code": "eu-central", "display_name": "EU Central"}
@@ -32,40 +40,40 @@ async def get_regions() -> list[dict[str, str]]:
     """
     global _regions_cache
 
+    org = org or config.get("org")
     if _regions_cache is None:
-        org = config.get("org")
+        _regions_cache = {}
+
+    if org not in _regions_cache:
         # API returns (data, error) tuple
         data, error = await API.regions(org=org)
         if error or not data:
             return []
-        _regions_cache = data
+        _regions_cache[org] = data
 
-    return _regions_cache
+    return _regions_cache[org]
 
 
-async def get_region_codes() -> list[str]:
+async def region_error(region: str, org: str | None = None) -> str | None:
     """
-    Get list of region codes only.
+    Check a region code against the regions of the organization in use.
 
-    Returns:
-        List of region codes (e.g., ['us-west', 'eu-central', 'ap-south'])
+    Fetches the list once. Returns None when the region is valid, otherwise a
+    message for the user. When the list cannot be fetched (the API call has
+    already reported why), the message says so rather than calling the region
+    invalid.
     """
-    regions = await get_regions()
-    return [r["code"] for r in regions]
-
-
-async def validate_region(region: str) -> bool:
-    """
-    Validate that a region code is supported.
-
-    Args:
-        region: Region code to validate
-
-    Returns:
-        True if region is valid, False otherwise
-    """
-    valid_codes = await get_region_codes()
-    return region in valid_codes
+    org = org or config.get("org")
+    regions = await get_regions(org)
+    if not regions:
+        return (
+            f"Could not list the regions of organization '{org}', "
+            f"so region '{region}' was not checked."
+        )
+    codes = [r["code"] for r in regions]
+    if region in codes:
+        return None
+    return f"Invalid region '{region}'. Valid regions are: {', '.join(codes)}"
 
 
 def validate_architecture_for_region(
