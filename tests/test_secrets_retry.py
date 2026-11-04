@@ -120,6 +120,34 @@ class TestSecretsWriteRetry:
         assert len(calls) == 1
         sleeps.assert_not_awaited()
 
+    async def test_note_keeps_the_servers_text_when_it_is_under_message(self, sleeps, notices):
+        fake_responses = [(503, "5")] * (SECRETS_WRITE_MAX_RETRIES + 1)
+        fake, _ = _fake_request(fake_responses)
+
+        async def with_message(self, method, url, **kwargs):
+            try:
+                return await fake(self, method, url, **kwargs)
+            finally:
+                self.error = {"message": "Try later", "code": "503"}
+
+        api = _API("t", is_cli=True)
+        with patch.object(_API, "_base_request", new=with_message):
+            _, error = await api.secrets_upsert(
+                data={"secretKey": "K", "secretValue": "v"}, set_name="s", org="o"
+            )
+
+        assert error["error"].startswith("Try later Still unavailable after 3 retries.")
+        assert "None" not in error["error"]
+
+    async def test_short_then_long_retry_after_gets_both_sentences(self, sleeps, notices):
+        api = _API("t", is_cli=True)
+        (_, error), calls = await _upsert(api, [(503, "5"), (503, "60"), {}])
+
+        assert len(calls) == 2
+        sleeps.assert_awaited_once_with(5)
+        assert "Still unavailable after 1 retry." in error["error"]
+        assert "The region asked to wait 60 seconds" in error["error"]
+
     async def test_retry_after_above_the_cap_is_not_waited_out_and_says_why(self, sleeps, notices):
         api = _API("t", is_cli=True)
         (_, error), calls = await _upsert(api, [(503, "60"), {}])

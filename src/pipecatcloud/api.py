@@ -458,25 +458,28 @@ class _API:
                     or attempt >= SECRETS_WRITE_MAX_RETRIES
                 ):
                     if e.status == 503 and isinstance(self.error, dict):
-                        note = ""
+                        notes = []
                         if attempt:
                             # Say the retries happened, so the user does not
                             # think the first refusal was final.
                             noun = "retry" if attempt == 1 else "retries"
-                            note = f" Still unavailable after {attempt} {noun}."
-                        elif too_long:
+                            notes.append(f"Still unavailable after {attempt} {noun}.")
+                        if too_long:
                             # Waiting less than the server named would go
-                            # against the header, so say why nothing was retried.
-                            note = (
-                                f" The region asked to wait {wait} seconds, longer than the "
+                            # against the header, so say why nothing more was retried.
+                            notes.append(
+                                f"The region asked to wait {wait} seconds, longer than the "
                                 f"CLI will wait ({SECRETS_WRITE_MAX_RETRY_AFTER}). "
                                 "Run the command again after that."
                             )
-                        if note:
-                            self.error = {
-                                **self.error,
-                                "error": f"{self.error.get('error')}{note}",
-                            }
+                        if notes:
+                            # Same fallback the console uses to show an error.
+                            text = (
+                                self.error.get("error")
+                                or self.error.get("message")
+                                or "Service unavailable."
+                            )
+                            self.error = {**self.error, "error": f"{text} {' '.join(notes)}"}
                     raise
                 attempt += 1
                 self._notify_retry(wait, attempt)
