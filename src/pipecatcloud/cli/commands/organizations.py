@@ -14,6 +14,7 @@ from rich.table import Table
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console, stdin_is_interactive
+from pipecatcloud._utils.log_utils import describe_exception
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.commands.registry_keys import registry_keys_cli
@@ -471,7 +472,7 @@ async def use_key(
         )
         console.success(f"API key with name: [bold]'{key[1]}'[/bold] set as default.")
     except Exception as e:
-        logger.debug(e)
+        logger.debug(describe_exception(e))
         console.error("Unable to set default key in local config. Please contact support.")
         raise typer.Exit(1)
 

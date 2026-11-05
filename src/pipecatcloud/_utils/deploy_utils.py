@@ -17,6 +17,7 @@ import typer
 from attr import dataclass, field
 from loguru import logger
 
+from pipecatcloud._utils.log_utils import describe_exception
 from pipecatcloud.cli import PIPECAT_DEPLOY_CONFIG_PATH
 from pipecatcloud.constants import KRISP_VIVA_MODELS, KrispVivaAudioFilter
 from pipecatcloud.exception import ConfigFileError
@@ -607,7 +608,7 @@ def load_deploy_config_file() -> DeployConfigParams | None:
         return validated_config
 
     except Exception as e:
-        logger.debug(e)
+        logger.debug(describe_exception(e))
         raise ConfigFileError(str(e))
 
 

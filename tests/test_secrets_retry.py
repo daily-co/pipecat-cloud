@@ -87,7 +87,7 @@ class TestSecretsWriteRetry:
         sleeps.assert_awaited_once_with(5)
         notices.print.assert_called_once()
         assert (
-            "not ready to store secrets yet. Retrying in 5s (attempt 1 of 3)"
+            "could not be completed yet. Retrying in 5s (attempt 1 of 3)"
             in (notices.print.call_args[0][0])
         )
 
@@ -379,6 +379,7 @@ class TestRegionCommandsPassTheOrganization:
                 ],
             ),
             ("secrets", ["secrets", "reference", "s", "-r", "rgn", "-o", "other"]),
+            ("secrets", ["secrets", "keys", "-r", "rgn", "-o", "other"]),
             ("agent", ["agent", "list", "-r", "rgn", "-o", "other"]),
             ("deploy", ["deploy", "my-agent", "-r", "rgn", "-o", "other"]),
         ],

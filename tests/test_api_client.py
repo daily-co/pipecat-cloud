@@ -472,6 +472,7 @@ class TestNoContentResponses:
         class _Resp:
             ok = True
             status = 204
+            headers = {}
             json = staticmethod(_json)
 
         class _Session:

@@ -17,6 +17,7 @@ import gzip
 import hashlib
 import io
 import os
+import re
 import tarfile
 import time
 from collections.abc import Callable
@@ -25,6 +26,8 @@ from pathlib import Path
 
 import aiohttp
 from loguru import logger
+
+from pipecatcloud._utils.log_utils import describe_exception
 
 # Default patterns to exclude from build context
 DEFAULT_EXCLUSIONS: set[str] = {
@@ -189,7 +192,7 @@ def load_dockerignore(context_dir: Path) -> set[str] | None:
                 if normalized:
                     patterns.add(normalized)
     except Exception as e:
-        logger.warning(f"Failed to read .dockerignore: {e}")
+        logger.warning(f"Failed to read .dockerignore: {describe_exception(e)}")
         return None
 
     return patterns
@@ -375,11 +378,15 @@ async def upload_to_s3(
                     logger.debug(f"Upload successful: {response.status}")
                     return True
                 else:
-                    body = await response.text()
-                    logger.error(f"Upload failed: {response.status} - {body}")
+                    # S3's error document can echo the signed policy and the
+                    # credential it was given, so only its code is logged.
+                    code = re.search(r"<Code>(\w+)</Code>", await response.text())
+                    logger.error(
+                        f"Upload failed: {response.status}{f' ({code[1]})' if code else ''}"
+                    )
                     return False
     except Exception as e:
-        logger.error(f"Upload error: {e}")
+        logger.error(f"Upload error: {describe_exception(e)}")
         return False
 
 

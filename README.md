@@ -47,6 +47,10 @@ To use Pipecat Cloud programmatically (without the CLI), install the package dir
 
 4. Build and deploy your agent `pipecat cloud deploy`
 
+### Seeing your secret keys
+
+`pipecat cloud secrets keys --region <region>` shows your organization's secret keys in a region: each key's fingerprint, state, created and retired times, and how many secrets it holds. The fingerprint is the one a security notice names and, in a self-hosted region, the one your cluster shows for the key, so you can compare them. Add `--output json` before `secrets` for a single JSON document. Key material is never shown.
+
 ### Usage in Python scripts
 
 If want to programmatically start an agent within a Python script, you can use the `pipecatcloud.session` module.

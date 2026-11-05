@@ -5,16 +5,32 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.0] - 2026-11-05
+
+### Added
+
+- `secrets keys --region <region>` shows your organization's secret keys in a
+  region: each key's fingerprint, state, created and retired times, and how
+  many secrets it holds, as text or with `--output json`. The fingerprint is
+  the one a security notice names and, in a self-hosted region, the one your
+  cluster shows for the key. It never shows key material. Against a server
+  that does not offer this yet, it says so and exits 1.
 
 ### Changed
 
+- `secrets set` with several values now writes them in one request, which the
+  server applies whole or not at all, so a large set takes one write in place
+  of one per key. Against a server that does not take this yet, including one
+  part way through an update, it writes one key at a time as before, and still
+  says how far it got if one fails.
 - `secrets set` and `secrets image-pull-secret` now wait and retry when the
   API answers a write with a 503 and a `Retry-After` of up to 30 seconds, as
   a region can on its first secrets write. They retry up to 3 times, say they
   are waiting, and fail as before if the 503 persists. Other errors, and a 503
   without a usable `Retry-After`, are not retried. A `Retry-After` above 30
   seconds is not waited out; the error says how long the region asked for.
+  A write that ends in a 503 may still have reached the region, unless the
+  error says nothing was stored. Running the same command again settles it.
 
 ### Fixed
 
@@ -24,6 +40,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `secrets reference`, `agent list` and `deploy`. A region that belongs only
   to the other organization, such as a self-hosted region, was refused as
   invalid.
+- `secrets set` no longer reports success when a write gets no answer from the
+  server, as when the connection drops. It says so and exits 1.
+
+### Security
+
+- Logs no longer contain secret values or other request data. With debug
+  logging on (`PIPECAT_CLI_LOG_LEVEL=DEBUG` for the CLI, `PCC_LOG_LEVEL=DEBUG`
+  for the Python package), `secrets set` wrote the values it was given to
+  stderr, and every API request wrote its body and query there, including
+  image pull credentials and session data. Requests now log their method,
+  path and how much they carry. Tokens were not in these lines. If you ran
+  with debug logging on and the output was kept, for example in CI logs,
+  change the values it contains.
+- An unexpected error in the CLI could print its local variables in the
+  traceback, including secret values and your token. Tracebacks now show code
+  only. To see them as before, set `TYPER_STANDARD_TRACEBACK` to an empty value.
+- A failed build context upload now logs its status and S3 error code, not
+  S3's error document, which can repeat signed upload details. This line is
+  logged at the default level.
+- `secrets set` no longer shows the first characters of each value when it asks
+  you to confirm. It shows a fixed mask, the same for any value. Without
+  `--skip` and without a terminal, as in CI, it printed those characters and
+  then failed; it now fails first. If such output was kept, change the values
+  it contains.
+- The locked versions of `virtualenv`, `packaging`, `distlib`, `Pillow` and
+  `setuptools` are upgraded for security fixes. These are the versions in
+  `uv.lock`, used to develop and test this package. What it requires when you
+  install it has not changed, so upgrade your own environment if it holds an
+  older one.
 
 ## [1.4.0] - 2026-10-22
 

@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import os
 import sys
 
 import typer
@@ -26,6 +27,12 @@ from pipecatcloud.exception import ConfigFileError
 
 logger.remove()
 logger.add(sys.stderr, level=str(config.get("cli_log_level", "INFO")).upper())
+
+# Typer's own traceback prints every frame's local variables on an uncaught error,
+# secret values and tokens included. The settings that decide it are those of the
+# outermost app, which is the Pipecat CLI's when this runs as its extension, so this
+# is the one switch that holds either way: a plain traceback, which shows code only.
+os.environ.setdefault("TYPER_STANDARD_TRACEBACK", "1")
 
 
 def version_callback(value: bool):

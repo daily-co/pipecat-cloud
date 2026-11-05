@@ -16,6 +16,7 @@ from loguru import logger
 
 from pipecatcloud.__version__ import version
 from pipecatcloud._utils.deploy_utils import DeployConfigParams
+from pipecatcloud._utils.log_utils import describe_body, describe_exception, describe_url
 from pipecatcloud.config import config
 from pipecatcloud.exception import AgentStartError
 
@@ -35,8 +36,10 @@ def api_method(func):
 
 
 # A secrets write can be refused with a 503 and `Retry-After` while the region
-# is not ready to store secrets yet (a self-hosted region's first write). The
-# CLI waits and repeats the request, bounded so a region that stays unready
+# is not ready to store secrets yet (a self-hosted region's first write), while
+# the server is busy with other writes, or when the region's answer was lost and
+# the write may have landed. Repeating the same write is right for all of them.
+# The CLI waits and repeats the request, bounded so a region that stays unready
 # fails rather than hanging. Three retries cover a short warm-up (the server
 # asks for about 5 seconds) with room to spare. The waits total at most
 # 3 x 30 seconds; each of the 4 attempts can also take up to the client's own
@@ -46,6 +49,12 @@ def api_method(func):
 # before the time the server named goes against the header. The error says so.
 SECRETS_WRITE_MAX_RETRIES = 3
 SECRETS_WRITE_MAX_RETRY_AFTER = 30
+
+# How the API says what it takes. A server that writes several fields of a secret
+# set in one request names this capability on its secrets responses, so the CLI
+# knows without trying. One that does not is written one field at a time.
+CAPABILITIES_HEADER = "Pipecat-Cloud-Capabilities"
+SECRETS_BULK_WRITE_CAPABILITY = "secrets-bulk-write"
 
 
 def _parse_retry_after(value: str | None) -> int | None:
@@ -74,6 +83,12 @@ class _API:
         # The `Retry-After` header of the last failed response, as sent, or
         # None when it had none.
         self.error_retry_after: str | None = None
+        # The capabilities header of the last response, as sent, or None when it
+        # had none.
+        self.capabilities_header: str | None = None
+        # Whether the server said, on the last `secrets_get`, that it takes
+        # several fields of a set in one write. False until it does.
+        self.secrets_bulk_write: bool = False
         self.bubble_next = False
         self.is_cli = is_cli
 
@@ -171,7 +186,12 @@ class _API:
                 logger.debug("Token refresh failed, proceeding with expired token")
 
         async with aiohttp.ClientSession() as session:
-            logger.debug(f"Request: {method} {url} {params} {json}")
+            # Every route comes through here, and a body or a query can hold secret
+            # values, so neither is logged, whichever route this is.
+            logger.debug(
+                f"Request: {method} {describe_url(url)} "
+                f"params: {describe_body(params)} body: {describe_body(json)}"
+            )
 
             response = await session.request(
                 method=method,
@@ -180,6 +200,7 @@ class _API:
                 params=params,
                 json=json,
             )
+            self.capabilities_header = response.headers.get(CAPABILITIES_HEADER)
 
             if not response.ok:
                 logger.debug(f"Response not ok: {response.status} {response.reason}")
@@ -236,7 +257,7 @@ class _API:
                         raise e
 
                 if self.error and not self.bubble_next:
-                    logger.debug(e)
+                    logger.debug(describe_exception(e))
                     self.print_error()
 
                 self.bubble_next = False
@@ -416,10 +437,23 @@ class _API:
         Returns the full response object: {secrets, region, status, errorMessage?}.
         Use this when you need readiness; use _secrets_list when you only need
         the existence check or the flat keys array.
+
+        Also records whether the server takes several fields in one write, which
+        it says whether or not the set exists.
         """
         url = f"{self.construct_api_url('secrets_path').format(org=org)}/{secret_set}"
+        self.capabilities_header = None
+        self.secrets_bulk_write = False
         result = await self._base_request("GET", url, not_found_is_empty=True)
+        self.secrets_bulk_write = self.last_response_offers_bulk_write()
         return result or None
+
+    def last_response_offers_bulk_write(self) -> bool:
+        """Whether the last response came from a server that takes several fields in
+        one write. In a rolling update of the API, responses can differ on this."""
+        return SECRETS_BULK_WRITE_CAPABILITY in [
+            c.strip() for c in (self.capabilities_header or "").split(",")
+        ]
 
     @property
     def secrets_get(self):
@@ -441,9 +475,9 @@ class _API:
         if region:
             data = {**data, "region": region}
 
-        # A PUT to one key of a set replaces that key's value, so repeating it
-        # is safe. A 503 with `Retry-After` is the server saying it did not
-        # store the value yet; wait and repeat, a bounded number of times.
+        # A PUT replaces the value of each key it names, so repeating it is safe.
+        # A 503 with `Retry-After` is the server saying it did not store the
+        # values yet; wait and repeat, a bounded number of times.
         attempt = 0
         while True:
             try:
@@ -495,7 +529,7 @@ class _API:
         from pipecatcloud._utils.console_utils import console
 
         console.print(
-            f"[yellow]The region is not ready to store secrets yet. Retrying in {wait}s "
+            f"[yellow]The write could not be completed yet. Retrying in {wait}s "
             f"(attempt {attempt} of {SECRETS_WRITE_MAX_RETRIES})...[/yellow]"
         )
 
@@ -509,6 +543,47 @@ class _API:
             region: region for secret set
         """
         return self.create_api_method(self._secrets_upsert)
+
+    async def _secrets_upsert_fields(
+        self, fields: dict[str, str], set_name: str, org: str, region: str | None = None
+    ) -> dict:
+        return await self._secrets_upsert(
+            data={
+                "secrets": [{"secretKey": key, "secretValue": val} for key, val in fields.items()]
+            },
+            set_name=set_name,
+            org=org,
+            region=region,
+        )
+
+    @property
+    def secrets_upsert_fields(self):
+        """Create / modify several fields of a secret set in one write, which the
+        server applies whole or not at all. Only for a server that says it takes
+        this (`secrets_bulk_write`, after `secrets_get`).
+
+        Args:
+            fields: the keys and values to write
+            set_name: name of set to create or update
+            org: Organization ID
+            region: region for secret set
+        """
+        return self.create_api_method(self._secrets_upsert_fields)
+
+    async def _secrets_keys(self, org: str, region: str) -> dict | None:
+        url = f"{self.construct_api_url('regions_path').format(org=org)}/{region}/secret-keys"
+        return await self._base_request("GET", url, not_found_is_empty=True)
+
+    @property
+    def secrets_keys(self):
+        """The organization's secret keys in a region: each key's fingerprint, state
+        and times. None when the server does not offer this.
+
+        Args:
+            org: Organization ID
+            region: region to read
+        """
+        return self.create_api_method(self._secrets_keys)
 
     async def _secrets_reference(self, name: str, region: str, org: str) -> dict:
         url = f"{self.construct_api_url('secrets_path').format(org=org)}/references"
