@@ -189,6 +189,64 @@ class TestSecretsWriteRetry:
         assert api.error_retry_after == "5"
 
 
+async def _delete(api: _API, responses: list):
+    fake, calls = _fake_request(responses)
+    with patch.object(_API, "_base_request", new=fake):
+        result = await api.secrets_delete(set_name="s", secret_name="K", org="o")
+    return result, calls
+
+
+@pytest.mark.asyncio
+class TestSecretsDeleteRetry:
+    """A key's delete waits out a 503 like a write: behind its organization's own
+    large writes, the server answers one rather than holding the request."""
+
+    async def test_503_then_success_retries_and_tells_user(self, sleeps, notices):
+        api = _API("t", is_cli=True)
+        (data, error), calls = await _delete(api, [(503, "5"), {"secretKey": "K"}])
+
+        assert error is None
+        assert data == {"secretKey": "K"}
+        assert [c[0] for c in calls] == ["DELETE", "DELETE"]
+        sleeps.assert_awaited_once_with(5)
+        notices.print.assert_called_once()
+
+    async def test_not_found_once_repeated_is_the_key_gone(self, sleeps, notices):
+        api = _API("t", is_cli=True)
+        (data, error), calls = await _delete(api, [(503, "5"), None])
+
+        assert error is None
+        assert data == {"secretKey": "K"}
+        assert len(calls) == 2
+
+    async def test_not_found_at_once_is_still_not_found(self, sleeps, notices):
+        api = _API("t", is_cli=True)
+        (data, error), calls = await _delete(api, [None])
+
+        assert data is None
+        assert error is None
+        assert len(calls) == 1
+        sleeps.assert_not_awaited()
+
+    async def test_503_past_the_bound_fails(self, sleeps, notices):
+        api = _API("t", is_cli=True)
+        (data, error), calls = await _delete(api, [(503, "5")] * (SECRETS_WRITE_MAX_RETRIES + 1))
+
+        assert data is None
+        assert "Still unavailable after 3 retries" in error["error"]
+        assert len(calls) == SECRETS_WRITE_MAX_RETRIES + 1
+
+    @pytest.mark.parametrize("item", [(503, None), (500, "5"), (409, "5")])
+    async def test_other_failures_are_not_retried(self, sleeps, notices, item):
+        api = _API("t", is_cli=True)
+        (data, error), calls = await _delete(api, [item, {"secretKey": "K"}])
+
+        assert data is None
+        assert error["code"] == str(item[0])
+        assert len(calls) == 1
+        sleeps.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 class TestSecretsSetMidWayFailure:
     async def _run(self, responses: list):

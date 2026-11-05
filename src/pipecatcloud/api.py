@@ -476,12 +476,19 @@ class _API:
             data = {**data, "region": region}
 
         # A PUT replaces the value of each key it names, so repeating it is safe.
-        # A 503 with `Retry-After` is the server saying it did not store the
-        # values yet; wait and repeat, a bounded number of times.
+        result, _ = await self._secrets_write_with_retry("PUT", url, json=data)
+        return result or {}
+
+    async def _secrets_write_with_retry(
+        self, method: str, url: str, **kwargs
+    ) -> tuple[dict | None, int]:
+        """A secrets write, and how many times it was repeated. A 503 with
+        `Retry-After` is the server saying the write could not be done yet; wait and
+        repeat, a bounded number of times. Only for a write that is safe to repeat."""
         attempt = 0
         while True:
             try:
-                return await self._base_request("PUT", url, json=data) or {}
+                return await self._base_request(method, url, **kwargs), attempt
             except aiohttp.ClientResponseError as e:
                 wait = _parse_retry_after(self.error_retry_after)
                 too_long = wait is not None and wait > SECRETS_WRITE_MAX_RETRY_AFTER
@@ -606,7 +613,15 @@ class _API:
 
     async def _secrets_delete(self, set_name: str, secret_name: str, org: str) -> dict | None:
         url = f"{self.construct_api_url('secrets_path').format(org=org)}/{set_name}/{secret_name}"
-        return await self._base_request("DELETE", url, not_found_is_empty=True)
+        # Deleting a key twice leaves the same set, so it is repeated like a write.
+        result, retried = await self._secrets_write_with_retry(
+            "DELETE", url, not_found_is_empty=True
+        )
+        if result is None and retried:
+            # Not found once repeated: the attempt the server could not confirm
+            # removed it, or it was never there. Either way the key is gone.
+            return {"secretKey": secret_name}
+        return result
 
     @property
     def secrets_delete(self):
