@@ -47,7 +47,7 @@ from pipecatcloud._utils.github_utils import (
     ref_to_branch,
     short_sha,
 )
-from pipecatcloud._utils.regions import get_region_codes, validate_region
+from pipecatcloud._utils.regions import region_error
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -176,11 +176,8 @@ async def list_agents(
     org = organization or config.get("org")
 
     # Validate region if provided
-    if region and not await validate_region(region):
-        valid_regions = await get_region_codes()
-        console.print(
-            f"[red]Invalid region '{region}'. Valid regions are: {', '.join(valid_regions)}[/red]"
-        )
+    if region and (region_message := await region_error(region, org=org)):
+        console.error(region_message)
         raise typer.Exit(1)
 
     with console.status(

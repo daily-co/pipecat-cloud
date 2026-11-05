@@ -90,63 +90,6 @@ class TestRegionsCaching:
 
 
 @pytest.mark.asyncio
-class TestRegionValidation:
-    """Test region validation logic."""
-
-    async def test_validate_region_accepts_valid_regions(self):
-        """validate_region should return True for regions in the API list."""
-        # Arrange
-        from pipecatcloud._utils import regions
-
-        regions._regions_cache = None
-
-        mock_regions = [
-            {"code": "us-west", "display_name": "US West"},
-            {"code": "eu-central", "display_name": "EU Central"},
-            {"code": "ap-south", "display_name": "AP South"},
-        ]
-
-        with (
-            patch("pipecatcloud._utils.regions.API") as mock_api,
-            patch("pipecatcloud._utils.regions.config") as mock_config,
-        ):
-            # API returns (data, error) tuple
-            mock_api.regions = AsyncMock(return_value=(mock_regions, None))
-            mock_config.get.return_value = "test-org"
-
-            # Act & Assert
-            assert await regions.validate_region("us-west") is True
-            assert await regions.validate_region("eu-central") is True
-            assert await regions.validate_region("ap-south") is True
-
-    async def test_validate_region_rejects_invalid_regions(self):
-        """validate_region should return False for regions NOT in the API list."""
-        # Arrange
-        from pipecatcloud._utils import regions
-
-        regions._regions_cache = None
-
-        mock_regions = [
-            {"code": "us-west", "display_name": "US West"},
-            {"code": "eu-central", "display_name": "EU Central"},
-            {"code": "ap-south", "display_name": "AP South"},
-        ]
-
-        with (
-            patch("pipecatcloud._utils.regions.API") as mock_api,
-            patch("pipecatcloud._utils.regions.config") as mock_config,
-        ):
-            # API returns (data, error) tuple
-            mock_api.regions = AsyncMock(return_value=(mock_regions, None))
-            mock_config.get.return_value = "test-org"
-
-            # Act & Assert
-            assert await regions.validate_region("invalid") is False
-            assert await regions.validate_region("us") is False  # Old format
-            assert await regions.validate_region("mars-north") is False
-
-
-@pytest.mark.asyncio
 class TestCLIRegionValidation:
     """Test CLI commands validate regions correctly."""
 
