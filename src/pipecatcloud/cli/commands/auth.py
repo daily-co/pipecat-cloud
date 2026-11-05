@@ -23,6 +23,7 @@ from pipecatcloud.__version__ import version as _cli_version
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import console
+from pipecatcloud._utils.log_utils import describe_exception
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import (
     config,
@@ -324,7 +325,7 @@ async def refresh_access_token(refresh_token: str) -> dict | None:
         token_url = oidc["token_endpoint"]
         client_id = oauth_config["client_id"]
     except Exception as e:
-        logger.debug(f"Token refresh config fetch failed: {e}")
+        logger.debug(f"Token refresh config fetch failed: {describe_exception(e)}")
         return None
 
     async with aiohttp.ClientSession() as session:
@@ -343,7 +344,7 @@ async def refresh_access_token(refresh_token: str) -> dict | None:
                     return None
                 return await resp.json()
         except (TimeoutError, aiohttp.ClientError) as e:
-            logger.debug(f"Token refresh error: {e}")
+            logger.debug(f"Token refresh error: {describe_exception(e)}")
             return None
 
 
@@ -503,7 +504,7 @@ async def logout():
                         else:
                             logger.debug(f"Logout revocation returned {resp.status}")
             except (TimeoutError, aiohttp.ClientError) as e:
-                logger.debug(f"Logout revocation failed: {e}")
+                logger.debug(f"Logout revocation failed: {describe_exception(e)}")
                 console.print(
                     "[yellow]Warning: Could not reach logout endpoint. "
                     "Token will expire within 24 hours.[/yellow]"

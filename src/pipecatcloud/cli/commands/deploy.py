@@ -41,6 +41,7 @@ from pipecatcloud._utils.deploy_utils import (
     with_deploy_config,
 )
 from pipecatcloud._utils.github_utils import short_sha
+from pipecatcloud._utils.log_utils import describe_api_error, describe_body
 from pipecatcloud._utils.regions import (
     get_regions,
     region_error,
@@ -460,7 +461,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     agent_name=params.agent_name, org=org, live=None
                 )
 
-                logger.debug(f"Deployment status: {agent_status}")
+                logger.debug(f"Deployment status: {describe_body(agent_status)}")
 
                 # A failed poll returns (None, error). Handle that here, *before*
                 # touching agent_status, so a transient blip can't crash the
@@ -474,7 +475,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                             logger.debug(
                                 "Transient status-poll failure "
                                 f"({consecutive_failures}/{MAX_CONSECUTIVE_POLL_FAILURES}): "
-                                f"{error}"
+                                f"{describe_api_error(error)}"
                             )
                             status.update(
                                 "[dim]Waiting for deployment status "

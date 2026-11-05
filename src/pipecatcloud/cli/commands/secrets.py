@@ -18,7 +18,7 @@ from rich.table import Table
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
-from pipecatcloud._utils.console_utils import console
+from pipecatcloud._utils.console_utils import console, format_timestamp
 from pipecatcloud._utils.regions import region_error
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
@@ -68,6 +68,110 @@ def validate_secrets(secrets: dict):
 def validate_secret_name(name: str):
     valid_name_pattern = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$")
     return bool(valid_name_pattern.match(name))
+
+
+async def _write_keys_together(
+    name: str, secrets_dict: dict[str, str], org: str | None, region: str | None
+) -> str | None:
+    """Write every key in one request. The server applies them whole or not at
+    all, so a failure has nothing part way to explain. Returns the region used.
+
+    In a rolling update of the API, the read that offered this can come from a new
+    server and this write from an old one, which refuses a body it does not know and
+    stores nothing. Its response does not offer it, where a refusal from a server that
+    takes this does, so that one goes on a key at a time, as for any older server."""
+    data, error = await API.bubble_error().secrets_upsert_fields(
+        fields=secrets_dict,
+        set_name=name,
+        org=org,
+        region=region,  # Pass region if provided, otherwise API uses org default
+    )
+    if error:
+        if API.error_status in (400, 413) and not API.last_response_offers_bulk_write():
+            return await _write_keys_one_at_a_time(name, secrets_dict, org, region)
+        API.print_error()
+        raise typer.Exit(1)
+    if data is None:
+        _report_no_answer()
+        raise typer.Exit(1)
+    return data.get("region")
+
+
+def _report_no_answer() -> None:
+    """A write that got no answer from the server, as when the connection drops, is
+    not an error the client can show, and may or may not have been stored."""
+    console.error(
+        "The write got no answer from Pipecat Cloud, so it may not have been stored. "
+        "Check your connection and run the same command again."
+    )
+
+
+async def _write_keys_one_at_a_time(
+    name: str, secrets_dict: dict[str, str], org: str | None, region: str | None
+) -> str | None:
+    """Write each key in a request of its own, for a single key or a server that
+    does not take them together. Returns the region used."""
+    used_region = None
+    for key, value in secrets_dict.items():
+        data, error = await API.secrets_upsert(
+            data={
+                "name": name,
+                "isImagePullSecret": False,
+                "secretKey": key,
+                "secretValue": value,
+            },
+            set_name=name,
+            org=org,
+            region=region,  # Pass region if provided, otherwise API uses org default
+        )
+
+        if error or data is None:
+            if not error:
+                _report_no_answer()
+            if len(secrets_dict) > 1:
+                # Keys go one request at a time. Say how far it got: each
+                # write replaces its key, so running the command again is
+                # safe and finishes the set.
+                stored_keys = list(secrets_dict)[: list(secrets_dict).index(key)]
+                if stored_keys:
+                    stored = f"Stored before the failure: {', '.join(stored_keys)}. "
+                elif API.error_status is not None and API.error_status < 500:
+                    stored = "No keys were stored. "
+                else:
+                    # No answer, or a server's failure: this key may have landed.
+                    stored = ""
+                # Only a 503 is the region not being ready yet; any other
+                # error fails at the same key again until it is fixed.
+                if API.error_status == 503:
+                    next_step = (
+                        "Wait for the region to become ready, then run the same "
+                        "command again to finish it."
+                    )
+                elif not error:
+                    next_step = "Run the same command again to finish it."
+                else:
+                    next_step = "Fix the error above, then run the same command again."
+                console.print(
+                    f"[yellow]Secret set '{name}' was not fully written, stopped at "
+                    f"'{key}'. {stored}{next_step}[/yellow]"
+                )
+            raise typer.Exit(1)
+
+        # Capture the region that was used (from API response)
+        if data and "region" in data:
+            used_region = data["region"]
+    return used_region
+
+
+def _format_key_state(state: str | None) -> str:
+    """Render a secret key's state with Rich styling. Unknown values pass through."""
+    if state == "active":
+        return "[green]active[/green]"
+    if state in ("pending", "retired", "destroying", "destroyed"):
+        return f"[yellow]{state}[/yellow]"
+    if state in ("compromised", "missing"):
+        return f"[red]{state}[/red]"
+    return state or "[dim]-[/dim]"
 
 
 # ---- Commands ----
@@ -191,7 +295,7 @@ async def create_set(
 
             secrets_dict[key] = value
 
-    logger.debug(secrets_dict)
+    logger.debug(f"Secret set {name}: {len(secrets_dict)} keys to write")
 
     validate_secrets(secrets_dict)
 
@@ -231,14 +335,16 @@ async def create_set(
             existing_set = set_data.get("secrets") or []
 
     if not skip_confirm:
+        # Before anything is printed: a run with no one to answer has no use for it.
+        console.require_interactive("--skip")
         table = Table(
             border_style="dim", box=box.SIMPLE, show_header=True, show_edge=True, show_lines=False
         )
         table.add_column("Key", style="white")
-        table.add_column("Value Preview", style="white")
-        for key, value in secrets_dict.items():
-            preview = value[:5] + "..." if len(value) > 5 else value
-            table.add_row(key, preview)
+        table.add_column("Value", style="white")
+        for key in secrets_dict:
+            # Neither characters of the value nor its length: a terminal can be recorded.
+            table.add_row(key, "*****")
 
         console.print(f"\n[bold white]Secret Set:[/bold white] {name}")
         if region:
@@ -259,7 +365,6 @@ async def create_set(
             )
         )
         # Confirm our secrets
-        console.require_interactive("--skip")
         looks_good = await questionary.confirm(
             "Would you like to proceed with these secrets?"
         ).ask_async()
@@ -280,52 +385,14 @@ async def create_set(
                 console.print("[bold red]Secret set creation cancelled[/bold red]")
                 raise typer.Exit(1)
 
-    used_region = None
     with console.status(
         f"[dim]{'Modifying' if existing_set else 'Creating'} secret set [bold]'{name}'[/bold][/dim]",
         spinner="dots",
     ):
-        for key, value in secrets_dict.items():
-            data, error = await API.secrets_upsert(
-                data={
-                    "name": name,
-                    "isImagePullSecret": False,
-                    "secretKey": key,
-                    "secretValue": value,
-                },
-                set_name=name,
-                org=org,
-                region=region,  # Pass region if provided, otherwise API uses org default
-            )
-
-            if error:
-                if len(secrets_dict) > 1:
-                    # Keys go one request at a time. Say how far it got: each
-                    # write replaces its key, so running the command again is
-                    # safe and finishes the set.
-                    stored_keys = list(secrets_dict)[: list(secrets_dict).index(key)]
-                    stored = (
-                        f"Stored before the failure: {', '.join(stored_keys)}."
-                        if stored_keys
-                        else "No keys were stored."
-                    )
-                    # Only a 503 is the region not being ready yet; any other
-                    # error fails at the same key again until it is fixed.
-                    next_step = (
-                        "Wait for the region to become ready, then run the same "
-                        "command again to finish it."
-                        if API.error_status == 503
-                        else "Fix the error above, then run the same command again."
-                    )
-                    console.print(
-                        f"[yellow]Secret set '{name}' was not fully written, stopped at "
-                        f"'{key}'. {stored} {next_step}[/yellow]"
-                    )
-                raise typer.Exit(1)
-
-            # Capture the region that was used (from API response)
-            if data and "region" in data:
-                used_region = data["region"]
+        if len(secrets_dict) > 1 and API.secrets_bulk_write is True:
+            used_region = await _write_keys_together(name, secrets_dict, org, region)
+        else:
+            used_region = await _write_keys_one_at_a_time(name, secrets_dict, org, region)
 
     action = "created" if not existing_set else "modified"
     region_info = f" in [bold cyan]{used_region}[/bold cyan]" if used_region else ""
@@ -385,11 +452,12 @@ async def unset(
     ):
         data, error = await API.secrets_delete(set_name=name, secret_name=secret_key, org=org)
 
-        if not data:
-            console.error(f"Key not found in set '{name}'")
+        # The error first: a delete that failed has no data either, and was not a missing key.
+        if error:
             raise typer.Exit(1)
 
-        if error:
+        if not data:
+            console.error(f"Key not found in set '{name}'")
             raise typer.Exit(1)
 
     console.success(
@@ -763,3 +831,118 @@ async def reference_secret(
         f"[dim]The secret stays in your cluster; deleting it there will block deploys that use it.[/dim]\n"
         f"[dim]Deploy your agent with {PIPECAT_CLI_NAME} deploy agent-name --secrets {name}[/dim]"
     )
+
+
+@secrets_cli.command(name="keys")
+@synchronizer.create_blocking
+@requires_login
+async def keys(
+    region: Region = typer.Option(
+        ...,
+        "--region",
+        "-r",
+        help="Region to show the keys of",
+    ),
+    organization: str = typer.Option(
+        None,
+        "--organization",
+        "-o",
+        help="Organization the keys belong to",
+    ),
+):
+    """Show the organization's secret keys in a region, with their fingerprints.
+
+    The fingerprint is the one a security notice names and, in a self-hosted
+    region, the one your cluster shows for the key. Fields and Sets count the
+    secrets the key holds.
+
+    A key's state is active (new values go to it), pending (made, not used yet),
+    retired (it takes no new values and still opens the ones it holds), compromised,
+    destroying or destroyed. Region reports is what the region itself says, which
+    may also be missing. Key material is never shown.
+    """
+    org = organization or config.get("org")
+
+    if region_message := await region_error(region, org=org):
+        console.error(region_message)
+        raise typer.Exit(1)
+
+    with console.status(
+        f"[dim]Retrieving secret keys in [bold]{region}[/bold][/dim]", spinner="dots"
+    ):
+        data, error = await API.secrets_keys(org=org, region=region)
+
+    if error:
+        raise typer.Exit(1)
+
+    if not data:
+        console.error(f"Secret keys cannot be shown for region [bold]'{region}'[/bold] yet.")
+        raise typer.Exit(1)
+
+    if console.json_output:
+        console.output_json(data)
+        return
+
+    secret_keys = data.get("keys") or []
+    active = data.get("activeFingerprint")
+    detail = data.get("detail")
+    title = f"Secret keys for {org} in {region}"
+    columns = ["Fingerprint", "State", "Region reports", "Created", "Retired", "Fields", "Sets"]
+
+    def when(value: str | None) -> str | None:
+        return format_timestamp(value) if value else None
+
+    if not console.rich_output:
+        console.print(title)
+        console.print(f"Status: {data.get('status') or 'unknown'}")
+        console.print(f"Active fingerprint: {active or 'none'}")
+        if detail:
+            console.print(detail)
+        if secret_keys:
+            console.print_records(
+                columns,
+                [
+                    (
+                        k["fingerprint"],
+                        k.get("state"),
+                        k.get("regionState"),
+                        when(k.get("createdAt")),
+                        when(k.get("retiredAt")),
+                        k.get("fields"),
+                        k.get("sets"),
+                    )
+                    for k in secret_keys
+                ],
+            )
+        return
+
+    status_line = (
+        f"Status: {data.get('status') or 'unknown'}, active fingerprint: {active or 'none'}"
+    )
+    if not secret_keys:
+        # Nothing for a table: the status still says where the region stands.
+        console.print(title)
+        console.print(status_line)
+        console.print(detail or "No secret keys.")
+        return
+
+    table = Table(
+        show_header=True, box=box.SIMPLE, border_style="dim", show_edge=True, show_lines=False
+    )
+    for column in columns:
+        # Never truncated or wrapped: a fingerprint is for comparing in full.
+        table.add_column(column, style="white", no_wrap=column == "Fingerprint")
+    for k in secret_keys:
+        table.add_row(
+            k["fingerprint"],
+            _format_key_state(k.get("state")),
+            _format_key_state(k.get("regionState")),
+            when(k.get("createdAt")) or "",
+            when(k.get("retiredAt")) or "",
+            str(k.get("fields", "")),
+            str(k.get("sets", "")),
+        )
+    console.success(table, title_extra=title)
+    console.print(status_line)
+    if detail:
+        console.print(f"[yellow]{detail}[/yellow]")

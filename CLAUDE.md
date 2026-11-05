@@ -103,6 +103,7 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 - Auth uses OAuth2 with PKCE (RFC 7636). OAuth endpoints are discovered from the API server, not hardcoded. The callback server tries ports 8400-8404.
 - The session argument types in `agent.py` subclass pipecat-ai's runner types and need pipecat-ai (>= 1.0.0); there are no fallback definitions. `MOQSessionArguments` needs 1.12.0 (`MOQRunnerArguments.relay_url`), so it is imported and defined under its own guard: on older pipecat-ai the module still imports and only that name is missing. It stays out of `__all__` for the same reason.
 - Krisp VIVA audio filter names are `Literal["tel", "pro"]` in `constants.py`. These must match the server-side ConfigMap, so coordinate changes with the backend.
+- Never log a request or response body, a header, or an exception's text: they can hold secret values and tokens. Use `_utils/log_utils.py`. `tests/test_log_redaction.py` fails on a log call that reads a name or attribute it knows can hold one, however it is formatted, or that uses `logger.opt`, `logger.exception` or `logger.catch`. Only `describe_*` and `len` calls are exempt.
 
 ## Release flow
 
