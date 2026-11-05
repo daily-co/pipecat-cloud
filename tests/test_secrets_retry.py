@@ -247,6 +247,40 @@ class TestSecretsDeleteRetry:
         sleeps.assert_not_awaited()
 
 
+class TestSecretsUnsetCommand:
+    def _unset(self, responses: list):
+        fake, calls = _fake_request(responses)
+        with (
+            patch.object(_API, "_base_request", new=fake),
+            patch.object(api_module.asyncio, "sleep", new=AsyncMock()),
+        ):
+            result = CliRunner().invoke(
+                entrypoint_cli_typer,
+                ["--output", "plain", "secrets", "unset", "s", "K", "--skip", "-o", "o"],
+            )
+        return result, calls
+
+    def test_a_delete_that_fails_after_its_retries_is_not_called_not_found(self):
+        result, calls = self._unset([(503, "5")] * (SECRETS_WRITE_MAX_RETRIES + 1))
+
+        assert result.exit_code == 1
+        assert len(calls) == SECRETS_WRITE_MAX_RETRIES + 1
+        assert "Still unavailable after 3 retries" in result.output
+        assert "Key not found" not in result.output
+
+    def test_a_key_not_there_at_once_is_not_found(self):
+        result, calls = self._unset([None])
+
+        assert result.exit_code == 1
+        assert "Key not found in set 's'" in result.output
+
+    def test_a_key_gone_once_repeated_is_deleted(self):
+        result, calls = self._unset([(503, "5"), None])
+
+        assert result.exit_code == 0
+        assert "deleted successfully" in result.output
+
+
 @pytest.mark.asyncio
 class TestSecretsSetMidWayFailure:
     async def _run(self, responses: list):

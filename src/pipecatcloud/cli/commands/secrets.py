@@ -452,11 +452,12 @@ async def unset(
     ):
         data, error = await API.secrets_delete(set_name=name, secret_name=secret_key, org=org)
 
-        if not data:
-            console.error(f"Key not found in set '{name}'")
+        # The error first: a delete that failed has no data either, and was not a missing key.
+        if error:
             raise typer.Exit(1)
 
-        if error:
+        if not data:
+            console.error(f"Key not found in set '{name}'")
             raise typer.Exit(1)
 
     console.success(
@@ -915,23 +916,33 @@ async def keys(
             )
         return
 
-    if secret_keys:
-        table = Table(
-            show_header=True, box=box.SIMPLE, border_style="dim", show_edge=True, show_lines=False
+    status_line = (
+        f"Status: {data.get('status') or 'unknown'}, active fingerprint: {active or 'none'}"
+    )
+    if not secret_keys:
+        # Nothing for a table: the status still says where the region stands.
+        console.print(title)
+        console.print(status_line)
+        console.print(detail or "No secret keys.")
+        return
+
+    table = Table(
+        show_header=True, box=box.SIMPLE, border_style="dim", show_edge=True, show_lines=False
+    )
+    for column in columns:
+        # Never truncated or wrapped: a fingerprint is for comparing in full.
+        table.add_column(column, style="white", no_wrap=column == "Fingerprint")
+    for k in secret_keys:
+        table.add_row(
+            k["fingerprint"],
+            _format_key_state(k.get("state")),
+            _format_key_state(k.get("regionState")),
+            when(k.get("createdAt")) or "",
+            when(k.get("retiredAt")) or "",
+            str(k.get("fields", "")),
+            str(k.get("sets", "")),
         )
-        for column in columns:
-            # Never truncated or wrapped: a fingerprint is for comparing in full.
-            table.add_column(column, style="white", no_wrap=column == "Fingerprint")
-        for k in secret_keys:
-            table.add_row(
-                k["fingerprint"],
-                _format_key_state(k.get("state")),
-                _format_key_state(k.get("regionState")),
-                when(k.get("createdAt")) or "",
-                when(k.get("retiredAt")) or "",
-                str(k.get("fields", "")),
-                str(k.get("sets", "")),
-            )
-        console.success(table, title_extra=title)
+    console.success(table, title_extra=title)
+    console.print(status_line)
     if detail:
-        console.print(f"[yellow]{detail}[/yellow]" if secret_keys else detail)
+        console.print(f"[yellow]{detail}[/yellow]")

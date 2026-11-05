@@ -134,6 +134,29 @@ class TestSecretsKeys:
 
         assert result.exit_code == 0
         assert FINGERPRINT in result.output
+        assert "Status: " in result.output
+
+    @pytest.mark.parametrize("detail", [None, "Managed secrets are off in region 'self-hosted-a'."])
+    def test_rich_with_no_keys_still_says_where_the_region_stands(self, detail):
+        from pipecatcloud._utils.console_utils import console
+
+        answer = {
+            "region": "self-hosted-a",
+            "status": "off",
+            "detail": detail,
+            "regionChecked": True,
+            "activeFingerprint": None,
+            "keys": [],
+        }
+        try:
+            with patch.object(type(console), "is_terminal", new=True):
+                result, _ = _keys(answer, output="rich")
+        finally:
+            console._explicit_output_mode = None
+
+        assert result.exit_code == 0
+        assert "Status: off, active fingerprint: none" in result.output
+        assert (detail or "No secret keys.") in result.output
 
     @pytest.mark.parametrize(
         "status,detail",
