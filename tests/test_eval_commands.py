@@ -785,7 +785,7 @@ class _RunningHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
         type(self).hit.set()
 
-    def log_message(self, *args):
+    def log_message(self, format, *args):  # noqa: A002
         pass
 
 
