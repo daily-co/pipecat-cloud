@@ -7,7 +7,6 @@ import signal
 import subprocess
 import sys
 import threading
-from datetime import UTC, datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -105,14 +104,12 @@ def api():
         yield mock_api
 
 
-NOW = datetime(2026, 11, 7, 10, 10, tzinfo=UTC)  # before make_run's deadlineAt
-
-
 @pytest.fixture(autouse=True)
 def clock():
-    """The wait is bounded by the run's deadline, so tests fix the time it sees."""
-    with patch("pipecatcloud.cli.commands.evals._now", return_value=NOW) as mock_now:
-        yield mock_now
+    """The wait is timed on the monotonic clock, which a test moves by hand."""
+    state = {"now": 0.0}
+    with patch("pipecatcloud.cli.commands.evals._monotonic", side_effect=lambda: state["now"]):
+        yield state
 
 
 @pytest.fixture
@@ -858,23 +855,61 @@ class TestUnexpectedFailures:
 
 
 class TestWaitBounds:
-    def test_a_wait_stops_once_the_run_is_well_past_its_deadline(self, api, sleeps, clock):
-        clock.return_value = datetime(2026, 11, 7, 10, 33, tzinfo=UTC)
+    """make_run's run is 1800 s long (created 10:00, deadline 10:30).
+
+    The wait gives it that, the API's 15 minutes to store a result and a 60 s
+    sweep: 2760 s on the client's monotonic clock, from first seeing the run.
+    """
+
+    LIMIT = 1800 + 15 * 60 + 60
+
+    @staticmethod
+    def _advance(sleeps, clock, seconds):
+        async def tick(_delay):
+            clock["now"] += seconds
+
+        sleeps.side_effect = tick
+
+    def test_the_limit_is_the_runs_length_plus_the_apis_grace_and_sweep(self):
+        assert evals._wait_limit(make_run()) == self.LIMIT
+
+    def test_the_wait_outlasts_the_deadline_so_a_stuck_run_can_expire(self, api, sleeps, clock):
+        ended = make_run("expired", None, {"reason": "Ran out of time.", "metrics": []})
+        api.eval_run_get.side_effect = [
+            (make_run("running"), None),
+            (make_run("running"), None),
+            (make_run("running"), None),
+            (ended, None),
+        ]
+        # Polled at 1000 s, 2000 s (past the 1800 s deadline) and 2700 s, as expired.
+        times = iter([1000, 1000, 700])
+
+        async def tick(_delay):
+            clock["now"] += next(times)
+
+        sleeps.side_effect = tick
+        result = invoke("status", RUN_ID, "--agent", "a", "--wait")
+        assert result.exit_code == 2, result.output
+        assert "expired" in result.output
+
+    def test_a_wait_stops_once_it_is_past_the_limit(self, api, sleeps, clock):
+        self._advance(sleeps, clock, 1000)
         api.eval_run_get.return_value = (make_run("running"), None)
         result = invoke("status", RUN_ID, "--agent", "a", "--wait")
         assert result.exit_code == 3
         assert "hasn't ended" in result.output
-        sleeps.assert_not_awaited()
+        assert f"eval status {RUN_ID}" in result.output
+        assert sleeps.await_count == 3  # polled at 1000, 2000 and 3000 s, then stopped
 
     def test_in_json_mode_the_stop_is_an_error_object(self, api, sleeps, clock):
-        clock.return_value = datetime(2026, 11, 7, 10, 33, tzinfo=UTC)
+        self._advance(sleeps, clock, 3000)
         api.eval_run_get.return_value = (make_run("running"), None)
         result = invoke("status", RUN_ID, "--agent", "a", "--wait", "--json")
         assert result.exit_code == 3
         assert json.loads(result.stdout)["error"]["code"] == "CLI-WAIT"
 
-    def test_just_inside_the_margin_it_keeps_waiting(self, api, sleeps, clock):
-        clock.return_value = datetime(2026, 11, 7, 10, 31, 59, tzinfo=UTC)
+    def test_one_second_inside_the_limit_it_keeps_waiting(self, api, sleeps, clock):
+        self._advance(sleeps, clock, self.LIMIT - 1)
         api.eval_run_get.side_effect = [
             (make_run("running"), None),
             (make_run("completed", "passed"), None),
@@ -882,10 +917,25 @@ class TestWaitBounds:
         result = invoke("status", RUN_ID, "--agent", "a", "--wait")
         assert result.exit_code == 0, result.output
 
+    def test_one_second_past_the_limit_it_stops(self, api, sleeps, clock):
+        self._advance(sleeps, clock, self.LIMIT + 1)
+        api.eval_run_get.return_value = (make_run("running"), None)
+        assert invoke("status", RUN_ID, "--agent", "a", "--wait").exit_code == 3
+
+    def test_the_wall_clock_plays_no_part(self, api, sleeps):
+        # make_run's deadline is long past by the machine's clock; the wait is
+        # timed from when the run was first seen.
+        api.eval_run_get.side_effect = [
+            (make_run("running"), None),
+            (make_run("completed", "passed"), None),
+        ]
+        assert invoke("status", RUN_ID, "--agent", "a", "--wait").exit_code == 0
+
     def test_a_run_without_a_deadline_is_waited_for(self, api, sleeps, clock):
-        clock.return_value = datetime(2030, 1, 1, tzinfo=UTC)
+        self._advance(sleeps, clock, 10**7)
         api.eval_run_get.side_effect = [
             (make_run("running", deadlineAt=None), None),
+            (make_run("running"), None),
             (make_run("completed", "passed"), None),
         ]
         assert invoke("status", RUN_ID, "--agent", "a", "--wait").exit_code == 0

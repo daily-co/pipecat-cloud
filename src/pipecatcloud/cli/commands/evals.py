@@ -18,7 +18,8 @@ Without `--wait`, 0 means the request was accepted. Ctrl-C while waiting exits
 """
 
 import asyncio
-from datetime import UTC, datetime, timedelta, timezone
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -56,9 +57,13 @@ POLL_MAX_SECONDS = 10.0
 POLL_MAX_CONSECUTIVE_ERRORS = 5
 # A failed poll's `Retry-After` is honoured up to this many seconds.
 POLL_RETRY_AFTER_CAP_SECONDS = 60
-# The API ends every run at its deadline, so a wait that outlasts the deadline by
-# this much has lost the run and stops rather than waiting for ever.
-WAIT_PAST_DEADLINE_SECONDS = 120
+# A run's deadline is not its last moment. The API lets the worker that holds a
+# run 15 minutes past the deadline to store its result, and only then does its
+# sweep, which runs every 60 seconds, end a stuck run as `expired` (a run with
+# no verdict, exit 2). A wait gives up only after both, so a stuck run reaches
+# its `expired` end here rather than as an error.
+API_RESULT_GRACE_SECONDS = 15 * 60
+API_SWEEP_SECONDS = 60
 
 # The synthetic run settings `--param` takes, as the API names them.
 RUN_PARAMS = ("connectTimeoutSeconds", "botReadyTimeoutSeconds", "defaultTimeoutMs")
@@ -344,8 +349,10 @@ async def _wait_for_end(org: str, agent: str, run: dict, status_view) -> dict:
     delay = POLL_START_SECONDS
     pause = delay
     failures = 0
+    limit = _wait_limit(run)
+    started = _monotonic()
     while _is_live(run):
-        _check_deadline(run, agent)
+        _wait_over(limit, started, run, agent)
         status_view.update(f"Run is {run.get('status')}")
         try:
             await asyncio.sleep(pause)
@@ -374,29 +381,49 @@ async def _wait_for_end(org: str, agent: str, run: dict, status_view) -> dict:
     return run
 
 
-def _now() -> datetime:
-    return datetime.now(UTC)
+def _monotonic() -> float:
+    return time.monotonic()
 
 
-def _check_deadline(run: dict, agent: str) -> None:
-    """Stop waiting for a run that is still live well after its deadline."""
-    raw = run.get("deadlineAt")
+def _parse_time(raw: Any) -> datetime | None:
     if not isinstance(raw, str):
-        return
+        return None
     try:
-        deadline = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
+        return None
+
+
+def _wait_limit(run: dict) -> float | None:
+    """How long to wait for a run, timed on this machine's monotonic clock.
+
+    The run's own length (its deadline less its creation, both the server's
+    times, so this machine's clock doesn't matter), plus what the API allows
+    after the deadline. None when the run doesn't say.
+    """
+    created = _parse_time(run.get("createdAt"))
+    deadline = _parse_time(run.get("deadlineAt"))
+    if created is None or deadline is None:
+        return None
+    try:
+        length = (deadline - created).total_seconds()
+    except TypeError:
+        return None
+    if length <= 0:
+        return None
+    return length + API_RESULT_GRACE_SECONDS + API_SWEEP_SECONDS
+
+
+def _wait_over(limit: float | None, started: float, run: dict, agent: str) -> None:
+    """Stop waiting for a run that is still live well after it should have ended."""
+    if limit is None or _monotonic() - started <= limit:
         return
-    if deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=UTC)
-    if _now() > deadline + timedelta(seconds=WAIT_PAST_DEADLINE_SECONDS):
-        run_id = str(run.get("id"))
-        _fail(
-            f"Run {run_id} hasn't ended, though its deadline passed over "
-            f"{WAIT_PAST_DEADLINE_SECONDS} seconds ago, so this stopped waiting. "
-            f"Check on it: {_status_command(agent, run_id)}",
-            code="CLI-WAIT",
-        )
+    run_id = str(run.get("id"))
+    _fail(
+        f"Run {run_id} hasn't ended, though it is well past its deadline, so this stopped "
+        f"waiting. Check on it: {_status_command(agent, run_id)}",
+        code="CLI-WAIT",
+    )
 
 
 def _interrupted_starting(agent: str) -> NoReturn:
