@@ -22,8 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0 for a `passed` or `skipped` verdict, 1 for `failed`, 2 for a run that ended
   without a verdict and 3 for an API or usage error. Ctrl-C stops waiting,
   leaves the run going, prints the commands to check on it or cancel it, and
-  exits 130. All four commands take `--json`. Where evals aren't turned on for
-  your organization, they say so.
+  exits 130. `eval list` takes `--limit` and `--offset`. All four commands
+  take `--json`, and where evals aren't turned on yet they say so.
 - `pyyaml` is now a dependency, to read a scenario file's includes.
 
 ## [1.5.0] - 2026-11-05

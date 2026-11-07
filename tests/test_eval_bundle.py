@@ -163,15 +163,31 @@ class TestRefusals:
             "keys/server.pem",
             "server.key",
             "id_rsa",
-            "my_secrets.yaml",
-            "aws_credentials.yaml",
-            "passwords.yaml",
+            "prod.env",
+            "PROD.ENV",
+            "certs/client.p12",
         ],
     )
     def test_dotfiles_and_secret_looking_files_are_refused_even_when_included(self, tree, name):
         write(tree / name, "text: x\n")
         write(tree / "calls.yaml", f"name: c\nj: !include {name}\nscenarios: []\n")
         with pytest.raises(BundleError, match="hidden|secrets"):
+            build_bundle(tree / "calls.yaml")
+
+    @pytest.mark.parametrize(
+        "name", ["password_reset.yaml", "secret_santa.yaml", "credentials.yaml"]
+    )
+    def test_ordinary_names_that_mention_a_secret_word_are_sent(self, tree, name):
+        write(tree / name, "text: x\n")
+        write(tree / "calls.yaml", f"name: c\nj: !include {name}\nscenarios: []\n")
+        assert name in build_bundle(tree / "calls.yaml").files
+
+    @pytest.mark.parametrize("target", [".env", "prod.env", ".ssh/id_rsa", "server.pem"])
+    def test_a_link_to_a_refused_file_is_refused_whatever_the_link_is_called(self, tree, target):
+        write(tree / target, "TOKEN=abc\n")
+        os.symlink(tree / target, tree / "user.yaml")
+        write(tree / "calls.yaml", "name: c\nj: !include user.yaml\nscenarios: []\n")
+        with pytest.raises(BundleError, match=r"link to .* which"):
             build_bundle(tree / "calls.yaml")
 
     def test_a_dotfile_that_is_not_included_is_simply_not_sent(self, tree):
@@ -248,4 +264,87 @@ class TestSize:
     def test_file_count_is_bounded(self, tree, monkeypatch):
         monkeypatch.setattr(eval_bundle, "MAX_FILES", 1)
         with pytest.raises(BundleError, match="more than 1 files"):
+            build_bundle(tree / "calls.yaml")
+
+
+def write_fanout(tree: Path, fan: int, levels: int) -> None:
+    """`calls.yaml` names `n0_*` files `fan` times; each level names the next `fan` times."""
+    names = ", ".join(["!include l1.yaml"] * fan)
+    write(tree / "calls.yaml", f"name: c\nscenarios: []\nx: [{names}]\n")
+    for level in range(1, levels + 1):
+        if level == levels:
+            write(tree / f"l{level}.yaml", "leaf: 1\n")
+        else:
+            inner = ", ".join(f"!include l{level + 1}.yaml" for _ in range(fan))
+            write(tree / f"l{level}.yaml", f"x: [{inner}]\n")
+
+
+class TestExpansionBudget:
+    def test_an_include_is_charged_each_time_it_is_named(self, tree):
+        # 1 + 6 + 36 + 216 loads: under the byte limit, over the 200 loads the service allows.
+        write_fanout(tree, fan=6, levels=3)
+        with pytest.raises(BundleError, match="expand past 200 file loads"):
+            build_bundle(tree / "calls.yaml")
+
+    def test_a_fan_out_within_the_budget_is_accepted(self, tree):
+        # 1 + 5 + 25 + 125 = 156 loads.
+        write_fanout(tree, fan=5, levels=3)
+        bundle = build_bundle(tree / "calls.yaml")
+        assert sorted(bundle.files) == ["calls.yaml", "l1.yaml", "l2.yaml", "l3.yaml"]
+
+    def test_a_huge_fan_out_is_refused_at_once_not_after_expanding_it(self, tree):
+        import time
+
+        write_fanout(tree, fan=30, levels=6)
+        started = time.monotonic()
+        with pytest.raises(BundleError, match="expand past"):
+            build_bundle(tree / "calls.yaml")
+        assert time.monotonic() - started < 2
+
+    def test_characters_are_charged_each_time_too(self, tree):
+        big = "y: " + "x" * (100 * 1024) + "\n"
+        write(tree / "big.yaml", big)
+        write(
+            tree / "calls.yaml",
+            "name: c\nscenarios: []\nx: [!include big.yaml, !include big.yaml, !include big.yaml]\n",
+        )
+        # 100 KiB on disk, 300 KiB once expanded.
+        with pytest.raises(BundleError, match="expand past"):
+            build_bundle(tree / "calls.yaml")
+
+    def test_each_file_is_parsed_once_however_often_it_is_named(self, tree, monkeypatch):
+        calls = []
+        real_load = eval_bundle.yaml.load
+
+        def counting_load(text, loader):
+            calls.append(text[:20])
+            return real_load(text, loader)
+
+        monkeypatch.setattr(eval_bundle.yaml, "load", counting_load)
+        write(tree / "leaf.yaml", "v: 1\n")
+        names = ", ".join("!include leaf.yaml" for _ in range(20))
+        write(tree / "calls.yaml", f"name: c\nscenarios: []\nx: [{names}]\n")
+        build_bundle(tree / "calls.yaml")
+        assert len(calls) == 2
+
+
+class TestUnreadableInput:
+    def test_nesting_too_deep_for_the_parser_is_a_bundle_error(self, tree):
+        write(tree / "calls.yaml", "name: c\nscenarios: []\nx: " + "[" * 5000 + "]" * 5000 + "\n")
+        with pytest.raises(BundleError, match="nested too deeply"):
+            build_bundle(tree / "calls.yaml")
+
+    def test_a_file_over_the_limit_is_refused_before_it_is_read(self, tree, monkeypatch):
+        with open(tree / "judge.yaml", "wb") as f:
+            f.truncate(MAX_BUNDLE_BYTES + 1)
+
+        real_read_bytes = Path.read_bytes
+
+        def refuse_read(self):
+            if self.name == "judge.yaml":
+                raise AssertionError("the file was read")
+            return real_read_bytes(self)
+
+        monkeypatch.setattr(Path, "read_bytes", refuse_read)
+        with pytest.raises(BundleError, match="256 KiB"):
             build_bundle(tree / "calls.yaml")

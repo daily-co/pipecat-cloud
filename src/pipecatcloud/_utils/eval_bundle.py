@@ -14,6 +14,11 @@ directory, and not audio or image files, which hosted runs do not use.
 Every include is resolved the way the service resolves it, relative to the file
 that names it, and must stay inside the root. A file that cannot be sent is
 refused here, before any request, with a message that names it.
+
+The service expands an include each time it is named, and bounds the work: how
+many files it loads and how many characters it parses. Those bounds are applied
+here too, so a bundle the service would refuse is refused before it is sent.
+Each file is read and parsed once.
 """
 
 import fnmatch
@@ -29,10 +34,17 @@ MAX_BUNDLE_BYTES = 256 * 1024
 # The service refuses includes nested deeper than this.
 MAX_INCLUDE_DEPTH = 8
 MAX_FILES = 200
+# The service's bounds on expanding includes: an include is loaded again each
+# time it is named, and counts toward both limits each time.
+MAX_FILE_PARSES = 200
+MAX_PARSED_CHARS = MAX_BUNDLE_BYTES
 
-# Names that suggest credentials. A dotfile (.env and the like) is refused
-# whatever its name; these catch the rest.
+# Names that suggest credentials: key and certificate files, and env files. A
+# dotfile (.env and the like) is refused whatever its name. Names that merely
+# contain a word such as "secret" are fine: they are far more often a scenario
+# about secrets than a secret.
 _SECRET_NAME_PATTERNS = (
+    "*.env",
     "*.pem",
     "*.key",
     "*.p12",
@@ -43,11 +55,6 @@ _SECRET_NAME_PATTERNS = (
     "id_dsa*",
     "id_ecdsa*",
     "id_ed25519*",
-    "*secret*",
-    "*credential*",
-    "*password*",
-    "*private_key*",
-    "*private-key*",
 )
 
 
@@ -95,11 +102,22 @@ def _normalize(path: str) -> str | None:
     return "/".join(parts)
 
 
+@dataclass
+class _Entry:
+    """A file that has been read and parsed once."""
+
+    text: str
+    includes: list[str] = field(default_factory=list)
+    data: Any = None
+
+
 class _Collector:
     def __init__(self, root: Path):
         self.root = root
         self.real_root = root.resolve()
         self.bundle = Bundle()
+        self._entries: dict[str, _Entry] = {}
+        self._loading: list[str] = []
         self._bytes = 0
 
     def read(self, key: str, via: str | None = None) -> str:
@@ -119,9 +137,18 @@ class _Collector:
             raise BundleError(
                 f"{where} is a symlink that leaves the root directory, so it isn't followed."
             )
+        # The same rules for what the name points at: `user.yaml -> .env` is
+        # refused whatever the link is called.
+        reason = _refused_name(resolved.relative_to(self.real_root).as_posix())
+        if reason:
+            target_name = resolved.relative_to(self.real_root).as_posix()
+            raise BundleError(f"{where} is a link to {target_name!r}, which {reason}.")
         if not resolved.is_file():
             raise BundleError(f"{where} isn't a regular file.")
         try:
+            size = resolved.stat().st_size
+            if size > MAX_BUNDLE_BYTES - self._bytes:
+                raise BundleError(self._too_large())
             data = resolved.read_bytes()
         except OSError as e:
             raise BundleError(f"{where} can't be read: {e.strerror or type(e).__name__}.") from None
@@ -135,27 +162,39 @@ class _Collector:
             raise BundleError(f"{where} contains a NUL character, so it can't be sent.")
         return text
 
-    def add(self, key: str, via: str | None = None, seen: tuple[str, ...] = ()) -> Any:
-        """Add a file and, through its includes, the files it names. Returns its parsed YAML."""
-        if key in seen:
-            raise BundleError(f"{key!r} includes itself.")
-        if len(seen) >= MAX_INCLUDE_DEPTH:
-            raise BundleError(f"{key!r}: includes nest deeper than {MAX_INCLUDE_DEPTH}.")
-        text = self.bundle.files.get(key)
-        if text is None:
-            text = self.read(key, via)
-            if len(self.bundle.files) >= MAX_FILES:
-                raise BundleError(f"The scenario includes more than {MAX_FILES} files.")
-            self._bytes += len(text.encode("utf-8"))
-            if self._bytes > MAX_BUNDLE_BYTES:
-                raise BundleError(
-                    f"The scenario's files come to more than {MAX_BUNDLE_BYTES // 1024} KiB, "
-                    "which is the most a run can carry. Trim the files it includes."
-                )
-            self.bundle.files[key] = text
-        return self._parse(key, text, seen)
+    @staticmethod
+    def _too_large() -> str:
+        return (
+            f"The scenario's files come to more than {MAX_BUNDLE_BYTES // 1024} KiB, "
+            "which is the most a run can carry. Trim the files it includes."
+        )
 
-    def _parse(self, key: str, text: str, seen: tuple[str, ...]) -> Any:
+    def load(self, key: str, via: str | None = None) -> _Entry:
+        """Read and parse a file the first time it is named; later, return what was parsed."""
+        if key in self._loading:
+            raise BundleError(f"{key!r} includes itself.")
+        entry = self._entries.get(key)
+        if entry is not None:
+            return entry
+        if len(self._loading) >= MAX_INCLUDE_DEPTH:
+            raise BundleError(f"{key!r}: includes nest deeper than {MAX_INCLUDE_DEPTH}.")
+        if len(self._entries) >= MAX_FILES:
+            raise BundleError(f"The scenario includes more than {MAX_FILES} files.")
+        text = self.read(key, via)
+        self._bytes += len(text.encode("utf-8"))
+        if self._bytes > MAX_BUNDLE_BYTES:
+            raise BundleError(self._too_large())
+        entry = _Entry(text)
+        self._entries[key] = entry
+        self.bundle.files[key] = text
+        self._loading.append(key)
+        try:
+            entry.data = self._parse(key, entry)
+        finally:
+            self._loading.pop()
+        return entry
+
+    def _parse(self, key: str, entry: _Entry) -> Any:
         collector = self
 
         class _Loader(yaml.SafeLoader):
@@ -170,7 +209,8 @@ class _Collector:
             resolved = _normalize(str(PurePosixPath(key).parent / target))
             if resolved is None or resolved == "":
                 raise BundleError(f"{key!r}: !include {target!r} leaves the root directory.")
-            return collector.add(resolved, via=key, seen=(*seen, key))
+            entry.includes.append(resolved)
+            return collector.load(resolved, via=key).data
 
         def other_tag(loader: yaml.SafeLoader, tag_suffix: str, node: yaml.Node) -> None:
             # The service decides what a tag means. Here only includes matter.
@@ -179,11 +219,41 @@ class _Collector:
         _Loader.add_constructor("!include", include)
         _Loader.add_multi_constructor("!", other_tag)
         try:
-            return yaml.load(text, _Loader)
+            return yaml.load(entry.text, _Loader)
         except yaml.YAMLError as e:
             problem = getattr(e, "problem", None)
             detail = f": {problem}" if problem else ""
             raise BundleError(f"{key!r} isn't valid YAML{detail}.") from None
+
+    def check_expansion(self, key: str) -> None:
+        """Apply the service's bounds on expanding includes, without parsing anything again.
+
+        The service loads a file once for each time it is named, so a file named
+        by many files, or by one many times, costs that many loads.
+        """
+        parses = 0
+        chars = 0
+
+        def visit(name: str, ancestors: tuple[str, ...]) -> None:
+            nonlocal parses, chars
+            if name in ancestors:
+                raise BundleError(f"{name!r} includes itself.")
+            if len(ancestors) >= MAX_INCLUDE_DEPTH:
+                raise BundleError(f"{name!r}: includes nest deeper than {MAX_INCLUDE_DEPTH}.")
+            entry = self._entries[name]
+            parses += 1
+            chars += len(entry.text)
+            if parses > MAX_FILE_PARSES or chars > MAX_PARSED_CHARS:
+                raise BundleError(
+                    f"{key!r}: includes expand past {MAX_FILE_PARSES} file loads or "
+                    f"{MAX_PARSED_CHARS} characters. An include counts each time it is "
+                    "named, so a file included from many places adds up. Include fewer "
+                    "or smaller files."
+                )
+            for child in entry.includes:
+                visit(child, (*ancestors, name))
+
+        visit(key, ())
 
 
 def _scenario_names(data: Any, key: str) -> list[str]:
@@ -223,7 +293,11 @@ def build_bundle(scenario_file: Path, root: Path | None = None) -> Bundle:
     key = file_abs.relative_to(root_abs).as_posix()
 
     collector = _Collector(root_abs)
-    data = collector.add(key)
+    try:
+        data = collector.load(key).data
+        collector.check_expansion(key)
+    except RecursionError:
+        raise BundleError(f"{key!r} or a file it includes is nested too deeply to read.") from None
     bundle = collector.bundle
     bundle.scenario_path = key
     bundle.scenario_names = _scenario_names(data, key)

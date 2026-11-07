@@ -18,6 +18,7 @@ Without `--wait`, 0 means the request was accepted. Ctrl-C while waiting exits
 """
 
 import asyncio
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -26,12 +27,13 @@ import typer
 from rich import box
 from rich.markup import escape
 from rich.table import Table
-from typer.core import TyperCommand
+from typer.core import TyperCommand, TyperGroup
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import OutputMode, console, format_timestamp
 from pipecatcloud._utils.eval_bundle import BundleError, build_bundle
+from pipecatcloud.api import _parse_retry_after
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -52,29 +54,70 @@ POLL_MAX_SECONDS = 10.0
 # Consecutive failed polls (a dropped connection, a 5xx, a 429) before giving up.
 # A 4xx other than 429 is not going to change and ends the wait at once.
 POLL_MAX_CONSECUTIVE_ERRORS = 5
+# A failed poll's `Retry-After` is honoured up to this many seconds.
+POLL_RETRY_AFTER_CAP_SECONDS = 60
+# The API ends every run at its deadline, so a wait that outlasts the deadline by
+# this much has lost the run and stops rather than waiting for ever.
+WAIT_PAST_DEADLINE_SECONDS = 120
 
 # The synthetic run settings `--param` takes, as the API names them.
 RUN_PARAMS = ("connectTimeoutSeconds", "botReadyTimeoutSeconds", "defaultTimeoutMs")
 
 
 class _EvalCommand(TyperCommand):
-    """A command whose usage errors exit 3, as its API errors do.
+    """A command whose usage errors, and unexpected errors, exit 3, as its API errors do.
 
     Click exits 2 on a usage error, and here 2 means a run ended without a
-    verdict. A script that tests the exit code must be able to tell the two.
+    verdict. An uncaught exception exits 1, which here means the verdict was
+    `failed`. A script that tests the exit code must be able to tell them apart.
+    The usage error is still shown by Typer, in its usual format.
     """
 
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
         try:
             return super().parse_args(ctx, args)
         except click.UsageError as e:
-            e.ctx = e.ctx or ctx
-            e.show()
-            ctx.exit(EXIT_ERROR)
+            e.exit_code = EXIT_ERROR
+            raise
+
+    def invoke(self, ctx: click.Context) -> Any:
+        try:
+            return super().invoke(ctx)
+        except click.UsageError as e:
+            e.exit_code = EXIT_ERROR
+            raise
+        except (click.ClickException, click.exceptions.Exit, click.Abort):
+            raise
+        except Exception as e:
+            # The type only: the text of an exception can quote a file or a token.
+            _fail(
+                f"Unexpected error ({type(e).__name__}). The run, if one was started, "
+                f"can be found with `{PIPECAT_CLI_NAME} eval list`.",
+                code="CLI-INTERNAL",
+            )
+
+
+class _EvalGroup(TyperGroup):
+    """A group whose usage errors exit 3, like its commands'."""
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        try:
+            return super().parse_args(ctx, args)
+        except click.UsageError as e:
+            e.exit_code = EXIT_ERROR
+            raise
+
+    def invoke(self, ctx: click.Context) -> Any:
+        try:
+            return super().invoke(ctx)
+        except click.UsageError as e:
+            e.exit_code = EXIT_ERROR
+            raise
 
 
 eval_cli = typer.Typer(
     name="eval",
+    cls=_EvalGroup,
     help="Run scenarios against an agent and read the results",
     no_args_is_help=True,
 )
@@ -299,17 +342,21 @@ async def _wait_for_end(org: str, agent: str, run: dict, status_view) -> dict:
     (a 4xx) ends the wait.
     """
     delay = POLL_START_SECONDS
+    pause = delay
     failures = 0
     while _is_live(run):
+        _check_deadline(run, agent)
         status_view.update(f"Run is {run.get('status')}")
         try:
-            await asyncio.sleep(delay)
-            delay = min(delay * POLL_FACTOR, POLL_MAX_SECONDS)
+            await asyncio.sleep(pause)
             data, error = await API.bubble_error().eval_run_get(org, agent, str(run["id"]))
-        except KeyboardInterrupt:
-            # Here, where the latest state the run was seen in is known.
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            # Ctrl-C reaches a coroutine run by the synchronizer as a
+            # cancellation. Here the latest state the run was seen in is known.
             status_view.stop()
             _interrupted(run, agent)
+        delay = min(delay * POLL_FACTOR, POLL_MAX_SECONDS)
+        pause = delay
         if data:
             failures = 0
             run = data
@@ -321,7 +368,48 @@ async def _wait_for_end(org: str, agent: str, run: dict, status_view) -> dict:
             if not console.json_output:
                 API.print_error()
             _check(None, error or {"error": "Lost contact with the API.", "code": "CLI-POLL"})
+        retry_after = _parse_retry_after(API.error_retry_after)
+        if retry_after is not None:
+            pause = max(pause, min(retry_after, POLL_RETRY_AFTER_CAP_SECONDS))
     return run
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _check_deadline(run: dict, agent: str) -> None:
+    """Stop waiting for a run that is still live well after its deadline."""
+    raw = run.get("deadlineAt")
+    if not isinstance(raw, str):
+        return
+    try:
+        deadline = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+    if _now() > deadline + timedelta(seconds=WAIT_PAST_DEADLINE_SECONDS):
+        run_id = str(run.get("id"))
+        _fail(
+            f"Run {run_id} hasn't ended, though its deadline passed over "
+            f"{WAIT_PAST_DEADLINE_SECONDS} seconds ago, so this stopped waiting. "
+            f"Check on it: {_status_command(agent, run_id)}",
+            code="CLI-WAIT",
+        )
+
+
+def _interrupted_starting(agent: str) -> NoReturn:
+    """Ctrl-C while the run is being created: the request may have got through."""
+    message = (
+        "Stopped while starting the run. The request may have reached the API, so a run "
+        f"may exist. See: {PIPECAT_CLI_NAME} eval list {agent}"
+    )
+    if console.json_output:
+        console.output_json({"error": {"error": message, "code": "CLI-INTERRUPTED"}})
+    else:
+        console.print(f"\n[yellow]{escape(message)}[/yellow]")
+    raise typer.Exit(EXIT_INTERRUPTED)
 
 
 def _interrupted(run: dict, agent: str) -> NoReturn:
@@ -431,8 +519,12 @@ async def run(
     if deadline is not None:
         body["deadlineSeconds"] = deadline
 
-    with console.status(f"[dim]Starting a run on [bold]'{agent}'[/bold][/dim]", spinner="dots"):
-        data, error = await _api().eval_run_create(org, agent, body)
+    # Creating a run is not idempotent, so a failed request is never repeated here.
+    try:
+        with console.status(f"[dim]Starting a run on [bold]'{agent}'[/bold][/dim]", spinner="dots"):
+            data, error = await _api().eval_run_create(org, agent, body)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        _interrupted_starting(agent)
     run_data = _check(data, error)
 
     if wait:
@@ -445,7 +537,6 @@ async def run(
         console.output_json(run_data)
         return
     _render_run(run_data, agent)
-    console.print(f"Check on it: [bold]{_status_command(agent, str(run_data.get('id')))}[/bold]")
 
 
 @eval_cli.command(
@@ -485,6 +576,7 @@ async def status(
 async def list_runs(
     agent: str = typer.Argument(..., help="Name of the agent", show_default=False),
     limit: int = typer.Option(10, "--limit", "-n", min=1, max=200, help="How many runs to show"),
+    offset: int = typer.Option(0, "--offset", min=0, help="How many of the newest runs to skip"),
     organization: str = _ORG_OPTION,
     output_json: bool = _JSON_OPTION,
 ):
@@ -492,7 +584,10 @@ async def list_runs(
     await _login_check()
     org = _org(organization)
 
-    data, error = await _api().eval_runs_list(org, agent, limit=limit)
+    paging: dict[str, int] = {"limit": limit}
+    if offset:
+        paging["offset"] = offset
+    data, error = await _api().eval_runs_list(org, agent, **paging)
     result = _check(data, error)
 
     if console.json_output:
@@ -518,8 +613,11 @@ async def list_runs(
         ],
     )
     total = result.get("total_count")
-    if isinstance(total, int) and total > len(runs):
-        console.print(f"[dim]Showing {len(runs)} of {total}. Use --limit to see more.[/dim]")
+    if isinstance(total, int) and total > offset + len(runs):
+        console.print(
+            f"[dim]Showing {offset + 1} to {offset + len(runs)} of {total}. "
+            f"For the next page use --offset {offset + len(runs)}.[/dim]"
+        )
 
 
 @eval_cli.command(

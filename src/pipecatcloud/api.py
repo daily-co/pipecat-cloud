@@ -53,11 +53,12 @@ SECRETS_WRITE_MAX_RETRY_AFTER = 30
 # How the API says what it takes. A server that writes several fields of a secret
 # set in one request names this capability on its secrets responses, so the CLI
 # knows without trying. One that does not is written one field at a time.
-EVALS_NOT_AVAILABLE_CODE = "EVALS-NOT-AVAILABLE"
-EVALS_NOT_AVAILABLE_MESSAGE = "Evals aren't available for this organization yet."
-
 CAPABILITIES_HEADER = "Pipecat-Cloud-Capabilities"
 SECRETS_BULK_WRITE_CAPABILITY = "secrets-bulk-write"
+
+# Every eval route answers 503 with this code while evals are switched off.
+EVALS_NOT_AVAILABLE_CODE = "EVALS-NOT-AVAILABLE"
+EVALS_NOT_AVAILABLE_MESSAGE = "Evals aren't available yet."
 
 
 def _parse_retry_after(value: str | None) -> int | None:

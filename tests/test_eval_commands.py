@@ -1,7 +1,14 @@
 """Tests for `pipecat cloud eval run | status | list | cancel` and their API methods."""
 
+import asyncio
 import json
+import os
+import signal
+import subprocess
 import sys
+import threading
+from datetime import UTC, datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -90,11 +97,22 @@ def api():
     with patch("pipecatcloud.cli.commands.evals.API") as mock_api:
         mock_api.bubble_error.return_value = mock_api
         mock_api.error_status = None
+        mock_api.error_retry_after = None
         mock_api.eval_run_create = AsyncMock(return_value=(make_run(), None))
         mock_api.eval_run_get = AsyncMock(return_value=(make_run(), None))
         mock_api.eval_runs_list = AsyncMock(return_value=({"total_count": 0, "runs": []}, None))
         mock_api.eval_run_cancel = AsyncMock(return_value=(make_run(status="cancelled"), None))
         yield mock_api
+
+
+NOW = datetime(2026, 11, 7, 10, 10, tzinfo=UTC)  # before make_run's deadlineAt
+
+
+@pytest.fixture(autouse=True)
+def clock():
+    """The wait is bounded by the run's deadline, so tests fix the time it sees."""
+    with patch("pipecatcloud.cli.commands.evals._now", return_value=NOW) as mock_now:
+        yield mock_now
 
 
 @pytest.fixture
@@ -542,7 +560,24 @@ class TestList:
         )
         result = invoke("list", "a", "--limit", "5")
         assert api.eval_runs_list.await_args.kwargs == {"limit": 5}
-        assert "Showing 1 of 40" in result.stdout
+        assert "Showing 1 to 1 of 40" in result.stdout
+        assert "--offset 1" in result.stdout
+
+    def test_offset_is_passed_on_and_the_hint_moves_on(self, api):
+        runs = [make_run(id="aaaa"), make_run(id="bbbb")]
+        api.eval_runs_list.return_value = ({"total_count": 40, "runs": runs}, None)
+        result = invoke("list", "a", "--limit", "2", "--offset", "10")
+        assert api.eval_runs_list.await_args.kwargs == {"limit": 2, "offset": 10}
+        assert "Showing 11 to 12 of 40" in result.stdout
+        assert "--offset 12" in result.stdout
+
+    def test_no_hint_on_the_last_page(self, api):
+        api.eval_runs_list.return_value = (
+            {"total_count": 12, "runs": [make_run(id="aaaa"), make_run(id="bbbb")]},
+            None,
+        )
+        result = invoke("list", "a", "--limit", "2", "--offset", "10")
+        assert "Showing" not in result.stdout
 
     @pytest.mark.parametrize("limit", ["0", "201", "x"])
     def test_a_bad_limit_exits_three(self, api, limit):
@@ -692,3 +727,207 @@ class TestApiClient:
         ):
             data, error = await client.eval_run_cancel("org", "agent", RUN_ID)
         assert error == {"error": "The run has already finished", "code": "409"}
+
+
+# ---- review follow-ups ----
+
+
+class TestInterruptionAsTheSynchronizerDeliversIt:
+    """Ctrl-C reaches a command run by the synchronizer as a cancellation."""
+
+    @pytest.mark.parametrize("exc", [KeyboardInterrupt, asyncio.CancelledError])
+    def test_a_wait_stops_and_says_how_to_check_and_cancel(self, api, sleeps, scenario_file, exc):
+        sleeps.side_effect = exc
+        result = invoke("run", "a", scenario_file, "--wait")
+        assert result.exit_code == 130
+        assert "still going" in result.output
+        assert f"eval cancel {RUN_ID} --agent a" in result.output
+        assert f"eval status {RUN_ID} --agent a --wait" in result.output
+        api.eval_run_cancel.assert_not_awaited()
+
+    def test_a_wait_in_json_mode_prints_the_run_seen_last(self, api, sleeps):
+        api.eval_run_get.return_value = (make_run("running"), None)
+        sleeps.side_effect = asyncio.CancelledError
+        result = invoke("status", RUN_ID, "--agent", "a", "--wait", "--json")
+        assert result.exit_code == 130
+        assert json.loads(result.stdout)["status"] == "running"
+
+    def test_a_cancellation_during_a_poll_request_stops_the_wait_too(self, api, sleeps):
+        api.eval_run_get.side_effect = [(make_run("running"), None), asyncio.CancelledError()]
+        result = invoke("status", RUN_ID, "--agent", "a", "--wait")
+        assert result.exit_code == 130
+        assert "still going" in result.output
+
+    @pytest.mark.parametrize("exc", [KeyboardInterrupt, asyncio.CancelledError])
+    def test_during_the_create_request_it_says_a_run_may_exist(self, api, scenario_file, exc):
+        api.eval_run_create.side_effect = exc
+        result = invoke("run", "my-agent", scenario_file)
+        assert result.exit_code == 130
+        assert "may exist" in result.output
+        assert "eval list my-agent" in result.output
+
+    def test_during_the_create_request_in_json_mode(self, api, scenario_file):
+        api.eval_run_create.side_effect = asyncio.CancelledError
+        result = invoke("run", "my-agent", scenario_file, "--json")
+        assert result.exit_code == 130
+        assert json.loads(result.stdout)["error"]["code"] == "CLI-INTERRUPTED"
+
+
+class _RunningHandler(BaseHTTPRequestHandler):
+    hit = threading.Event()
+
+    def do_GET(self):  # noqa: N802
+        body = json.dumps(make_run("running", deadlineAt="2099-01-01T00:00:00.000Z")).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        type(self).hit.set()
+
+    def log_message(self, *args):
+        pass
+
+
+class TestRealSigint:
+    @pytest.mark.parametrize("extra", [[], ["--json"]])
+    def test_sigint_while_waiting_prints_the_lines_and_exits_130(self, extra):
+        _RunningHandler.hit.clear()
+        server = HTTPServer(("127.0.0.1", 0), _RunningHandler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        env = {**os.environ, "PIPECAT_API_HOST": f"http://127.0.0.1:{server.server_port}"}
+        code = (
+            "from pipecatcloud.cli.entry_point import entrypoint_cli_typer as a;"
+            "a(prog_name='pipecat cloud')"
+        )
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                code,
+                "eval",
+                "status",
+                RUN_ID,
+                "--agent",
+                "a",
+                "--wait",
+                *extra,
+            ],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert _RunningHandler.hit.wait(30), "the command never asked for the run"
+            # Now in the first sleep between polls.
+            threading.Event().wait(0.7)
+            proc.send_signal(signal.SIGINT)
+            out, err = proc.communicate(timeout=30)
+        finally:
+            proc.kill()
+            server.shutdown()
+        assert proc.returncode == 130, (out, err)
+        combined = out + err
+        assert f"eval cancel {RUN_ID} --agent a" in combined
+        assert "still going" in combined
+        if extra:
+            assert json.loads(out)["status"] == "running"
+
+
+class TestUnexpectedFailures:
+    @pytest.mark.parametrize("flags", [[], ["--json"]])
+    def test_an_unexpected_exception_exits_three_and_does_not_quote_itself(
+        self, api, scenario_file, flags
+    ):
+        with patch(
+            "pipecatcloud.cli.commands.evals.build_bundle", side_effect=ValueError("tok-123-boom")
+        ):
+            result = invoke("run", "a", scenario_file, *flags)
+        assert result.exit_code == 3
+        assert "ValueError" in result.output
+        assert "tok-123-boom" not in result.output
+        api.eval_run_create.assert_not_awaited()
+        if flags:
+            assert json.loads(result.stdout)["error"]["code"] == "CLI-INTERNAL"
+
+    def test_a_usage_error_at_the_group_exits_three(self, api):
+        result = invoke("bogus")
+        assert result.exit_code == 3
+        assert "No such command" in result.output
+
+
+class TestWaitBounds:
+    def test_a_wait_stops_once_the_run_is_well_past_its_deadline(self, api, sleeps, clock):
+        clock.return_value = datetime(2026, 11, 7, 10, 33, tzinfo=UTC)
+        api.eval_run_get.return_value = (make_run("running"), None)
+        result = invoke("status", RUN_ID, "--agent", "a", "--wait")
+        assert result.exit_code == 3
+        assert "hasn't ended" in result.output
+        sleeps.assert_not_awaited()
+
+    def test_in_json_mode_the_stop_is_an_error_object(self, api, sleeps, clock):
+        clock.return_value = datetime(2026, 11, 7, 10, 33, tzinfo=UTC)
+        api.eval_run_get.return_value = (make_run("running"), None)
+        result = invoke("status", RUN_ID, "--agent", "a", "--wait", "--json")
+        assert result.exit_code == 3
+        assert json.loads(result.stdout)["error"]["code"] == "CLI-WAIT"
+
+    def test_just_inside_the_margin_it_keeps_waiting(self, api, sleeps, clock):
+        clock.return_value = datetime(2026, 11, 7, 10, 31, 59, tzinfo=UTC)
+        api.eval_run_get.side_effect = [
+            (make_run("running"), None),
+            (make_run("completed", "passed"), None),
+        ]
+        result = invoke("status", RUN_ID, "--agent", "a", "--wait")
+        assert result.exit_code == 0, result.output
+
+    def test_a_run_without_a_deadline_is_waited_for(self, api, sleeps, clock):
+        clock.return_value = datetime(2030, 1, 1, tzinfo=UTC)
+        api.eval_run_get.side_effect = [
+            (make_run("running", deadlineAt=None), None),
+            (make_run("completed", "passed"), None),
+        ]
+        assert invoke("status", RUN_ID, "--agent", "a", "--wait").exit_code == 0
+
+
+class TestRetryAfter:
+    def _fail_then_pass(self, api, retry_after):
+        api.error_status = 503
+        api.error_retry_after = retry_after
+        api.eval_run_get.side_effect = [
+            (make_run("running"), None),
+            (None, {"error": "Unavailable", "code": "503"}),
+            (make_run("completed", "passed"), None),
+        ]
+
+    def test_a_polls_retry_after_lengthens_the_next_pause(self, api, sleeps):
+        self._fail_then_pass(api, "30")
+        assert invoke("status", RUN_ID, "--agent", "a", "--wait").exit_code == 0
+        assert [c.args[0] for c in sleeps.await_args_list] == [2.0, 30]
+
+    def test_it_is_capped(self, api, sleeps):
+        self._fail_then_pass(api, "3600")
+        invoke("status", RUN_ID, "--agent", "a", "--wait")
+        assert [c.args[0] for c in sleeps.await_args_list][-1] == evals.POLL_RETRY_AFTER_CAP_SECONDS
+
+    @pytest.mark.parametrize("value", [None, "soon", "-5"])
+    def test_an_unusable_one_changes_nothing(self, api, sleeps, value):
+        self._fail_then_pass(api, value)
+        invoke("status", RUN_ID, "--agent", "a", "--wait")
+        assert [c.args[0] for c in sleeps.await_args_list] == [2.0, 3.0]
+
+    def test_creating_a_run_is_never_repeated(self, api, sleeps, scenario_file):
+        api.error_status = 503
+        api.error_retry_after = "1"
+        api.eval_run_create.return_value = (None, {"error": "Unavailable", "code": "503"})
+        result = invoke("run", "a", scenario_file)
+        assert result.exit_code == 3
+        assert api.eval_run_create.await_count == 1
+        sleeps.assert_not_awaited()
+
+
+class TestOutput:
+    def test_the_status_hint_is_printed_once(self, api, scenario_file):
+        result = invoke("run", "a", scenario_file)
+        assert result.stdout.count(f"eval status {RUN_ID}") == 1
