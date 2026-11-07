@@ -51,6 +51,12 @@ To use Pipecat Cloud programmatically (without the CLI), install the package dir
 
 `pipecat cloud secrets keys --region <region>` shows your organization's secret keys in a region: each key's fingerprint, state, created and retired times, and how many secrets it holds. The fingerprint is the one a security notice names and, in a self-hosted region, the one your cluster shows for the key, so you can compare them. Add `--output json` before `secrets` for a single JSON document. Key material is never shown.
 
+### Running evals
+
+`pipecat cloud eval run <agent> <scenario.yaml> --wait` runs a scenario against a deployed agent and exits with the verdict: 0 for `passed` or `skipped`, 1 for `failed`, 2 when the run ended without a verdict, 3 for an API or usage error. Pass `--session <id>` to judge a finished session instead. The scenario file and the files it `!include`s are sent from `--root` (default: the scenario file's directory) as UTF-8 text, up to 256 KiB; hidden files, files that look like they hold secrets and symlinks that leave the root are refused. Eval runs call the agent's real tools, so point them at test credentials or a staging deployment.
+
+Use `eval status <run-id> --agent <agent> [--wait]`, `eval list <agent>` and `eval cancel <run-id> --agent <agent>` to follow and stop runs. Ctrl-C while waiting stops the wait and leaves the run going. Every command takes `--json`.
+
 ### Usage in Python scripts
 
 If want to programmatically start an agent within a Python script, you can use the `pipecatcloud.session` module.
