@@ -53,6 +53,9 @@ SECRETS_WRITE_MAX_RETRY_AFTER = 30
 # How the API says what it takes. A server that writes several fields of a secret
 # set in one request names this capability on its secrets responses, so the CLI
 # knows without trying. One that does not is written one field at a time.
+EVALS_NOT_AVAILABLE_CODE = "EVALS-NOT-AVAILABLE"
+EVALS_NOT_AVAILABLE_MESSAGE = "Evals aren't available for this organization yet."
+
 CAPABILITIES_HEADER = "Pipecat-Cloud-Capabilities"
 SECRETS_BULK_WRITE_CAPABILITY = "secrets-bulk-write"
 
@@ -1166,6 +1169,86 @@ class _API:
             The updated spend-limit response (same shape as spend_limit_get).
         """
         return self.create_api_method(self._spend_limit_update)
+
+    # Eval runs
+
+    async def _eval_request(self, method: str, url: str, **kwargs) -> dict | None:
+        """A request to the eval-runs routes.
+
+        While evals are off for an organization every route answers 503 with the
+        code `EVALS-NOT-AVAILABLE`. The server's text for it is terse, so it is
+        replaced with a sentence that says what to do about it.
+        """
+        try:
+            return await self._base_request(method, url, **kwargs)
+        except aiohttp.ClientResponseError:
+            if isinstance(self.error, dict) and self.error.get("code") == EVALS_NOT_AVAILABLE_CODE:
+                self.error = {**self.error, "error": EVALS_NOT_AVAILABLE_MESSAGE}
+            raise
+
+    def _eval_runs_url(self, org: str, agent: str, run_id: str | None = None) -> str:
+        url = self.construct_api_url("eval_runs_path").format(
+            org=quote(org, safe=""), service=quote(agent, safe="")
+        )
+        if run_id is not None:
+            url += f"/{quote(run_id, safe='')}"
+        return url
+
+    async def _eval_run_create(self, org: str, agent: str, body: dict) -> dict:
+        url = self._eval_runs_url(org, agent)
+        return await self._eval_request("POST", url, json=body) or {}
+
+    @property
+    def eval_run_create(self):
+        """Start an eval run on an agent.
+
+        Args:
+            org: Organization ID
+            agent: Agent name
+            body: The request: kind, files, scenarioPath, scenarioName, and
+                params, sessionId or deadlineSeconds as they apply.
+        Returns:
+            The run, queued.
+        """
+        return self.create_api_method(self._eval_run_create)
+
+    async def _eval_run_get(self, org: str, agent: str, run_id: str) -> dict:
+        url = self._eval_runs_url(org, agent, run_id)
+        return await self._eval_request("GET", url) or {}
+
+    @property
+    def eval_run_get(self):
+        """Get an eval run, with its result once it has ended."""
+        return self.create_api_method(self._eval_run_get)
+
+    async def _eval_runs_list(
+        self, org: str, agent: str, limit: int | None = None, offset: int | None = None
+    ) -> dict:
+        url = self._eval_runs_url(org, agent)
+        params = {k: v for k, v in (("limit", limit), ("offset", offset)) if v is not None}
+        return await self._eval_request("GET", url, params=params or None) or {}
+
+    @property
+    def eval_runs_list(self):
+        """List an agent's eval runs, newest first, without their results.
+
+        Returns:
+            Dict with `total_count` and `runs`.
+        """
+        return self.create_api_method(self._eval_runs_list)
+
+    async def _eval_run_cancel(self, org: str, agent: str, run_id: str) -> dict:
+        url = f"{self._eval_runs_url(org, agent, run_id)}/cancel"
+        return await self._eval_request("POST", url) or {}
+
+    @property
+    def eval_run_cancel(self):
+        """Ask for an eval run to be cancelled.
+
+        A queued run ends at once as `cancelled`. A running run is asked to stop
+        and ends as soon as it can, so the returned run may still be `running`.
+        """
+        return self.create_api_method(self._eval_run_cancel)
 
     # Builds
 

@@ -5,6 +5,27 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `eval run`, `eval status`, `eval list` and `eval cancel` run a scenario
+  against a deployed agent and read the result. `eval run AGENT SCENARIO_FILE`
+  sends the scenario file and the files it `!include`s from `--root` (by
+  default the scenario file's directory), as UTF-8 text, up to 256 KiB. Hidden
+  files, files that look like they hold secrets, symlinks that leave the root
+  and files that aren't UTF-8 are refused before anything is sent. Pass
+  `--session ID` to judge a finished session by the scenario's `success:` and
+  `metrics:`, `--param KEY=VALUE` to set a synthetic run's timeouts, and
+  `--deadline SECONDS` to bound the run.
+- With `--wait`, `eval run` and `eval status` poll until the run ends and exit
+  0 for a `passed` or `skipped` verdict, 1 for `failed`, 2 for a run that ended
+  without a verdict and 3 for an API or usage error. Ctrl-C stops waiting,
+  leaves the run going, prints the commands to check on it or cancel it, and
+  exits 130. All four commands take `--json`. Where evals aren't turned on for
+  your organization, they say so.
+- `pyyaml` is now a dependency, to read a scenario file's includes.
+
 ## [1.5.0] - 2026-11-05
 
 ### Added

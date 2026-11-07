@@ -39,6 +39,7 @@ _SETTINGS = {
     "agent_profiles_path": _Setting("/v1/organizations/{org}/agent-profiles"),
     "properties_path": _Setting("/v1/organizations/{org}/properties"),
     "spend_limit_path": _Setting("/v1/organizations/{org}/spend-limit"),
+    "eval_runs_path": _Setting("/v1/organizations/{org}/services/{service}/eval-runs"),
     "builds_path": _Setting("/v1/organizations/{org}/builds"),
     # GitHub App integration (PCC-933). The org-scoped management endpoints
     # and the per-environment repo binding. v1 exposes exactly one environment
