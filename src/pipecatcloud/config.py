@@ -41,9 +41,10 @@ _SETTINGS = {
     "spend_limit_path": _Setting("/v1/organizations/{org}/spend-limit"),
     "builds_path": _Setting("/v1/organizations/{org}/builds"),
     # GitHub App integration (PCC-933). The org-scoped management endpoints
-    # and the per-environment repo binding. v1 exposes exactly one environment
-    # per service, so the binding path hardcodes "production" the same way the
-    # dashboard does; it becomes a parameter when multi-environment lands.
+    # and the per-environment repo binding. An agent has exactly one
+    # `environments` row, named "production", so the binding path hardcodes it
+    # the same way the dashboard does. A project's environments are agents of
+    # their own, each with its own production binding, so this stays right.
     "github_install_url_path": _Setting("/v1/organizations/{org}/github/install-url"),
     "github_link_url_path": _Setting("/v1/organizations/{org}/github/link-url"),
     "github_installation_path": _Setting("/v1/organizations/{org}/github/installation"),
@@ -51,6 +52,12 @@ _SETTINGS = {
     "service_git_path": _Setting(
         "/v1/organizations/{org}/services/{service}/environments/production/git"
     ),
+    # Projects and environments (PCC-1255). An environment is an agent of its
+    # own, linked to the project it belongs to; previews and watch paths are
+    # project settings on the project's own binding.
+    "service_parent_path": _Setting("/v1/organizations/{org}/services/{service}/parent"),
+    "service_previews_path": _Setting("/v1/organizations/{org}/services/{service}/previews"),
+    "service_watch_paths_path": _Setting("/v1/organizations/{org}/services/{service}/watch-paths"),
 }
 
 
