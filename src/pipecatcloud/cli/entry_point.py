@@ -19,6 +19,7 @@ from pipecatcloud.cli.commands.deploy import create_deploy_command
 from pipecatcloud.cli.commands.docker import create_docker_command
 from pipecatcloud.cli.commands.github import github_cli
 from pipecatcloud.cli.commands.organizations import organization_cli
+from pipecatcloud.cli.commands.project import project_cli
 from pipecatcloud.cli.commands.regions import regions_cli
 from pipecatcloud.cli.commands.secrets import secrets_cli
 from pipecatcloud.cli.commands.spend_limit import spend_limit_cli
@@ -125,6 +126,7 @@ entrypoint_cli_typer.add_typer(auth_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(build_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(github_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(organization_cli, rich_help_panel="Commands")
+entrypoint_cli_typer.add_typer(project_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(regions_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(spend_limit_cli, rich_help_panel="Commands")

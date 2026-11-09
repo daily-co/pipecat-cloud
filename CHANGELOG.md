@@ -5,6 +5,41 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `project` commands for the settings that belong to a project rather than to
+  a single agent. A project is an agent with environments; its environments
+  are agents of their own, so `agent` still does everything that acts on one
+  agent.
+
+  - `project list` lists your projects with their environment counts and
+    whether PR previews are on. `project status <project>` adds the project's
+    repository binding, watch paths, preview settings, and a table of its
+    environments.
+  - `project env add <project> <name> --agent <agent>` links an existing agent
+    as an environment. `project env remove` unlinks it, leaving it running as
+    an ordinary agent. `project env list` lists them.
+  - `project env promote <project> <name>` deploys an environment's running
+    build, or the image it was deployed from, onto the project. Code only: the
+    project keeps its own secrets, scaling and profile.
+  - `project previews enable <project> --secret-set <set>` turns PR previews
+    on, with `--bot-pull-requests` to include pull requests opened by bots.
+    `project previews disable` turns them off and deletes the previews it has.
+    `project previews status` shows the setting and the open previews.
+  - `project watch-paths set <project> <path>...` sets the paths a change must
+    touch to deploy, `clear` removes them, and `show` prints them. They are a
+    project setting: its environments and previews follow the same list.
+
+### Changed
+
+- `agent status` reports the project and environment of an agent that is one,
+  its watch paths, and, for a project, whether PR previews are on and whether
+  bot pull requests get them. For a PR preview it names the pull request.
+- `agent list` carries a Project column, naming the project and environment of
+  each agent that is an environment.
+
 ## [1.5.0] - 2026-11-05
 
 ### Added

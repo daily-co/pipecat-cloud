@@ -37,6 +37,7 @@ from pipecatcloud._utils.deploy_utils import (
     report_git_deploy_result,
     with_deploy_config,
 )
+from pipecatcloud._utils.environment_utils import project_label
 from pipecatcloud._utils.github_utils import (
     DEFAULT_DOCKERFILE_PATH,
     binding_summary,
@@ -114,6 +115,32 @@ def _image_display(deployment: dict) -> tuple[str, str]:
     return "Image", "N/A"
 
 
+async def _resolve_project_name(data: dict, org: str | None) -> str | None:
+    """The name of the project this agent is an environment of, or None.
+
+    A service payload names its parent by id only, so the name costs a
+    listing. A failed listing is not worth failing `status` over: the
+    environment's own name is reported either way.
+    """
+    parent_id = data.get("parentServiceId")
+    if not parent_id:
+        return None
+    services, error = await API.bubble_error().agents(org=org)
+    if error or not services:
+        return None
+    return next((s.get("name") for s in services if s.get("id") == parent_id), None)
+
+
+def _environment_status_rows(data: dict, project_name: str | None) -> list[tuple[str, str]]:
+    """Which project this agent is an environment of, empty when it is not one."""
+    if not data.get("parentServiceId"):
+        return []
+    return [
+        ("Project", project_name or "—"),
+        ("Environment", str(data.get("environmentName") or "—")),
+    ]
+
+
 def _git_status_rows(data: dict) -> list[tuple[str, str]]:
     """GitHub rows for `agent status`, empty for an agent with no binding.
 
@@ -134,6 +161,23 @@ def _git_status_rows(data: dict) -> list[tuple[str, str]]:
     if git.get("subdirectory"):
         rows.append(("Build Subdirectory", str(git["subdirectory"])))
     rows.append(("Auto-deploy On Push", "yes" if git.get("autoDeploy", True) else "no"))
+    rows.append(("Watch Paths", ", ".join(git.get("watchPaths") or []) or "all files"))
+
+    # A PR preview's binding tracks its pull request; previews are a project
+    # setting, so the previews rows are only shown for an agent that could
+    # have them.
+    pull_request = git.get("pullRequestNumber")
+    if pull_request:
+        rows.append(("Pull Request", f"#{pull_request}"))
+    elif not data.get("parentServiceId"):
+        preview_secret_set = git.get("previewSecretSet")
+        rows.append(
+            ("PR Previews", f"on (secrets: {preview_secret_set})" if preview_secret_set else "off")
+        )
+        if preview_secret_set:
+            rows.append(
+                ("Preview Bot Pull Requests", "yes" if git.get("previewBotPullRequests") else "no")
+            )
 
     deployed = data.get("deployedCommit")
     if deployed and deployed.get("sha"):
@@ -200,44 +244,25 @@ async def list_agents(
 
         elif console.json_output:
             console.output_json({"agents": data})
-        elif not console.rich_output:
-            console.print_records(
-                [
-                    "Name",
-                    "Region",
-                    "Agent ID",
-                    "Active Deployment ID",
-                    "Created At",
-                    "Updated At",
-                    "GitHub",
-                ],
-                [
-                    (
-                        service["name"],
-                        service["region"],
-                        service["id"],
-                        service["activeDeploymentId"],
-                        service["createdAt"],
-                        service["updatedAt"],
-                        binding_summary(service.get("git")),
-                    )
-                    for service in data
-                ],
-                title=f"Agents for organization: {org} ({len(data)} results)",
-            )
         else:
-            table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
-            table.add_column("Name")
-            table.add_column("Region")
-            table.add_column("Agent ID")
-            table.add_column("Active Deployment ID")
-            table.add_column("Created At")
-            table.add_column("Updated At")
-            table.add_column("GitHub")
-
-            for service in data:
-                table.add_row(
-                    f"[bold]{service['name']}[/bold]",
+            # An environment names its project by id, and every agent in the
+            # organization is on this page, so the name resolves without
+            # another call.
+            project_names = {service["id"]: service["name"] for service in data}
+            columns = [
+                "Name",
+                "Project",
+                "Region",
+                "Agent ID",
+                "Active Deployment ID",
+                "Created At",
+                "Updated At",
+                "GitHub",
+            ]
+            rows = [
+                (
+                    service["name"],
+                    project_label(service, project_names),
                     service["region"],
                     service["id"],
                     service["activeDeploymentId"],
@@ -245,6 +270,23 @@ async def list_agents(
                     service["updatedAt"],
                     binding_summary(service.get("git")),
                 )
+                for service in data
+            ]
+
+            if not console.rich_output:
+                console.print_records(
+                    columns,
+                    rows,
+                    title=f"Agents for organization: {org} ({len(data)} results)",
+                )
+                return
+
+            table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
+            for column in columns:
+                table.add_column(column)
+
+            for row in rows:
+                table.add_row(f"[bold]{row[0]}[/bold]", *row[1:])
 
             console.success(
                 table, title=f"Agents for organization: {org}", title_extra=f"{len(data)} results"
@@ -282,9 +324,13 @@ async def status(
             console.output_json(data)
             return
 
+        project_name = await _resolve_project_name(data, org)
+
         if not console.rich_output:
             spec = data.get("deployment", {}).get("manifest", {}).get("spec", {})
             console.print(f"Agent: {agent_name}")
+            for label, value in _environment_status_rows(data, project_name):
+                console.print(f"{label}: {value}")
             console.print(f"Ready: {bool(data.get('ready'))}")
             current_rev = data.get("currentRevision")
             if current_rev:
@@ -337,6 +383,8 @@ async def status(
         deployment_table = Table(show_header=False, show_lines=False, box=box.SIMPLE)
         deployment_table.add_column("Key")
         deployment_table.add_column("Value")
+        for label, value in _environment_status_rows(data, project_name):
+            deployment_table.add_row(f"[bold]{label}:[/bold]", value)
         deployment_table.add_row(
             "[bold]Active Session Count:[/bold]",
             str(data.get("activeSessionCount", "N/A")),
