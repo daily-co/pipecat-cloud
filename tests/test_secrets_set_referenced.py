@@ -41,6 +41,10 @@ def set_mocks():
         patch("pipecatcloud.cli.commands.secrets.API") as mock_api,
         patch("pipecatcloud.cli.commands.secrets.console"),
     ):
+        # bubble_error() returns the client itself, as the real one does: the
+        # one-key-at-a-time write bubbles so it can tell a dropped connection
+        # from a refusal.
+        mock_api.bubble_error.return_value = mock_api
         mock_api.secrets_upsert = AsyncMock(return_value=({"region": "us-west"}, None))
         yield mock_api
 

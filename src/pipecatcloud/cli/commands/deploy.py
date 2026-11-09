@@ -60,19 +60,23 @@ ALIVE_CHECK_SLEEP = 5
 MAX_CONSECUTIVE_POLL_FAILURES = 5
 
 
-def _poll_failure_is_transient(error: dict | None) -> bool:
+def _poll_failure_is_transient(error: dict | None, no_response: bool = False) -> bool:
     """Decide whether a failed status poll should be retried rather than aborting.
 
     A status poll can fail in a few ways, and only some are worth retrying:
 
-    - **No error payload** (``error is None``): the request never received a
-      response (connection reset, timeout) or the service object isn't visible
-      yet. Always transient.
+    - **No error payload** (``error is None``): the service object isn't visible
+      yet, or the answer carried no body. Always transient.
+    - **No response at all** (``no_response``, from ``API.no_response()``): the
+      request never reached the API or its answer never came back (connection
+      reset, timeout). Always transient. The error it carries describes the
+      connection rather than anything the server said, so it has no code to
+      classify below.
     - **5xx**: a server-side blip (e.g. the 502 from PCC-867). Transient.
     - **4xx or a non-numeric application code**: a real client/auth/config
       problem that won't clear on its own. Not transient — abort.
     """
-    if not error:
+    if not error or no_response:
         return True
     code = str(error.get("code", "")) if isinstance(error, dict) else ""
     if code.isdigit():
@@ -469,7 +473,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                 # network, not-yet-visible service) are retried up to a small
                 # consecutive cap; non-transient ones (4xx/auth) abort right away.
                 if error or agent_status is None:
-                    if _poll_failure_is_transient(error):
+                    if _poll_failure_is_transient(error, API.no_response()):
                         consecutive_failures += 1
                         if consecutive_failures <= MAX_CONSECUTIVE_POLL_FAILURES:
                             logger.debug(

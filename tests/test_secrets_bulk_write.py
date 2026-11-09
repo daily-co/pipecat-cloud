@@ -58,7 +58,12 @@ class FakeServer:
         self.puts.append(kwargs["json"])
         answer = self.writes.pop(0) if self.writes else {"status": "OK", "region": "r1"}
         if isinstance(answer, Exception):
-            # No response, so nothing recorded of one.
+            # A request that got no response. `_base_request` records the
+            # failure with no status, since there was no response to take one
+            # from, and raises; without the error the wrapper would let the
+            # exception out as a failure on the client's side.
+            api.error = {"error": "Could not reach the Pipecat Cloud API (ClientError)."}
+            api.error_status = None
             raise answer
         if isinstance(answer, tuple):
             status, retry_after, body, *headers = answer

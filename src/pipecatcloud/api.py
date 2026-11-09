@@ -193,13 +193,32 @@ class _API:
                 f"params: {describe_body(params)} body: {describe_body(json)}"
             )
 
-            response = await session.request(
-                method=method,
-                url=url,
-                headers=self._configure_headers(override_token),
-                params=params,
-                json=json,
-            )
+            try:
+                response = await session.request(
+                    method=method,
+                    url=url,
+                    headers=self._configure_headers(override_token),
+                    params=params,
+                    json=json,
+                )
+            except (aiohttp.ClientError, TimeoutError) as e:
+                # The request got no answer at all: the host could not be
+                # resolved or reached, the connection dropped, the request timed
+                # out. There is no status and no body to read, so record the
+                # failure here, in the shape of an error body from the API, and
+                # it renders like any other refusal. `error_status` stays None,
+                # which is what None means: no response. The exception's type is
+                # named, never its text, which can carry the URL and the body it
+                # was sent with. Without this the wrapper in `create_api_method`
+                # would find an exception with no error recorded and raise it,
+                # turning a dropped network into a traceback.
+                self.error = {
+                    "error": (
+                        f"Could not reach the Pipecat Cloud API ({describe_exception(e)}). "
+                        "Check your network connection and try again."
+                    )
+                }
+                raise
             self.capabilities_header = response.headers.get(CAPABILITIES_HEADER)
 
             if not response.ok:
@@ -232,7 +251,17 @@ class _API:
             if response.status == 204:
                 return None
 
-            return await response.json()
+            try:
+                return await response.json()
+            except aiohttp.ContentTypeError:
+                # An ok answer that is not JSON. The operation itself succeeded,
+                # so this stays None, the same answer a 204 gives, rather than
+                # becoming a failure: a caller tolerates a missing body already
+                # (`... or {}`), and reporting a completed write as failed would
+                # send the user to repeat it. Spelled out because the swallow in
+                # `create_api_method` that used to produce this is gone.
+                logger.debug(f"Response body is not JSON: {response.status}")
+                return None
 
     def create_api_method(self, method_func: Callable) -> Callable:
         """Factory method that wraps API methods with error handling and live context"""
@@ -249,6 +278,26 @@ class _API:
             except Exception as e:
                 if live and not self.bubble_next:
                     live.stop()
+
+                if not self.error:
+                    # Nothing recorded an error, so the API did not refuse the
+                    # request: this is a failure on our side of it — a TypeError
+                    # from a keyword that does not match the method's signature,
+                    # an AttributeError, a ValueError for a config value that is
+                    # not set, a KeyError on a response that is not shaped the
+                    # way the method reads it. There is no error to hand back,
+                    # and every caller reads a falsy error as success, so
+                    # returning `(None, None)` here reports a call that never
+                    # happened as a completed operation (cli#223 review: a build
+                    # promotion printed "Promoted build ..." having sent no HTTP
+                    # request at all). Let the exception out instead. In the CLI
+                    # it ends the process non-zero, like any other mistake in a
+                    # command body, and an SDK caller sees the original
+                    # exception rather than a silent None. A request that got no
+                    # response does not land here: `_base_request` records that
+                    # as an error before re-raising, so it still renders.
+                    self.bubble_next = False
+                    raise
 
                 if not self.is_cli and self.error and not self.bubble_next:
                     if isinstance(self.error, dict) and self.error.get("status", "429"):
@@ -282,6 +331,14 @@ class _API:
     def bubble_error(self):
         self.bubble_next = True
         return self
+
+    def no_response(self) -> bool:
+        """Whether the last call failed without a response: the API could not be
+        reached, the connection dropped, or the request timed out. A read that
+        got no answer simply has none; a write that got no answer may or may not
+        have landed, which is what the user has to be told. A failure the server
+        did answer with carries its status, so this is False for it."""
+        return self.error is not None and self.error_status is None
 
     # Auth
 
@@ -323,10 +380,14 @@ class _API:
         url = self.construct_api_url("organization_path")
         results = await self._base_request("GET", url)
 
-        if not results or not results.get("organizations", None):
-            raise
-
-        return results.get("organizations", None) or []
+        # An account that belongs to no organization is not a failed request:
+        # the empty list is the answer, and `organization list` says so in
+        # words. This used to be a bare `raise` — a RuntimeError, since no
+        # exception was being handled — which the wrapper swallowed into
+        # (None, None); now that it no longer swallows, say it plainly.
+        if not results:
+            return []
+        return results.get("organizations") or []
 
     @property
     def organizations(self):

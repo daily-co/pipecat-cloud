@@ -420,6 +420,7 @@ class TestRegionsPerOrganization:
             patch("pipecatcloud.cli.commands.secrets.region_error", new=validate),
         ):
             mock_api.secrets_get = AsyncMock(return_value=(None, None))
+            mock_api.bubble_error.return_value = mock_api
             mock_api.secrets_upsert = AsyncMock(return_value=({"region": "self-hosted-a"}, None))
 
             await create_set.aio(
