@@ -9,36 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `project` commands for the settings that belong to a project rather than to
-  a single agent. A project is an agent with environments; its environments
-  are agents of their own, so `agent` still does everything that acts on one
-  agent.
+- `project` is the command group for everything you deploy and run. A project
+  is an agent with environments; each environment is an agent of its own, and
+  `--env` addresses one through its project.
 
-  - `project list` lists your projects with their environment counts and
-    whether PR previews are on. `project status <project>` adds the project's
-    repository binding, watch paths, preview settings, and a table of its
-    environments.
+  ```
+  pipecat cloud project list
+  pipecat cloud project status my-bot --env staging
+  pipecat cloud project logs my-bot --env pr-7
+  ```
+
+  Every command that took an agent name takes `--env` as well: `status`,
+  `logs`, `sessions`, `deployments`, `delete`, `start`, `stop`, `link`,
+  `unlink` and `deploy`. A positional agent name still works, so
+  `project status my-bot-pr-7` resolves the same preview.
+
+- `project env` manages a project's environments.
+
   - `project env add <project> <name> --agent <agent>` links an existing agent
     as an environment. `project env remove` unlinks it, leaving it running as
-    an ordinary agent. `project env list` lists them.
+    a project of its own. `project env list` lists them, named ones first and
+    then PR previews.
   - `project env promote <project> <name>` deploys an environment's running
     build, or the image it was deployed from, onto the project. Code only: the
-    project keeps its own secrets, scaling and profile.
-  - `project previews enable <project> --secret-set <set>` turns PR previews
-    on, with `--bot-pull-requests` to include pull requests opened by bots.
-    `project previews disable` turns them off and deletes the previews it has.
-    `project previews status` shows the setting and the open previews.
-  - `project watch-paths set <project> <path>...` sets the paths a change must
-    touch to deploy, `clear` removes them, and `show` prints them. They are a
-    project setting: its environments and previews follow the same list.
+    project keeps its own secrets, scaling and profile. It confirms first, and
+    `--force` skips the prompt.
+
+- `project previews enable <project> --secret-set <set>` turns PR previews on,
+  with `--bot-pull-requests` to include pull requests opened by bots.
+  `project previews disable` turns them off and deletes the previews it has.
+  `project previews status` shows the setting and the open previews.
+
+- `project watch-paths set <project> <path>...` sets the paths a change has to
+  touch to deploy, `clear` removes them, and `show` prints them. They are a
+  project setting: its environments and previews follow the same list.
+
+- `project list --all` includes environments and PR previews. Without it the
+  listing is projects only, as the dashboard shows them. Both carry columns for
+  a project's environment count and preview setting, and `--all` names each
+  environment's project.
 
 ### Changed
 
-- `agent status` reports the project and environment of an agent that is one,
-  its watch paths, and, for a project, whether PR previews are on and whether
-  bot pull requests get them. For a PR preview it names the pull request.
-- `agent list` carries a Project column, naming the project and environment of
-  each agent that is an environment.
+- `agent` is **deprecated**. It is the same group under its old name: every
+  command goes on working and `agent list` goes on listing every agent, with a
+  notice on stderr pointing at `project`. Use `project`, and `--env` to address
+  an environment.
+- `status` reports the project and environment of an agent that is one, its
+  watch paths, and, for a project, whether PR previews are on and whether bot
+  pull requests get them. For a PR preview it names the pull request.
 
 ## [1.5.0] - 2026-11-05
 

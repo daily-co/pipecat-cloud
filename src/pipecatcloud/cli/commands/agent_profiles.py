@@ -16,8 +16,8 @@ from pipecatcloud._utils.deploy_utils import ResourcesConfig
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
 
-# Registered under the agent command group, so these surface as
-# `pipecat cloud agent profiles <list|create|update|enable|disable>`.
+# Registered under the project command group, so these surface as
+# `pipecat cloud project profiles <list|create|update|enable|disable>`.
 agent_profiles_cli = typer.Typer(
     name="profiles",
     help=(
@@ -205,7 +205,7 @@ async def disable_profile(
     console.success(
         f"Disabled agent profile '{name}'. Agents already deployed with it keep "
         "running; it can no longer be selected for new deploys. Re-enable it "
-        f"with: agent profiles enable {name}"
+        f"with: project profiles enable {name}"
     )
 
 

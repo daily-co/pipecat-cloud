@@ -37,7 +37,14 @@ from pipecatcloud._utils.deploy_utils import (
     report_git_deploy_result,
     with_deploy_config,
 )
-from pipecatcloud._utils.environment_utils import project_label
+from pipecatcloud._utils.environment_utils import (
+    environments_of,
+    is_environment,
+    is_preview_name,
+    previews_on,
+    project_label,
+    projects_in,
+)
 from pipecatcloud._utils.github_utils import (
     DEFAULT_DOCKERFILE_PATH,
     binding_summary,
@@ -52,10 +59,17 @@ from pipecatcloud._utils.log_utils import describe_body, describe_exception
 from pipecatcloud._utils.regions import region_error
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
+from pipecatcloud.cli.commands.project_group import (
+    ENVIRONMENT_OPTION,
+    find_project,
+    invoked_as_agent,
+    load_services,
+    print_environments,
+    project_cli,
+    resolve_agent,
+)
 from pipecatcloud.cli.config import config
 from pipecatcloud.constants import Region
-
-agent_cli = typer.Typer(name="agent", help="Agent management", no_args_is_help=True)
 
 
 def sparkline(values: list[int | float], max_width: int = 50) -> str:
@@ -119,8 +133,10 @@ async def _resolve_project_name(data: dict, org: str | None) -> str | None:
     """The name of the project this agent is an environment of, or None.
 
     A service payload names its parent by id only, so the name costs a
-    listing. A failed listing is not worth failing `status` over: the
-    environment's own name is reported either way.
+    listing. Only an environment pays for it, and a failed listing is not
+    worth failing `status` over: the environment's own name is reported
+    either way. The project's environments are a listing of their own, which
+    is what `project env list` is for.
     """
     parent_id = data.get("parentServiceId")
     if not parent_id:
@@ -204,18 +220,26 @@ def _git_status_rows(data: dict) -> list[tuple[str, str]]:
 # ----- Agent Commands -----
 
 
-@agent_cli.command(name="list", help="List agents in an organization.")
+@project_cli.command(
+    name="list",
+    help="List the organization's projects, or every agent with --all.",
+)
 @synchronizer.create_blocking
 @requires_login
 async def list_agents(
     organization: str = typer.Option(
-        None, "--organization", "-o", help="Organization to list agents for"
+        None, "--organization", "-o", help="Organization to list projects for"
     ),
     region: Region | None = typer.Option(
         None,
         "--region",
         "-r",
         help="Filter by region",
+    ),
+    show_all: bool = typer.Option(
+        None,
+        "--all",
+        help="Include environments and PR previews, not only projects",
     ),
 ):
     org = organization or config.get("org")
@@ -225,6 +249,11 @@ async def list_agents(
         console.error(region_message)
         raise typer.Exit(1)
 
+    # `agent list` listed every agent, so the deprecated name goes on doing
+    # that: dropping rows from a script's output is not what a deprecation
+    # should do. `project list` shows projects, as the dashboard does.
+    include_environments = invoked_as_agent() if show_all is None else show_all
+
     with console.status(
         f"[dim]Fetching agents for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"
     ):
@@ -232,77 +261,102 @@ async def list_agents(
         # older API just omits the fields, which renders as "—".
         data, error = await API.agents(org=org, region=region, include=["git"])
 
-        if error:
-            raise typer.Exit(1)
+    if error:
+        raise typer.Exit(1)
 
-        if not data or len(data) == 0:
-            console.error(
-                f"[red]No agents found for organization '{org}'[/red]\n\n"
-                f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]"
-            )
-            raise typer.Exit(1)
+    if not data or len(data) == 0:
+        console.error(
+            f"[red]No agents found for organization '{org}'[/red]\n\n"
+            f"[dim]Please deploy an agent first using[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]"
+        )
+        raise typer.Exit(1)
 
-        elif console.json_output:
-            console.output_json({"agents": data})
+    listed = data if include_environments else projects_in(data)
+    noun = "Agents" if include_environments else "Projects"
+
+    if console.json_output:
+        console.output_json({"agents": listed})
+        return
+
+    # An environment names its project by id, and every agent in the
+    # organization is on this page, so the name resolves without another call.
+    project_names = {service["id"]: service["name"] for service in data}
+    columns = [
+        "Name",
+        "Region",
+        "Agent ID",
+        "Active Deployment ID",
+        "Created At",
+        "Updated At",
+        "GitHub",
+        "Environments",
+        "PR Previews",
+    ]
+    if include_environments:
+        columns.append("Project")
+
+    rows = []
+    for service in listed:
+        # An environment can have neither environments nor previews, so both
+        # columns are a dash for one rather than a misleading zero.
+        if is_environment(service):
+            environments_cell, previews_cell = "—", "—"
         else:
-            # An environment names its project by id, and every agent in the
-            # organization is on this page, so the name resolves without
-            # another call.
-            project_names = {service["id"]: service["name"] for service in data}
-            columns = [
-                "Name",
-                "Project",
-                "Region",
-                "Agent ID",
-                "Active Deployment ID",
-                "Created At",
-                "Updated At",
-                "GitHub",
-            ]
-            rows = [
-                (
-                    service["name"],
-                    project_label(service, project_names),
-                    service["region"],
-                    service["id"],
-                    service["activeDeploymentId"],
-                    service["createdAt"],
-                    service["updatedAt"],
-                    binding_summary(service.get("git")),
-                )
-                for service in data
-            ]
-
-            if not console.rich_output:
-                console.print_records(
-                    columns,
-                    rows,
-                    title=f"Agents for organization: {org} ({len(data)} results)",
-                )
-                return
-
-            table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
-            for column in columns:
-                table.add_column(column)
-
-            for row in rows:
-                table.add_row(f"[bold]{row[0]}[/bold]", *row[1:])
-
-            console.success(
-                table, title=f"Agents for organization: {org}", title_extra=f"{len(data)} results"
+            environments = environments_of(data, service)
+            named = [e for e in environments if not is_preview_name(e.get("environmentName"))]
+            environments_cell = str(len(named))
+            previews_cell = (
+                f"on ({len(environments) - len(named)} open)" if previews_on(service) else "off"
             )
+        row = [
+            service["name"],
+            service["region"],
+            service["id"],
+            service["activeDeploymentId"],
+            service["createdAt"],
+            service["updatedAt"],
+            binding_summary(service.get("git")),
+            environments_cell,
+            previews_cell,
+        ]
+        if include_environments:
+            row.append(project_label(service, project_names))
+        rows.append(tuple(row))
+
+    if not console.rich_output:
+        console.print_records(
+            columns,
+            rows,
+            title=f"{noun} for organization: {org} ({len(rows)} results)",
+        )
+        return
+
+    table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
+    for column in columns:
+        table.add_column(column)
+
+    for row in rows:
+        table.add_row(f"[bold]{row[0]}[/bold]", *row[1:])
+
+    console.success(
+        table,
+        title=f"{noun} for organization: {org}",
+        title_extra=f"{len(rows)} results",
+    )
 
 
-@agent_cli.command(name="status", help="Get status of agent deployment")
+@project_cli.command(name="status", help="Get status of agent deployment")
 @synchronizer.create_blocking
 @requires_login
 async def status(
-    agent_name: str = typer.Argument(help="Name of the agent to get status of e.g. 'my-agent'"),
+    agent_name: str = typer.Argument(help="Name of the project or agent e.g. 'my-bot'"),
     organization: str = typer.Option(
         None, "--organization", "-o", help="Organization to get status of agent for"
     ),
+    environment: str = ENVIRONMENT_OPTION,
 ):
     org = organization or config.get("org")
+    agent_name = await resolve_agent(agent_name, environment, org)
 
     with console.status(
         f"[dim]Looking up agent with name {agent_name}[/dim]", spinner="dots"
@@ -558,9 +612,9 @@ async def status(
             health_border = "green" if data["ready"] else "yellow"
 
         subtitle = (
-            f"[dim]Start a new active session with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent start {agent_name}[/bold cyan]"
+            f"[dim]Start a new active session with[/dim] [bold cyan]{PIPECAT_CLI_NAME} project start {agent_name}[/bold cyan]"
             if data["ready"]
-            else f"[dim]For more information check logs with[/dim] [bold cyan]{PIPECAT_CLI_NAME} agent logs {agent_name}[/bold cyan]"
+            else f"[dim]For more information check logs with[/dim] [bold cyan]{PIPECAT_CLI_NAME} project logs {agent_name}[/bold cyan]"
         )
         console.print(
             Panel(
@@ -638,7 +692,7 @@ _LIFECYCLE_EVENT_COPY = {
 }
 
 
-@agent_cli.command(name="sessions", help="List active sessions for an agent")
+@project_cli.command(name="sessions", help="List active sessions for an agent")
 @synchronizer.create_blocking
 @requires_login
 @with_deploy_config
@@ -662,6 +716,7 @@ async def sessions(
         + ". Other values are passed to the API, so states added after this "
         "CLI release still filter.",
     ),
+    environment: str = ENVIRONMENT_OPTION,
     organization: str = typer.Option(
         None, "--organization", "-o", help="Organization to list sessions for"
     ),
@@ -675,6 +730,7 @@ async def sessions(
         else:
             console.error("No target agent name provided")
             raise typer.Exit(1)
+    agent_name = await resolve_agent(agent_name, environment, org)
 
     # Direct (non-Typer) calls leave the OptionInfo default in place; only a
     # real string means the filter was set. Validation is shape-only
@@ -939,7 +995,7 @@ async def sessions(
         )
 
 
-@agent_cli.command(name="scale", help="Modify agent runtime configuration")
+@project_cli.command(name="scale", help="Modify agent runtime configuration")
 @synchronizer.create_blocking
 @requires_login
 async def scale():
@@ -967,7 +1023,7 @@ class LogLevelColors(str, Enum):
     CRITICAL = "bold red"
 
 
-@agent_cli.command(name="logs", help="Get logs for the given agent.")
+@project_cli.command(name="logs", help="Get logs for the given agent.")
 @synchronizer.create_blocking
 @requires_login
 async def logs(
@@ -981,9 +1037,11 @@ async def logs(
     deployment_id: str = typer.Option(
         None, "--deployment", "-d", help="Filter logs by deployment ID"
     ),
+    environment: str = ENVIRONMENT_OPTION,
     session_id: str = typer.Option(None, "--session-id", "-s", help="Filter logs by session ID"),
 ):
     org = organization or config.get("org")
+    agent_name = await resolve_agent(agent_name, environment, org)
 
     status_text = "agent"
     if deployment_id:
@@ -1033,7 +1091,7 @@ async def logs(
                 console.print(Text(json.dumps(line, ensure_ascii=False), style="gray"))
 
 
-@agent_cli.command(name="delete", help="Delete an agent.")
+@project_cli.command(name="delete", help="Delete an agent.")
 @synchronizer.create_blocking
 @requires_login
 async def delete(
@@ -1044,6 +1102,7 @@ async def delete(
         "-o",
         help="Organization to delete agent from",
     ),
+    environment: str = ENVIRONMENT_OPTION,
     force: bool = typer.Option(
         False,
         "--force",
@@ -1052,6 +1111,7 @@ async def delete(
     ),
 ):
     org = organization or config.get("org")
+    agent_name = await resolve_agent(agent_name, environment, org)
 
     if not force:
         console.require_interactive("--force")
@@ -1074,7 +1134,7 @@ async def delete(
         console.success(f"Agent '{agent_name}' deleted successfully")
 
 
-@agent_cli.command(name="deployments", help="Get deployments for an agent.")
+@project_cli.command(name="deployments", help="Get deployments for an agent.")
 @synchronizer.create_blocking
 @requires_login
 async def deployments(
@@ -1085,9 +1145,11 @@ async def deployments(
         "-o",
         help="Organization to get deployments for",
     ),
+    environment: str = ENVIRONMENT_OPTION,
 ):
     token = config.get("token")
     org = organization or config.get("org")
+    agent_name = await resolve_agent(agent_name, environment, org)
 
     error_code = None
 
@@ -1168,7 +1230,7 @@ async def deployments(
         raise typer.Exit(1)
 
 
-@agent_cli.command(name="start", help="Start an agent instance")
+@project_cli.command(name="start", help="Start an agent instance")
 @synchronizer.create_blocking
 @requires_login
 @with_deploy_config
@@ -1217,6 +1279,7 @@ async def start(
         "-o",
         help="Organization which the agent belongs to",
     ),
+    environment: str = ENVIRONMENT_OPTION,
 ):
     org = organization or config.get("org")
 
@@ -1237,6 +1300,8 @@ async def start(
             raise typer.Exit(1)
 
         agent_name = default_agent_name
+
+    agent_name = await resolve_agent(agent_name, environment, org)
 
     if not default_public_api_key:
         console.print(
@@ -1293,7 +1358,7 @@ async def start(
         if not health_data or not health_data["ready"]:
             live.stop()
             console.error(
-                f"Agent '{agent_name}' does not exist or is not in a healthy state. Please check the agent status with [bold cyan]{PIPECAT_CLI_NAME} agent status {agent_name}[/bold cyan]"
+                f"Agent '{agent_name}' does not exist or is not in a healthy state. Please check the agent status with [bold cyan]{PIPECAT_CLI_NAME} project status {agent_name}[/bold cyan]"
             )
             raise typer.Exit(1)
 
@@ -1334,7 +1399,7 @@ async def start(
                 console.print(f"\nSession ID: {session_id}")
 
 
-@agent_cli.command(name="stop", help="Stop an active agent session")
+@project_cli.command(name="stop", help="Stop an active agent session")
 @synchronizer.create_blocking
 @requires_login
 @with_deploy_config
@@ -1351,6 +1416,7 @@ async def stop(
     organization: str = typer.Option(
         None, "--organization", "-o", help="Organization which the agent belongs to"
     ),
+    environment: str = ENVIRONMENT_OPTION,
     force: bool = typer.Option(
         False,
         "--force",
@@ -1370,6 +1436,8 @@ async def stop(
         else:
             console.error("No target agent name provided")
             raise typer.Exit(1)
+
+    agent_name = await resolve_agent(agent_name, environment, org)
 
     # Confirm stop request
     if not force:
@@ -1422,7 +1490,7 @@ def _print_git_binding(git: dict) -> None:
     console.print(table)
 
 
-@agent_cli.command(
+@project_cli.command(
     name="link",
     help="Link an agent to a GitHub repository and branch, or re-point an existing link.",
 )
@@ -1446,8 +1514,10 @@ async def link(
         help="Deploy automatically when the branch is pushed to (default: enabled)",
     ),
     organization: str = typer.Option(None, "--organization", "-o"),
+    environment: str = ENVIRONMENT_OPTION,
 ):
     org = organization or config.get("org")
+    agent_name = await resolve_agent(agent_name, environment, org)
 
     # Validate locally first: the same rules the API applies, so a typo fails
     # before a round-trip rather than after one.
@@ -1489,20 +1559,22 @@ async def link(
     console.success(
         f"Linked agent '{agent_name}' to {binding_summary(git_config)}.\n"
         "[dim]Linking does not change what is running. Deploy the branch now with "
-        f"[bold]{PIPECAT_CLI_NAME} agent deploy {agent_name} --github[/bold].[/dim]"
+        f"[bold]{PIPECAT_CLI_NAME} project deploy {agent_name} --github[/bold].[/dim]"
     )
     _print_git_binding(git_config or {})
 
 
-@agent_cli.command(name="unlink", help="Remove an agent's GitHub repository link.")
+@project_cli.command(name="unlink", help="Remove an agent's GitHub repository link.")
 @synchronizer.create_blocking
 @requires_login
 async def unlink(
     agent_name: str = typer.Argument(..., help="Name of the agent to unlink"),
     organization: str = typer.Option(None, "--organization", "-o"),
+    environment: str = ENVIRONMENT_OPTION,
     force: bool = typer.Option(False, "--force", "-f", help="Skip the confirmation prompt"),
 ):
     org = organization or config.get("org")
+    agent_name = await resolve_agent(agent_name, environment, org)
 
     if not force:
         console.require_interactive("--force")
@@ -1527,7 +1599,7 @@ async def unlink(
     )
 
 
-@agent_cli.command(
+@project_cli.command(
     name="deploy",
     help="Deploy a GitHub-linked agent from its connected branch's current HEAD.",
 )
@@ -1542,8 +1614,10 @@ async def agent_deploy(
     ),
     wait: bool = typer.Option(False, "--wait", help="Follow the deploy until it succeeds or fails"),
     organization: str = typer.Option(None, "--organization", "-o"),
+    environment: str = ENVIRONMENT_OPTION,
 ):
     org = organization or config.get("org")
+    agent_name = await resolve_agent(agent_name, environment, org)
 
     # The flag is explicit rather than implied so that adding image-based
     # deploys under this command later cannot change what an existing script

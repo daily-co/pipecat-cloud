@@ -4,18 +4,15 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""Project-level commands: environments, promotion, PR previews, watch paths.
+"""The project-level settings: environments, promotion, PR previews, watch paths.
 
-A project is an agent with environments. Its environments are agents of their
-own, so everything that acts on a single agent — status, logs, sessions,
-scaling, deploys, the GitHub repository link — stays on `agent`, and only the
-settings that belong to the project as a whole live here.
+These are the things the API refuses on an environment, because they belong to
+the project as a whole. The per-agent commands are in agent.py, on the same
+group.
 """
 
 import questionary
 import typer
-from rich import box
-from rich.table import Table
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
@@ -24,26 +21,21 @@ from pipecatcloud._utils.environment_utils import (
     describe_promotion_source,
     environment_name_problem,
     environments_of,
-    is_environment,
     is_preview_name,
     previews_on,
-    projects_in,
     promotion_source,
-)
-from pipecatcloud._utils.github_utils import (
-    DEFAULT_DOCKERFILE_PATH,
-    binding_summary,
-    short_sha,
 )
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
-from pipecatcloud.cli.config import config
-
-project_cli = typer.Typer(
-    name="project",
-    help="Project management: environments, PR previews, and watch paths",
-    no_args_is_help=True,
+from pipecatcloud.cli.commands.project_group import (
+    ORGANIZATION_OPTION,
+    find_environment,
+    find_project,
+    load_services,
+    print_environments,
+    project_cli,
 )
+from pipecatcloud.cli.config import config
 
 project_env_cli = typer.Typer(
     name="env",
@@ -66,210 +58,7 @@ project_watch_paths_cli = typer.Typer(
 )
 project_cli.add_typer(project_watch_paths_cli)
 
-ORGANIZATION_OPTION = typer.Option(None, "--organization", "-o", help="Organization to act in")
-
-PROJECT_ARGUMENT = typer.Argument(help="Name of the project e.g. 'my-agent'")
-
-
-async def _load_services(org: str | None, include: list[str]) -> list[dict]:
-    """Every agent in the organization, which is what the project tree is built
-    from: a service payload names its parent by id, never by name."""
-    data, error = await API.agents(org=org, include=include)
-    if error:
-        raise typer.Exit(1)
-    return data or []
-
-
-def _find_project(services: list[dict], project_name: str, org: str | None) -> dict:
-    """The named agent, refusing one that is an environment of another agent."""
-    project = next((s for s in services if s.get("name") == project_name), None)
-    if not project:
-        console.error(f"Agent '{project_name}' not found in organization '{org}'")
-        raise typer.Exit(1)
-    if is_environment(project):
-        names = {s.get("id"): s.get("name") for s in services}
-        parent = names.get(project.get("parentServiceId"), "another agent")
-        console.error(
-            f"Agent '{project_name}' is the '{project.get('environmentName')}' environment of "
-            f"'{parent}', so it has no environments of its own.\n"
-            f"[dim]Run this against '{parent}' instead.[/dim]"
-        )
-        raise typer.Exit(1)
-    return project
-
-
-def _find_environment(services: list[dict], project: dict, environment_name: str) -> dict:
-    """A project's environment by its environment name."""
-    environments = environments_of(services, project)
-    found = next((e for e in environments if e.get("environmentName") == environment_name), None)
-    if found:
-        return found
-    have = ", ".join(e.get("environmentName") or "?" for e in environments) or "none"
-    console.error(
-        f"Project '{project.get('name')}' has no environment '{environment_name}'.\n"
-        f"[dim]Environments: {have}[/dim]"
-    )
-    raise typer.Exit(1)
-
-
-def _environment_rows(services: list[dict], project: dict) -> list[tuple]:
-    """One row per environment: name, agent, branch, running commit, PR."""
-    rows = []
-    for environment in environments_of(services, project):
-        git = environment.get("git") or {}
-        deployed = environment.get("deployedCommit") or {}
-        pull_request = git.get("pullRequestNumber")
-        rows.append(
-            (
-                environment.get("environmentName") or "?",
-                environment.get("name") or "?",
-                git.get("branch") or "—",
-                short_sha(deployed["sha"]) if deployed.get("sha") else "—",
-                f"#{pull_request}" if pull_request else "—",
-            )
-        )
-    return rows
-
-
-ENVIRONMENT_COLUMNS = ["Environment", "Agent", "Branch", "Running Commit", "Pull Request"]
-
-
-def _print_environments(services: list[dict], project: dict) -> None:
-    rows = _environment_rows(services, project)
-    project_name = project.get("name")
-    if not rows:
-        console.print(
-            f"[yellow]Project '{project_name}' has no environments.[/yellow]\n"
-            f"[dim]Add one with [bold]{PIPECAT_CLI_NAME} project env add {project_name} "
-            "<name> --agent <agent>[/bold].[/dim]"
-        )
-        return
-    if not console.rich_output:
-        console.print_records(ENVIRONMENT_COLUMNS, rows)
-        return
-    table = Table(show_header=True, header_style="bold", box=box.SIMPLE, border_style="dim")
-    for column in ENVIRONMENT_COLUMNS:
-        table.add_column(column)
-    for row in rows:
-        table.add_row(*row)
-    console.print(table)
-
-
-def _project_settings_rows(project: dict) -> list[tuple[str, str]]:
-    """The project's own settings: its binding, watch paths, and previews."""
-    git = project.get("git") or {}
-    rows = [("Region", str(project.get("region") or "—"))]
-    if git:
-        rows += [
-            ("GitHub Repository", str(git.get("repoFullName") or "—")),
-            ("GitHub Branch", str(git.get("branch") or "—")),
-            ("Dockerfile Path", str(git.get("dockerfilePath") or DEFAULT_DOCKERFILE_PATH)),
-            ("Auto-deploy On Push", "yes" if git.get("autoDeploy", True) else "no"),
-            ("Watch Paths", ", ".join(git.get("watchPaths") or []) or "all files"),
-        ]
-        secret_set = git.get("previewSecretSet")
-        rows.append(("PR Previews", f"on (secrets: {secret_set})" if secret_set else "off"))
-        if secret_set:
-            rows.append(
-                (
-                    "Preview Bot Pull Requests",
-                    "yes" if git.get("previewBotPullRequests") else "no",
-                )
-            )
-    else:
-        rows.append(("GitHub Repository", "— (not connected)"))
-    return rows
-
-
-@project_cli.command(name="list", help="List projects in an organization.")
-@synchronizer.create_blocking
-@requires_login
-async def list_projects(organization: str = ORGANIZATION_OPTION):
-    org = organization or config.get("org")
-
-    with console.status(
-        f"[dim]Fetching projects for organization: [bold]'{org}'[/bold][/dim]", spinner="dots"
-    ):
-        services = await _load_services(org, include=["git"])
-
-    projects = projects_in(services)
-    if not projects:
-        console.error(
-            f"No projects found for organization '{org}'\n\n"
-            f"[dim]Deploy an agent first with[/dim] [bold cyan]{PIPECAT_CLI_NAME} deploy[/bold cyan]"
-        )
-        raise typer.Exit(1)
-
-    if console.json_output:
-        console.output_json({"projects": projects})
-        return
-
-    columns = ["Name", "Region", "Environments", "PR Previews", "GitHub"]
-    rows = []
-    for project in projects:
-        environments = environments_of(services, project)
-        named = [e for e in environments if not is_preview_name(e.get("environmentName"))]
-        open_previews = len(environments) - len(named)
-        rows.append(
-            (
-                project.get("name"),
-                project.get("region"),
-                str(len(named)),
-                (f"on ({open_previews} open)" if previews_on(project) else "off"),
-                binding_summary(project.get("git")),
-            )
-        )
-
-    if not console.rich_output:
-        console.print_records(
-            columns, rows, title=f"Projects for organization: {org} ({len(rows)} results)"
-        )
-        return
-
-    table = Table(show_header=True, show_lines=True, border_style="dim", box=box.SIMPLE)
-    for column in columns:
-        table.add_column(column)
-    for row in rows:
-        table.add_row(f"[bold]{row[0]}[/bold]", *row[1:])
-    console.success(
-        table, title=f"Projects for organization: {org}", title_extra=f"{len(rows)} results"
-    )
-
-
-@project_cli.command(name="status", help="Show a project's settings and its environments.")
-@synchronizer.create_blocking
-@requires_login
-async def project_status(
-    project_name: str = PROJECT_ARGUMENT,
-    organization: str = ORGANIZATION_OPTION,
-):
-    org = organization or config.get("org")
-
-    with console.status(f"[dim]Looking up project '{project_name}'[/dim]", spinner="dots"):
-        services = await _load_services(org, include=["git"])
-
-    project = _find_project(services, project_name, org)
-
-    if console.json_output:
-        console.output_json(
-            {"project": project, "environments": environments_of(services, project)}
-        )
-        return
-
-    if not console.rich_output:
-        console.print(f"Project: {project_name}")
-        for label, value in _project_settings_rows(project):
-            console.print(f"{label}: {value}")
-        _print_environments(services, project)
-        return
-
-    settings = Table(show_header=False, box=box.SIMPLE)
-    settings.add_column("Key")
-    settings.add_column("Value")
-    for label, value in _project_settings_rows(project):
-        settings.add_row(f"[bold]{label}:[/bold]", value)
-    console.success(settings, title=f"Project: {project_name}")
-    _print_environments(services, project)
+PROJECT_ARGUMENT = typer.Argument(help="Name of the project e.g. 'my-bot'")
 
 
 @project_env_cli.command(name="list", help="List a project's environments.")
@@ -282,15 +71,15 @@ async def env_list(
     org = organization or config.get("org")
 
     with console.status(f"[dim]Fetching environments of '{project_name}'[/dim]", spinner="dots"):
-        services = await _load_services(org, include=["git"])
+        services = await load_services(org, include=["git"])
 
-    project = _find_project(services, project_name, org)
+    project = find_project(services, project_name, org)
 
     if console.json_output:
         console.output_json({"environments": environments_of(services, project)})
         return
 
-    _print_environments(services, project)
+    print_environments(services, project)
 
 
 @project_env_cli.command(
@@ -338,7 +127,9 @@ async def env_add(
         f"Agent '{agent_name}' is now the '{environment_name}' environment of "
         f"'{project_name}'.\n"
         "[dim]Linking changes nothing about what it runs. It keeps its own repository "
-        "link, secrets and scaling, and follows the project's watch paths.[/dim]"
+        "link, secrets and scaling, and follows the project's watch paths.[/dim]\n"
+        f"[dim]Address it with [bold]{PIPECAT_CLI_NAME} project status {project_name} "
+        f"--env {environment_name}[/bold].[/dim]"
     )
 
 
@@ -356,10 +147,10 @@ async def env_remove(
     org = organization or config.get("org")
 
     with console.status(f"[dim]Looking up environment '{environment_name}'[/dim]", spinner="dots"):
-        services = await _load_services(org, include=["git"])
+        services = await load_services(org, include=["git"])
 
-    project = _find_project(services, project_name, org)
-    environment = _find_environment(services, project, environment_name)
+    project = find_project(services, project_name, org)
+    environment = find_environment(services, project, environment_name)
     agent_name = environment.get("name") or ""
 
     with console.status(
@@ -375,7 +166,7 @@ async def env_remove(
         return
 
     console.success(
-        f"Unlinked '{agent_name}' from '{project_name}'. It is an ordinary agent now, "
+        f"Unlinked '{agent_name}' from '{project_name}'. It is a project of its own now, "
         "running exactly as it was.\n"
         "[dim]The project's watch paths it followed are its own from here.[/dim]"
     )
@@ -396,10 +187,10 @@ async def env_promote(
     org = organization or config.get("org")
 
     with console.status(f"[dim]Looking up environment '{environment_name}'[/dim]", spinner="dots"):
-        services = await _load_services(org, include=["git", "activeDeployment"])
+        services = await load_services(org, include=["git", "activeDeployment"])
 
-    project = _find_project(services, project_name, org)
-    environment = _find_environment(services, project, environment_name)
+    project = find_project(services, project_name, org)
+    environment = find_environment(services, project, environment_name)
 
     source = promotion_source(environment)
     if not source:
@@ -431,7 +222,7 @@ async def env_promote(
     console.success(
         f"Promoted {what} from '{environment_name}' to '{project_name}'.\n"
         f"[dim]Promotion moves code only: '{project_name}' keeps its own secrets, scaling "
-        f"and profile. Follow the rollout with [bold]{PIPECAT_CLI_NAME} agent status "
+        f"and profile. Follow the rollout with [bold]{PIPECAT_CLI_NAME} project status "
         f"{project_name}[/bold].[/dim]"
     )
 
@@ -446,9 +237,9 @@ async def previews_status(
     org = organization or config.get("org")
 
     with console.status(f"[dim]Looking up project '{project_name}'[/dim]", spinner="dots"):
-        services = await _load_services(org, include=["git"])
+        services = await load_services(org, include=["git"])
 
-    project = _find_project(services, project_name, org)
+    project = find_project(services, project_name, org)
     git = project.get("git") or {}
     previews = [
         e for e in environments_of(services, project) if is_preview_name(e.get("environmentName"))
@@ -480,7 +271,7 @@ async def previews_status(
     console.print(f"Secret Set: {git.get('previewSecretSet')}")
     console.print(f"Bot Pull Requests: {'yes' if git.get('previewBotPullRequests') else 'no'}")
     console.print(f"Watch Paths: {', '.join(git.get('watchPaths') or []) or 'all files'}")
-    _print_environments(services, project)
+    print_environments(services, project)
 
 
 @project_previews_cli.command(
@@ -567,9 +358,9 @@ async def watch_paths_show(
     org = organization or config.get("org")
 
     with console.status(f"[dim]Looking up project '{project_name}'[/dim]", spinner="dots"):
-        services = await _load_services(org, include=["git"])
+        services = await load_services(org, include=["git"])
 
-    project = _find_project(services, project_name, org)
+    project = find_project(services, project_name, org)
     git = project.get("git") or {}
     watch_paths = git.get("watchPaths") or []
 
