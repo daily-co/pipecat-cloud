@@ -16,6 +16,7 @@ from rich.text import Text
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
+from pipecatcloud._utils.base_image import warn_latest_base_image
 from pipecatcloud._utils.build_utils import (
     BuildStatus,
     create_deterministic_tarball,
@@ -128,6 +129,8 @@ async def _cloud_build_flow(
             "  https://github.com/pipecat-ai/pipecat-quickstart"
         )
         return None
+
+    warn_latest_base_image(dockerfile_path)
 
     # Show build summary and confirm in interactive mode
     if not auto_yes:
