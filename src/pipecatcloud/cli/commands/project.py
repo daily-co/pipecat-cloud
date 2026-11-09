@@ -211,7 +211,13 @@ async def env_promote(
         f"[dim]Promoting [bold]{environment_name}[/bold] to [bold]{project_name}[/bold][/dim]",
         spinner="dots",
     ):
-        result, error = await API.agent_update_source(agent_name=project_name, org=org, **source)
+        # `source` is the HTTP payload's shape; the wrapper takes Python names.
+        result, error = await API.agent_update_source(
+            agent_name=project_name,
+            org=org,
+            build_id=source.get("buildId"),
+            image=source.get("image"),
+        )
         if error:
             raise typer.Exit(1)
 
@@ -397,7 +403,9 @@ async def watch_paths_show(
 async def watch_paths_set(
     project_name: str = PROJECT_ARGUMENT,
     paths: list[str] = typer.Argument(
-        ..., help="Repository paths a change must touch to deploy e.g. 'bot/' 'shared/'"
+        ...,
+        help="Glob patterns a change must match to deploy, relative to the "
+        "repository root, e.g. 'bot/**' 'shared/**'. A leading '!' excludes.",
     ),
     organization: str = ORGANIZATION_OPTION,
 ):

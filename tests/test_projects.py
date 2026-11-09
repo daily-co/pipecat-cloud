@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 # Import from source, not installed package
@@ -107,7 +108,7 @@ def status_payload(**overrides) -> dict:
 PROJECT = service(
     "my-bot",
     "s-1",
-    git=binding(previewSecretSet="preview-secrets", watchPaths=["bot/"]),
+    git=binding(previewSecretSet="preview-secrets", watchPaths=["bot/**"]),
     deployed_sha="abc1234def",
 )
 STAGING = service(
@@ -260,6 +261,13 @@ class TestDeprecatedAlias:
             result = runner.invoke(entrypoint_cli_typer, ["project", "list"])
         assert "deprecated" not in result.output
 
+    def test_the_warning_stays_off_stdout(self):
+        with api_mock() as api:
+            api.agents = AsyncMock(return_value=(ALL_SERVICES, None))
+            result = runner.invoke(entrypoint_cli_typer, ["agent", "list"])
+        assert "deprecated" in result.stderr
+        assert "deprecated" not in result.stdout
+
     def test_the_alias_runs_the_same_command(self):
         with api_mock() as api:
             api.environment_link = AsyncMock(return_value=({}, None))
@@ -296,6 +304,27 @@ class TestEnvironmentAddressing:
             )
         assert result.exit_code == 0
         assert api.agent_logs.await_args.kwargs["agent_name"] == "my-bot-pr-7"
+
+    def test_sessions_follow_the_environment(self):
+        with api_mock() as api:
+            api.agents = AsyncMock(return_value=(ALL_SERVICES, None))
+            api.agent_sessions = AsyncMock(return_value=({"sessions": []}, None))
+            result = runner.invoke(
+                entrypoint_cli_typer, ["project", "sessions", "my-bot", "--env", "staging"]
+            )
+        assert result.exit_code == 0
+        assert api.agent_sessions.await_args.kwargs["agent_name"] == "my-bot-staging"
+
+    def test_delete_follows_the_environment(self):
+        with api_mock() as api:
+            api.agents = AsyncMock(return_value=(ALL_SERVICES, None))
+            api.agent_delete = AsyncMock(return_value=({"ok": True}, None))
+            result = runner.invoke(
+                entrypoint_cli_typer,
+                ["project", "delete", "my-bot", "--env", "staging", "--force"],
+            )
+        assert result.exit_code == 0
+        assert api.agent_delete.await_args.kwargs["agent_name"] == "my-bot-staging"
 
     def test_without_env_nothing_is_looked_up(self):
         with api_mock() as api:
@@ -430,7 +459,8 @@ class TestPromote:
         assert api.agent_update_source.await_args.kwargs == {
             "agent_name": "my-bot",
             "org": "test-org",
-            "buildId": BUILD_ID,
+            "build_id": BUILD_ID,
+            "image": None,
         }
 
     def test_promotes_an_image_when_there_is_no_build(self):
@@ -444,6 +474,7 @@ class TestPromote:
             )
         assert result.exit_code == 0
         assert api.agent_update_source.await_args.kwargs["image"] == "docker.io/me/bot:2"
+        assert api.agent_update_source.await_args.kwargs["build_id"] is None
 
     def test_nothing_deployed_is_refused(self):
         with api_mock() as api:
@@ -455,6 +486,23 @@ class TestPromote:
             )
         assert result.exit_code == 1
         assert "nothing deployed" in result.output
+        api.agent_update_source.assert_not_awaited()
+
+    def test_declining_the_prompt_deploys_nothing(self):
+        staging = dict(STAGING, deployment={"buildId": BUILD_ID, "manifest": {"spec": {}}})
+        with (
+            api_mock() as api,
+            patch("pipecatcloud._utils.console_utils.stdin_is_interactive", return_value=True),
+            patch("pipecatcloud.cli.commands.project.questionary") as prompt,
+        ):
+            prompt.confirm.return_value.ask_async = AsyncMock(return_value=False)
+            api.agents = AsyncMock(return_value=([PROJECT, staging], None))
+            api.agent_update_source = AsyncMock()
+            result = runner.invoke(
+                entrypoint_cli_typer, ["project", "env", "promote", "my-bot", "staging"]
+            )
+        assert result.exit_code == 1
+        assert f"build {BUILD_ID}" in prompt.confirm.call_args.args[0]
         api.agent_update_source.assert_not_awaited()
 
     def test_confirmation_is_required_without_force(self):
@@ -504,6 +552,24 @@ class TestPreviews:
         assert result.exit_code == 0
         assert api.previews_update.await_args.kwargs["bot_pull_requests"] is True
 
+    def test_bot_pull_requests_is_turned_off_when_refused(self):
+        with api_mock() as api:
+            api.previews_update = AsyncMock(return_value=({}, None))
+            result = runner.invoke(
+                entrypoint_cli_typer,
+                [
+                    "project",
+                    "previews",
+                    "enable",
+                    "my-bot",
+                    "--secret-set",
+                    "preview-secrets",
+                    "--no-bot-pull-requests",
+                ],
+            )
+        assert result.exit_code == 0
+        assert api.previews_update.await_args.kwargs["bot_pull_requests"] is False
+
     def test_disable_clears_the_secret_set(self):
         with api_mock() as api:
             api.previews_update = AsyncMock(return_value=({}, None))
@@ -538,14 +604,14 @@ class TestWatchPaths:
     def test_set_sends_every_path(self):
         with api_mock() as api:
             api.watch_paths_update = AsyncMock(
-                return_value=({"watchPaths": ["bot/", "shared/"]}, None)
+                return_value=({"watchPaths": ["bot/**", "shared/**"]}, None)
             )
             result = runner.invoke(
                 entrypoint_cli_typer,
-                ["project", "watch-paths", "set", "my-bot", "bot/", "shared/"],
+                ["project", "watch-paths", "set", "my-bot", "bot/**", "shared/**"],
             )
         assert result.exit_code == 0
-        assert api.watch_paths_update.await_args.kwargs["watch_paths"] == ["bot/", "shared/"]
+        assert api.watch_paths_update.await_args.kwargs["watch_paths"] == ["bot/**", "shared/**"]
 
     def test_clear_sends_an_empty_list(self):
         with api_mock() as api:
@@ -588,13 +654,13 @@ class TestStatusCarriesTheProject:
 
     def test_status_shows_watch_paths_and_previews(self):
         payload = status_payload(
-            git=binding(previewSecretSet="preview-secrets", watchPaths=["bot/"])
+            git=binding(previewSecretSet="preview-secrets", watchPaths=["bot/**"])
         )
         with api_mock() as api:
             api.agent = AsyncMock(return_value=(payload, None))
             result = runner.invoke(entrypoint_cli_typer, ["project", "status", "my-bot"])
         assert result.exit_code == 0
-        assert "Watch Paths: bot/" in result.output
+        assert "Watch Paths: bot/**" in result.output
         assert "PR Previews: on (secrets: preview-secrets)" in result.output
         assert "Preview Bot Pull Requests: no" in result.output
 
@@ -611,3 +677,178 @@ class TestStatusCarriesTheProject:
         assert result.exit_code == 0
         assert "Pull Request: #7" in result.output
         assert "PR Previews" not in result.output
+
+
+@pytest.mark.asyncio
+class TestTheRequestsTheApiSends:
+    """The new endpoints through the real wrapper, transport mocked and nothing else.
+
+    `create_api_method()` catches every exception and answers `(None, None)`,
+    which a command reads as success. A keyword a wrapped method doesn't take
+    therefore looks like a clean no-op, and a mocked `API` accepts it happily
+    — only going through the real wrapper shows the request that was never
+    sent.
+    """
+
+    @staticmethod
+    def api():
+        from pipecatcloud.api import _API
+
+        return _API("fake-token", is_cli=True)
+
+    @staticmethod
+    def sent(request) -> tuple[str, str, dict | None]:
+        method, url = request.await_args.args
+        return method, url, request.await_args.kwargs.get("json")
+
+    async def test_promoting_a_build_posts_the_build_id(self):
+        api = self.api()
+        with patch.object(api, "_base_request", new_callable=AsyncMock) as request:
+            request.return_value = {"name": "my-bot"}
+            result, error = await api.agent_update_source(
+                agent_name="my-bot", org="test-org", build_id=BUILD_ID
+            )
+        assert (result, error) == ({"name": "my-bot"}, None)
+        method, url, payload = self.sent(request)
+        assert method == "POST"
+        assert url.endswith("/v1/organizations/test-org/services/my-bot")
+        assert payload == {"buildId": BUILD_ID}
+
+    async def test_promoting_an_image_posts_the_image(self):
+        api = self.api()
+        with patch.object(api, "_base_request", new_callable=AsyncMock) as request:
+            request.return_value = {}
+            await api.agent_update_source(
+                agent_name="my-bot", org="test-org", image="docker.io/me/bot:2"
+            )
+        assert self.sent(request)[2] == {"image": "docker.io/me/bot:2"}
+
+    async def test_linking_an_environment_puts_the_parent_and_name(self):
+        api = self.api()
+        with patch.object(api, "_base_request", new_callable=AsyncMock) as request:
+            request.return_value = {}
+            await api.environment_link(
+                agent_name="my-bot-staging",
+                org="test-org",
+                parent="my-bot",
+                environment_name="staging",
+            )
+        method, url, payload = self.sent(request)
+        assert method == "PUT"
+        assert url.endswith("/v1/organizations/test-org/services/my-bot-staging/parent")
+        assert payload == {"parent": "my-bot", "environmentName": "staging"}
+
+    async def test_unlinking_an_environment_deletes_the_parent(self):
+        api = self.api()
+        with patch.object(api, "_base_request", new_callable=AsyncMock) as request:
+            request.return_value = {}
+            await api.environment_unlink(agent_name="my-bot-staging", org="test-org")
+        method, url, payload = self.sent(request)
+        assert method == "DELETE"
+        assert url.endswith("/v1/organizations/test-org/services/my-bot-staging/parent")
+        assert payload is None
+
+    async def test_turning_previews_on_puts_the_secret_set(self):
+        api = self.api()
+        with patch.object(api, "_base_request", new_callable=AsyncMock) as request:
+            request.return_value = {}
+            await api.previews_update(
+                agent_name="my-bot",
+                org="test-org",
+                secret_set="preview-secrets",
+                bot_pull_requests=True,
+            )
+        method, url, payload = self.sent(request)
+        assert method == "PUT"
+        assert url.endswith("/v1/organizations/test-org/services/my-bot/previews")
+        assert payload == {"secretSet": "preview-secrets", "botPullRequests": True}
+
+    async def test_leaving_bot_pull_requests_unsaid_keeps_the_stored_value(self):
+        api = self.api()
+        with patch.object(api, "_base_request", new_callable=AsyncMock) as request:
+            request.return_value = {}
+            await api.previews_update(
+                agent_name="my-bot",
+                org="test-org",
+                secret_set="preview-secrets",
+                bot_pull_requests=None,
+            )
+        assert self.sent(request)[2] == {"secretSet": "preview-secrets"}
+
+    async def test_turning_previews_off_puts_a_null_secret_set(self):
+        api = self.api()
+        with patch.object(api, "_base_request", new_callable=AsyncMock) as request:
+            request.return_value = {}
+            await api.previews_update(
+                agent_name="my-bot", org="test-org", secret_set=None, bot_pull_requests=None
+            )
+        assert self.sent(request)[2] == {"secretSet": None}
+
+    async def test_watch_paths_put_the_whole_list(self):
+        api = self.api()
+        with patch.object(api, "_base_request", new_callable=AsyncMock) as request:
+            request.return_value = {"watchPaths": ["bot/**"]}
+            result, _ = await api.watch_paths_update(
+                agent_name="my-bot", org="test-org", watch_paths=["bot/**"]
+            )
+        assert result == {"watchPaths": ["bot/**"]}
+        method, url, payload = self.sent(request)
+        assert method == "PUT"
+        assert url.endswith("/v1/organizations/test-org/services/my-bot/watch-paths")
+        assert payload == {"watchPaths": ["bot/**"]}
+
+    async def test_an_api_error_is_returned_rather_than_raised(self):
+        api = self.api()
+        refusal = {"code": "409", "error": "already an environment"}
+
+        async def refuse(*args, **kwargs):
+            # The transport records the refusal on the client, then raises;
+            # the wrapper hands the recorded error back to the command.
+            api.error = refusal
+            raise Exception("409")
+
+        with patch.object(api, "_base_request", side_effect=refuse):
+            result, error = await api.bubble_error().environment_link(
+                agent_name="my-bot-staging",
+                org="test-org",
+                parent="my-bot",
+                environment_name="staging",
+            )
+        assert result is None
+        assert error == refusal
+
+
+@pytest.mark.asyncio
+class TestPromotionReachesTheApi:
+    """`env promote` end to end, with only the transport mocked.
+
+    The regression for the keyword mismatch: the command used to spread the
+    HTTP payload's own keys into the wrapper, which raised locally, was
+    swallowed, and printed success with nothing deployed.
+    """
+
+    async def test_a_build_promotion_posts_it_to_the_project(self):
+        from pipecatcloud.cli.api import API
+
+        staging = dict(STAGING, deployment={"buildId": BUILD_ID, "manifest": {"spec": {}}})
+        sent: list[tuple[str, str, dict | None]] = []
+
+        async def transport(method, url, **kwargs):
+            sent.append((method, url, kwargs.get("json")))
+            if method == "GET":
+                return {"services": [PROJECT, staging]}
+            return {"name": "my-bot"}
+
+        with patch.object(API, "_base_request", side_effect=transport):
+            result = runner.invoke(
+                entrypoint_cli_typer,
+                ["project", "env", "promote", "my-bot", "staging", "--force"],
+            )
+
+        assert result.exit_code == 0, result.output
+        writes = [(url, payload) for method, url, payload in sent if method == "POST"]
+        assert len(writes) == 1
+        url, payload = writes[0]
+        assert url.endswith("/v1/organizations/test-org/services/my-bot")
+        assert payload == {"buildId": BUILD_ID}
+        assert f"Promoted build {BUILD_ID}" in result.output

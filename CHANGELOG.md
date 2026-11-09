@@ -40,8 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `project previews disable` turns them off and deletes the previews it has.
   `project previews status` shows the setting and the open previews.
 
-- `project watch-paths set <project> <path>...` sets the paths a change has to
-  touch to deploy, `clear` removes them, and `show` prints them. They are a
+- `project watch-paths set <project> <pattern>...` sets the glob patterns a
+  change has to match to deploy, `clear` removes them, and `show` prints them. They are a
   project setting: its environments and previews follow the same list.
 
 - `project list --all` includes environments and PR previews. Without it the

@@ -1555,7 +1555,7 @@ class _API:
         Args:
             agent_name: Name of the project
             org: Organization ID
-            watch_paths: Repository paths a change must touch to deploy
+            watch_paths: Glob patterns a change must match to deploy
         Returns:
             watchPaths, as stored
         """
