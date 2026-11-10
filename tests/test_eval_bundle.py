@@ -58,6 +58,11 @@ class TestWhatIsBundled:
         bundle = build_bundle(tree / "calls.yaml")
         assert sorted(bundle.files) == ["calls.yaml", "parts/a.yaml", "parts/b.yaml"]
 
+    def test_the_parsed_scenario_file_has_its_includes_expanded(self, tree):
+        bundle = build_bundle(tree / "calls.yaml")
+        assert bundle.data["judge"] == {"text": "judge"}
+        assert [s["name"] for s in bundle.data["scenarios"]] == ["book", "hours"]
+
     def test_include_going_up_stays_inside_the_root(self, tree):
         write(tree / "shared" / "judge.yaml", "text: shared\n")
         write(

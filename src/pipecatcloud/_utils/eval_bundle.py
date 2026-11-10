@@ -69,6 +69,9 @@ class Bundle:
     files: dict[str, str] = field(default_factory=dict)
     scenario_path: str = ""
     scenario_names: list[str] = field(default_factory=list)
+    # The scenario file as parsed, its includes expanded the way the service
+    # expands them: what describes each scenario before it runs.
+    data: Any = None
 
     @property
     def size(self) -> int:
@@ -301,4 +304,5 @@ def build_bundle(scenario_file: Path, root: Path | None = None) -> Bundle:
     bundle = collector.bundle
     bundle.scenario_path = key
     bundle.scenario_names = _scenario_names(data, key)
+    bundle.data = data
     return bundle
