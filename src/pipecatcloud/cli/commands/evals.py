@@ -4,29 +4,41 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""`pipecat cloud eval`: run a scenario against an agent and read the verdict.
+"""`pipecat cloud eval`: run scenarios against an agent and read the verdicts.
 
-Exit codes of `run --wait` and `status --wait`:
+`run` starts a run for each scenario it's given, every one in the file unless
+`--scenario` names some, and the service runs them side by side. With `--wait`
+it follows them the way `pipecat eval` does: the scenarios' settings, a row a
+run, a summary, and what went wrong with each run that didn't pass.
 
-    0  the verdict is `passed` or `skipped`
-    1  the verdict is `failed`
-    2  the run ended without a verdict (cancelled, expired, refused, ...)
+Exit codes of `run --wait` and `status --wait`, for several runs the first
+that applies:
+
     3  an API error, or a usage error (including a bundle that can't be sent)
+    1  a verdict is `failed`
+    2  a run ended without a verdict (cancelled, expired, refused, ...)
+    0  every verdict is `passed` or `skipped`
 
-Without `--wait`, 0 means the request was accepted. Ctrl-C while waiting exits
-130 and leaves the run going.
+Without `--wait`, 0 means every request was accepted. Ctrl-C while waiting
+exits 130 and leaves the runs going.
 """
 
 import asyncio
 import time
+from contextlib import nullcontext
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, NoReturn
 
 import typer
 from rich import box
+from rich.console import Group
+from rich.live import Live
 from rich.markup import escape
+from rich.spinner import Spinner
 from rich.table import Table
+from rich.text import Text
 from typer.core import TyperCommand, TyperGroup
 
 # Typer 0.29 bundles its own copy of click and raises that copy's exceptions,
@@ -60,6 +72,14 @@ EXIT_ERROR = 3
 EXIT_INTERRUPTED = 130
 
 LIVE_STATUSES = ("queued", "starting", "running")
+
+
+def _print(*objects: Any, **kwargs: Any) -> None:
+    """Print without rich's highlighting, which colors numbers, quotes and ids on its
+    own. `pipecat eval` leaves values uncolored; only the markup here colors."""
+    kwargs.setdefault("highlight", False)
+    console.print(*objects, **kwargs)
+
 
 # Polling starts quickly, since a queued run is taken up within seconds, and
 # backs off to a steady pace: a run takes from tens of seconds to minutes.
@@ -220,6 +240,14 @@ def _status_command(agent: str, run_id: str) -> str:
     return f"{PIPECAT_CLI_NAME} eval status {run_id} --agent {agent} --wait"
 
 
+def _conversation_command(agent: str, run_id: str) -> str:
+    return f"{PIPECAT_CLI_NAME} eval status {run_id} --agent {agent} -v"
+
+
+def _logs_command(agent: str, session_id: str) -> str:
+    return f"{PIPECAT_CLI_NAME} agent logs {agent} --session-id {session_id}"
+
+
 def _parse_params(items: list[str]) -> dict[str, int | float]:
     params: dict[str, int | float] = {}
     for item in items:
@@ -239,19 +267,19 @@ def _parse_params(items: list[str]) -> dict[str, int | float]:
     return params
 
 
-def _scenario_name(requested: str | None, names: list[str], scenario_path: str) -> str:
-    if requested is not None:
-        if requested not in names:
-            held = ", ".join(names) if names else "none"
-            _fail(f"{scenario_path!r} has no scenario named {requested!r}. It holds: {held}.")
-        return requested
-    if len(names) == 1:
-        return names[0]
+def _selected_scenarios(requested: list[str], names: list[str], scenario_path: str) -> list[str]:
+    """The scenarios to run: those named with --scenario, or every one in the file."""
     if not names:
         _fail(f"{scenario_path!r} holds no named scenarios.")
-    _fail(
-        f"{scenario_path!r} holds several scenarios. Choose one with --scenario: {', '.join(names)}."
-    )
+    if not requested:
+        return names
+    unknown = [r for r in requested if r not in names]
+    if unknown:
+        _fail(
+            f"{scenario_path!r} has no scenario named {', '.join(map(repr, unknown))}. "
+            f"It holds: {', '.join(names)}."
+        )
+    return list(dict.fromkeys(requested))
 
 
 # ---- Rendering ----
@@ -267,132 +295,499 @@ def _table(columns: list[str], rows: list[tuple], title: str | None = None) -> N
         table.add_column(column, overflow="fold")
     for row in rows:
         table.add_row(*(escape(str(cell)) for cell in row))
-    console.print(table)
+    _print(table)
 
 
-def _verdict_line(run: dict) -> str:
-    status = run.get("status")
-    verdict = run.get("verdict")
-    if _is_live(run):
-        return f"[cyan]{escape(str(status)).upper()}[/cyan]"
-    if verdict == "passed":
-        return "[bold green]PASSED[/bold green]"
-    if verdict == "skipped":
-        return "[bold yellow]SKIPPED[/bold yellow]"
-    if verdict == "failed":
-        return "[bold red]FAILED[/bold red]"
-    return f"[bold yellow]NO VERDICT[/bold yellow] [dim]({escape(str(status))})[/dim]"
+def _fields(rows: list[tuple[str, str | None]]) -> None:
+    """Key/value rows: bold keys and no header in rich mode, as `agent status` shows
+    them; Field/Value records otherwise."""
+    rows_set = [(k, str(v)) for k, v in rows if v]
+    if not console.rich_output:
+        console.print_records(["Field", "Value"], rows_set)
+        return
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="bold")
+    grid.add_column(overflow="fold")
+    for key, value in rows_set:
+        grid.add_row(key, escape(value))
+    _print(grid)
 
 
-def _render_run(run: dict, agent: str) -> None:
-    """The run for a human: verdict, reason, failures with their turns, metrics."""
-    run_id = str(run.get("id"))
-    console.print(_verdict_line(run))
+def _fmt_seconds(seconds: float) -> str:
+    """An elapsed time the way `pipecat eval` writes one: 57.0s, 1m 29s.
 
-    scenario = run.get("scenarioPath") or ""
-    if run.get("scenarioName"):
-        scenario = f"{scenario} ({run['scenarioName']})"
-    rows: list[tuple[str, str | None]] = [
-        ("Run", run_id),
-        ("Agent", agent),
-        ("Kind", run.get("kind")),
-        ("Status", run.get("status")),
-        ("Scenario", scenario),
-        ("Session", run.get("sessionId")),
-        ("Created", format_timestamp(run["createdAt"]) if run.get("createdAt") else None),
-        ("Finished", format_timestamp(run["finishedAt"]) if run.get("finishedAt") else None),
+    Tenths under a minute, then minutes and seconds, deciding on the rounded
+    value so nothing ever reads 60.0s.
+    """
+    tenths = round(seconds, 1)
+    if tenths < 60:
+        return f"{tenths:.1f}s"
+    minutes, secs = divmod(int(round(seconds)), 60)
+    return f"{minutes}m {secs:02d}s"
+
+
+def _duration_ms(run: dict) -> int | None:
+    """How long the run took by the server's clock, from leaving the queue to its end."""
+    begun = _parse_time(run.get("startedAt")) or _parse_time(run.get("createdAt"))
+    ended = _parse_time(run.get("finishedAt"))
+    if not begun or not ended or ended < begun:
+        return None
+    return round((ended - begun).total_seconds() * 1000)
+
+
+def _run_label(run: dict) -> str:
+    """A run's scenario as `pipecat eval` names it, <file>/<scenario>, from the run alone."""
+    path = str(run.get("scenarioPath") or "")
+    stem = Path(path).stem if path else ""
+    name = run.get("scenarioName")
+    if stem and name:
+        return f"{stem}/{name}"
+    return stem or str(name or "")
+
+
+# The marks and colors `pipecat eval` gives an outcome.
+_MARK = {"passed": ("✓", "green"), "failed": ("✗", "red"), "skipped": ("⊘", "yellow")}
+
+
+def _mark(run: dict) -> str:
+    mark, color = _MARK.get(run.get("verdict") or "", ("⊘", "yellow"))
+    return f"[{color}]{mark}[/{color}]"
+
+
+# ---- The scenarios, before they run ----
+
+
+def _scenario_view(data: Any, name: str) -> dict:
+    """A scenario with its file's defaults: a key the scenario sets replaces the file's."""
+    if not isinstance(data, dict):
+        return {}
+    top = {k: v for k, v in data.items() if k not in ("name", "scenarios")}
+    for entry in data.get("scenarios") or []:
+        if isinstance(entry, dict) and entry.get("name") == name:
+            return {**top, **{k: v for k, v in entry.items() if k != "name"}}
+    return top
+
+
+def _service(block: Any, default: str | None = None, *, second: str) -> str | None:
+    """A service block as `pipecat eval` names it: service/voice, or factory:path."""
+    if not isinstance(block, dict):
+        return default
+    if block.get("factory"):
+        return f"factory:{block['factory']}"
+    service = block.get("service") or default
+    other = block.get(second)
+    return f"{service}/{other}" if service and other else service
+
+
+# `pipecat eval`'s palette for a scenario's config lines: the labels bold, the
+# separators dim, and each keyword one hue per category; values uncolored.
+_CFG_MODALITY = "yellow"
+_CFG_SERVICE = "green"  # speech (TTS) and transcription (STT)
+_CFG_EVAL = "magenta"  # the LLMs: the judge's eval and a simulation's persona
+_CFG_LIMIT = "cyan"  # a simulation's run caps
+
+# A config line's segment: keyword, value, and the style its keyword is painted with.
+_Segment = tuple[str, str, str]
+
+
+def _config_lines(view: dict) -> list[tuple[str, list[_Segment] | str]]:
+    """The user, judge and goal lines `pipecat eval` prints for a scenario.
+
+    The caller and the judge are hosted on Pipecat Cloud, so they're shown as
+    such: a scenario's own simulator: and judge.eval: aren't what runs there.
+    """
+    simulated = "persona" in view and "turns" not in view
+    user_block, judge_block = view.get("user"), view.get("judge")
+    user: dict = user_block if isinstance(user_block, dict) else {}
+    judge: dict = judge_block if isinstance(judge_block, dict) else {}
+
+    user_mode = str(user.get("modality") or "text")
+    user_segs: list[_Segment] = [("modality", user_mode, _CFG_MODALITY)]
+    if user_mode == "audio":
+        speech = _service(user.get("speech"), second="voice")
+        if speech:
+            user_segs.append(("speech", speech, _CFG_SERVICE))
+    if simulated:
+        user_segs.append(("persona", "hosted", _CFG_EVAL))
+        for key in ("max_turns", "max_duration_s", "max_silence_s"):
+            if view.get(key) is not None:
+                user_segs.append((key, str(view[key]), _CFG_LIMIT))
+
+    judge_mode = str(judge.get("modality") or "text")
+    judge_segs: list[_Segment] = [("modality", judge_mode, _CFG_MODALITY)]
+    if judge_mode == "audio":
+        transcription = _service(judge.get("transcription"), "moonshine", second="model")
+        judge_segs.append(("transcription", str(transcription), _CFG_SERVICE))
+    judge_segs.append(("eval", "hosted", _CFG_EVAL))
+
+    lines: list[tuple[str, list[_Segment] | str]] = [("user", user_segs), ("judge", judge_segs)]
+    goal = view.get("goal")
+    if simulated and isinstance(goal, str) and goal.strip():
+        lines.append(("goal", " ".join(goal.split())))
+    return lines
+
+
+def _config_markup(label: str, body: list[_Segment] | str) -> str:
+    """One config line, `label -> key: value | key: value`, painted as `pipecat eval` paints it."""
+    if isinstance(body, str):
+        text = escape(body)
+    else:
+        text = "[dim] | [/dim]".join(
+            f"[{style}]{escape(key)}:[/{style}] {escape(value)}" for key, value, style in body
+        )
+    return f"[bold]{label:<5}[/bold][dim] -> [/dim]{text}"
+
+
+def _print_scenario_header(scenarios: list[tuple[str, dict]]) -> None:
+    """The scenarios about to run, grouped by kind, as `pipecat eval` lists them."""
+    groups: dict[str, list[tuple[str, dict]]] = {"Scripted": [], "Simulated": []}
+    for label, view in scenarios:
+        kind = "Simulated" if "persona" in view and "turns" not in view else "Scripted"
+        groups[kind].append((label, view))
+    for kind, entries in groups.items():
+        if not entries:
+            continue
+        _print(f"{kind} scenarios:")
+        for label, view in entries:
+            _print(f"  [bold cyan]{escape(label)}:[/bold cyan]")
+            for key, body in _config_lines(view):
+                _print(f"    {_config_markup(key, body)}")
+        _print()
+
+
+def _print_settings(agent: str, runs: int) -> None:
+    """How the runs will go, in `pipecat eval suite`'s Settings block."""
+    _print("Settings:")
+    for label, value in (("agent", agent), ("runs", str(runs))):
+        _print(f"  [bold]{label:<11}[/bold] -> {escape(value)}")
+    _print()
+
+
+# ---- The runs, while and after they run ----
+
+
+@dataclass
+class _Row:
+    """One run on the table: its scenario, and the run, or why it couldn't start."""
+
+    label: str
+    run: dict | None = None
+    error: str | None = None
+    first_running: float | None = None
+    spinner: Spinner = field(default_factory=lambda: Spinner("dots", style="cyan"))
+    printed: bool = False
+
+    @property
+    def ended(self) -> bool:
+        return self.error is not None or (self.run is not None and not _is_live(self.run))
+
+    @property
+    def passed(self) -> bool:
+        return self.run is not None and self.run.get("verdict") == "passed"
+
+
+def _row_cells(row: _Row, agent: str) -> tuple[Any, str, str, str]:
+    """The mark, agent, scenario and time of a row, in rich markup or a renderable."""
+    label = f"[cyan]{escape(row.label)}[/cyan]"
+    if row.error is not None:
+        return "[red]✗[/red]", escape(agent), label, f"[red]{escape(row.error)}[/red]"
+    run = row.run or {}
+    status = str(run.get("status"))
+    if not _is_live(run):
+        if run.get("verdict"):
+            ms = _duration_ms(run)
+            when = f"[dim]{ms}ms[/dim]" if ms is not None else ""
+        else:
+            when = f"[yellow]no verdict ({escape(status)})[/yellow]"
+        return _mark(run), escape(agent), label, when
+    if status == "running":
+        # Padded to the width of `2m 04s`, as `pipecat eval` pads it, so nothing beside it moves.
+        since = row.first_running if row.first_running is not None else _monotonic()
+        return (
+            row.spinner,
+            escape(agent),
+            label,
+            f"[dim]{_fmt_seconds(_monotonic() - since):>6}[/dim]",
+        )
+    return "[dim]·[/dim]", escape(agent), label, f"[dim]{escape(status)}[/dim]"
+
+
+def _summary_text(rows: list[_Row], elapsed: float) -> str:
+    total = len(rows)
+    passed = sum(r.passed for r in rows)
+    done = sum(r.ended for r in rows)
+    return f"  {passed}/{total} passed  ·  {done}/{total} done  ·  {_fmt_seconds(elapsed)}"
+
+
+class _RunsView:
+    """The runs as `pipecat eval suite` shows them, redrawn on every refresh.
+
+    Each running row's clock and spinner are read at render time, so they move
+    between polls, which back off to seconds apart.
+    """
+
+    def __init__(self, rows: list[_Row], agent: str, started: float):
+        self.rows = rows
+        self.agent = agent
+        self.started = started
+        self.final: float | None = None
+
+    def __rich__(self) -> Group:
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(no_wrap=True)
+        grid.add_column(no_wrap=True)
+        grid.add_column(overflow="fold")
+        for row in self.rows:
+            grid.add_row(*_row_cells(row, self.agent))
+        elapsed = (self.final if self.final is not None else _monotonic()) - self.started
+        return Group(grid, Text(""), Text(_summary_text(self.rows, elapsed), style="bold"))
+
+
+def _print_row_line(row: _Row, agent: str) -> None:
+    """A finished row as one line, for output that isn't a terminal."""
+    mark, agent_cell, label, when = _row_cells(row, agent)
+    ms = _duration_ms(row.run) if row.run is not None and row.run.get("verdict") else None
+    if ms is not None:
+        when = f"[dim]({ms}ms)[/dim]"
+    _print(f"  {mark} {agent_cell} {label} {when}".rstrip())
+    row.printed = True
+
+
+def _score(metric: dict) -> str:
+    score = metric.get("score")
+    return "unscored" if score is None else f"{float(score):.2f}"
+
+
+def _bot_replies(result: dict) -> list[str]:
+    return [
+        str(m.get("content") or "")
+        for m in result.get("conversation") or []
+        if m.get("role") == "assistant"
     ]
-    _table(["Field", "Value"], [(k, v) for k, v in rows if v])
 
+
+def _shorten(text: str, width: int = 60) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
+def _metric_turns(name: str, details: dict) -> tuple[int, list[dict]]:
+    """How many turns a judged metric scored, and the checks on it that failed."""
+    checks = [
+        {**check, "turn": turn.get("turn")}
+        for turn in details.get("turns") or []
+        for check in turn.get("checks") or []
+        if check.get("name") == name
+    ]
+    return len(checks), [c for c in checks if not c.get("passed")]
+
+
+def _print_conversation(conversation: list[dict], indent: str = "      ") -> None:
+    """The conversation, the way `pipecat eval -v` prints a simulation's."""
+    if not conversation:
+        _print(f"{indent}[dim]No conversation to show.[/dim]")
+        return
+    for message in conversation:
+        role = message.get("role")
+        if role == "tool_call":
+            args = ", ".join(f"{k}={v!r}" for k, v in (message.get("arguments") or {}).items())
+            cancelled = " [dim](cancelled)[/dim]" if message.get("cancelled") else ""
+            _print(
+                f"{indent}[dim]→ {escape(str(message.get('name')))}({escape(args)})[/dim]{cancelled}"
+            )
+        else:
+            speaker, color = ("bot", "green") if role == "assistant" else (str(role), "cyan")
+            content = escape(str(message.get("content") or ""))
+            _print(f"{indent}[{color}]{escape(speaker)}:[/{color}] {content}")
+
+
+def _print_details(row: _Row, agent: str, verbose: bool) -> None:
+    """A run and what decided it, as `pipecat eval` lists a failure: its line, then a
+    bullet for each thing that went wrong, or that the judge weighed."""
+    run = row.run or {}
+    result = run.get("result") or {}
+    details = result.get("details") or {}
+    if row.error is not None:
+        _print(
+            f"  [red]✗[/red] {escape(agent)} [cyan]{escape(row.label)}[/cyan] "
+            f"[dim]— {escape(row.error)}[/dim]"
+        )
+        return
+    _print(f"  {_mark(run)} {escape(agent)} [cyan]{escape(row.label)}[/cyan]")
+    bullet = "[green]•[/green]" if row.passed else "[red]•[/red]"
+    if verbose:
+        _print_conversation(result.get("conversation") or [])
+        _print()
+    reason = result.get("reason")
+    if reason and not row.passed:
+        _print(f"      {bullet} {escape(str(reason))}")
+    goal = details.get("goal") or {}
+    if goal.get("criterion"):
+        answer = str(goal.get("verdict") or ("yes" if goal.get("passed") else "no"))
+        color = "green" if goal.get("passed") else "red"
+        _print(
+            f"      {bullet} judge: [{color}]{escape(answer)}[/{color}] [dim]—[/dim] "
+            f"{escape(str(goal['criterion']))}"
+        )
+    for f in details.get("failures") or []:
+        _print(
+            f"      [red]•[/red] turn {escape(str(f.get('turn')))} {escape(str(f.get('name') or ''))} "
+            f"[red]{escape(str(f.get('kind') or ''))}[/red] — {escape(str(f.get('reason') or ''))}"
+        )
+    replies = _bot_replies(result)
+    for m in result.get("metrics") or []:
+        color = "green" if m.get("passed") else "red"
+        scored, failed = _metric_turns(str(m.get("name")), details)
+        # Turn counts when the metric was judged turn by turn; otherwise its reason,
+        # such as a measure's `longest reply 39 words, at most 60`.
+        detail = f"{scored - len(failed)}/{scored} turns" if scored else m.get("reason")
+        tail = f" [dim]{escape(str(detail))}[/dim]" if detail else ""
+        _print(
+            f"      [{color}]•[/{color}] [cyan]{escape(str(m.get('name')))}:[/cyan] "
+            f"[{color}]{_score(m)}[/{color}]{tail}"
+        )
+        for check in failed:
+            turn = check.get("turn")
+            said = replies[turn - 1] if isinstance(turn, int) and 0 < turn <= len(replies) else ""
+            _print(
+                f"          [red]✗[/red] [dim]turn {turn}:[/dim] {escape(_shorten(said))} "
+                f"[dim]— {escape(str(check.get('reason') or ''))}[/dim]"
+            )
+    if result.get("truncated"):
+        _print(
+            "      [dim]The result was too large to keep whole, so the conversation and "
+            "details are left out.[/dim]"
+        )
+    run_id = str(run.get("id"))
+    _print(f"      [dim]run:  {_conversation_command(agent, run_id)}[/dim]")
+    if run.get("sessionId"):
+        _print(f"      [dim]logs: {_logs_command(agent, str(run['sessionId']))}[/dim]")
+
+
+def _report(rows: list[_Row], agent: str, verbose: bool, *, every: bool = False) -> None:
+    """After the table, as `pipecat eval` ends a run: each run that failed or ended
+    without a verdict under a `Failures` heading (every run with -v or `every`),
+    then where to look next."""
+    if every or verbose:
+        for row in rows:
+            _print()
+            _print_details(row, agent, verbose)
+    else:
+        failed = [r for r in rows if r.error is not None or (r.run and exit_code_for(r.run))]
+        if failed:
+            _print()
+            _print(f"  [bold red]Failures ({len(failed)} of {len(rows)}):[/bold red]")
+            for row in failed:
+                _print()
+                _print_details(row, agent, verbose)
+    _print()
+    if len(rows) == 1 and rows[0].run is not None:
+        if not (every or verbose):
+            _print(f"  run: {_conversation_command(agent, str(rows[0].run.get('id')))}")
+    else:
+        _print(f"  runs: {PIPECAT_CLI_NAME} eval list {agent}")
+
+
+def _exit_code(rows: list[_Row]) -> int:
+    """For several runs, the first that applies: an error, a failure, a run without a verdict."""
+    if any(r.error is not None for r in rows):
+        return EXIT_ERROR
+    codes = {exit_code_for(r.run) for r in rows if r.run is not None}
+    for code in (EXIT_FAILED, EXIT_NO_VERDICT):
+        if code in codes:
+            return code
+    return EXIT_PASSED
+
+
+def _render_run(run: dict, agent: str, verbose: bool = False) -> None:
+    """One run, as `status` shows it: its fields while it's live, its outcome once it isn't."""
+    run_id = str(run.get("id"))
     if _is_live(run):
-        console.print(
+        _print(f"[cyan]{escape(str(run.get('status'))).upper()}[/cyan]")
+        scenario = run.get("scenarioPath") or ""
+        if run.get("scenarioName"):
+            scenario = f"{scenario} ({run['scenarioName']})"
+        _fields(
+            [
+                ("Run", run_id),
+                ("Agent", agent),
+                ("Kind", run.get("kind")),
+                ("Status", run.get("status")),
+                ("Scenario", scenario),
+                ("Created", format_timestamp(run["createdAt"]) if run.get("createdAt") else None),
+            ]
+        )
+        _print(
             f"[dim]The run hasn't ended. Wait for it with [bold]{_status_command(agent, run_id)}"
             f"[/bold].[/dim]"
         )
         return
-
-    result = run.get("result") or {}
-    reason = result.get("reason")
-    if reason:
-        console.print(f"[bold]Reason:[/bold] {escape(str(reason))}")
-
-    details = result.get("details") or {}
-    failures = details.get("failures") or []
-    if failures:
-        _table(
-            ["Turn", "Kind", "Check", "Reason"],
-            [(f.get("turn"), f.get("kind"), f.get("name"), f.get("reason")) for f in failures],
-            title="Failures",
-        )
-
-    metrics = result.get("metrics") or []
-    if metrics:
-        _table(
-            ["Metric", "Score", "Result", "Reason"],
-            [
-                (
-                    m.get("name"),
-                    m.get("score"),
-                    "passed" if m.get("passed") else "failed",
-                    m.get("reason"),
-                )
-                for m in metrics
-            ],
-            title="Metrics",
-        )
-
-    if result.get("truncated"):
-        console.print(
-            "[dim]The result was too large to keep whole, so the conversation and details "
-            "are left out.[/dim]"
-        )
-    if run.get("status") == "completed" and not result:
-        console.print("[dim]The run has no result to show.[/dim]")
+    row = _Row(_run_label(run), run=run)
+    _print_row_line(row, agent)
+    _report([row], agent, verbose, every=True)
 
 
 # ---- Waiting ----
 
 
-async def _wait_for_end(org: str, agent: str, run: dict, status_view) -> dict:
-    """Poll a live run until it ends, and return it.
+class _Interrupted(Exception):
+    """Ctrl-C while waiting, with the runs as last seen."""
 
-    The run is polled with a back-off. A poll that fails for a reason that may
-    pass (a dropped connection, a 5xx, a 429) is tried again; a permanent one
-    (a 4xx) ends the wait.
+    def __init__(self, runs: list[dict]):
+        super().__init__("interrupted")
+        self.runs = runs
+
+
+async def _wait_for_end(org: str, agent: str, runs: list[dict], on_update) -> list[dict]:
+    """Poll the live runs until every one has ended, and return them.
+
+    One loop polls each live run in turn, with one back-off. A poll that fails
+    for a reason that may pass (a dropped connection, a 5xx, a 429) is tried
+    again; a permanent one (a 4xx) ends the wait. The runs are polled one after
+    another, not at once, since the API client keeps a failed call's status and
+    Retry-After on itself.
     """
+    runs = list(runs)
     delay = POLL_START_SECONDS
     pause = delay
-    failures = 0
-    limit = _wait_limit(run)
+    failures = [0] * len(runs)
+    limits = [_wait_limit(r) for r in runs]
     started = _monotonic()
-    while _is_live(run):
-        _wait_over(limit, started, run, agent)
-        status_view.update(f"Run is {run.get('status')}")
+    while any(_is_live(r) for r in runs):
+        for i, r in enumerate(runs):
+            if _is_live(r):
+                _wait_over(limits[i], started, r, agent)
+        on_update(runs)
         try:
             await asyncio.sleep(pause)
-            data, error = await API.bubble_error().eval_run_get(org, agent, str(run["id"]))
+            delay = min(delay * POLL_FACTOR, POLL_MAX_SECONDS)
+            pause = delay
+            for i, r in enumerate(runs):
+                if not _is_live(r):
+                    continue
+                data, error = await API.bubble_error().eval_run_get(org, agent, str(r["id"]))
+                if data:
+                    failures[i] = 0
+                    runs[i] = data
+                    continue
+                status = API.error_status
+                permanent = status is not None and 400 <= status < 500 and status != 429
+                failures[i] += 1
+                if permanent or failures[i] >= POLL_MAX_CONSECUTIVE_ERRORS:
+                    if not console.json_output:
+                        API.print_error()
+                    _check(
+                        None, error or {"error": "Lost contact with the API.", "code": "CLI-POLL"}
+                    )
+                retry_after = _parse_retry_after(API.error_retry_after)
+                if retry_after is not None:
+                    pause = max(pause, min(retry_after, POLL_RETRY_AFTER_CAP_SECONDS))
         except (KeyboardInterrupt, asyncio.CancelledError):
             # Ctrl-C reaches a coroutine run by the synchronizer as a
-            # cancellation. Here the latest state the run was seen in is known.
-            status_view.stop()
-            _interrupted(run, agent)
-        delay = min(delay * POLL_FACTOR, POLL_MAX_SECONDS)
-        pause = delay
-        if data:
-            failures = 0
-            run = data
-            continue
-        status = API.error_status
-        permanent = status is not None and 400 <= status < 500 and status != 429
-        failures += 1
-        if permanent or failures >= POLL_MAX_CONSECUTIVE_ERRORS:
-            if not console.json_output:
-                API.print_error()
-            _check(None, error or {"error": "Lost contact with the API.", "code": "CLI-POLL"})
-        retry_after = _parse_retry_after(API.error_retry_after)
-        if retry_after is not None:
-            pause = max(pause, min(retry_after, POLL_RETRY_AFTER_CAP_SECONDS))
-    return run
+            # cancellation. Here the latest state each run was seen in is known.
+            raise _Interrupted(runs) from None
+    on_update(runs)
+    return runs
 
 
 def _monotonic() -> float:
@@ -441,7 +836,7 @@ def _wait_over(limit: float | None, started: float, run: dict, agent: str) -> No
 
 
 def _interrupted_starting(agent: str) -> NoReturn:
-    """Ctrl-C while the run is being created: the request may have got through."""
+    """Ctrl-C while a run is being created: the request may have got through."""
     message = (
         "Stopped while starting the run. The request may have reached the API, so a run "
         f"may exist. See: {PIPECAT_CLI_NAME} eval list {agent}"
@@ -449,33 +844,75 @@ def _interrupted_starting(agent: str) -> NoReturn:
     if console.json_output:
         console.output_json({"error": {"error": message, "code": "CLI-INTERRUPTED"}})
     else:
-        console.print(f"\n[yellow]{escape(message)}[/yellow]")
+        _print(f"\n[yellow]{escape(message)}[/yellow]")
     raise typer.Exit(EXIT_INTERRUPTED)
 
 
-def _interrupted(run: dict, agent: str) -> NoReturn:
-    run_id = str(run.get("id"))
-    console.print(
-        "\n[yellow]Stopped waiting. The run is still going; Ctrl-C doesn't cancel it.[/yellow]"
-    )
-    console.print(f"Check on it: [bold]{_status_command(agent, run_id)}[/bold]")
-    console.print(f"Cancel it:   [bold]{_cancel_command(agent, run_id)}[/bold]")
-    if console.json_output:
-        console.output_json(run)
-    raise typer.Exit(EXIT_INTERRUPTED)
-
-
-async def _wait_and_report(org: str, agent: str, run: dict) -> None:
-    """Wait for a run to end, print it, and exit with its verdict's code."""
-    last = run
-    with console.status("[dim]Waiting for the run[/dim]", spinner="dots") as status_view:
-        if _is_live(run):
-            last = await _wait_for_end(org, agent, run, status_view)
-    if console.json_output:
-        console.output_json(last)
+def _interrupted(runs: list[dict], agent: str, as_list: bool) -> NoReturn:
+    live = [r for r in runs if _is_live(r)] or runs
+    if len(live) == 1:
+        _print(
+            "\n[yellow]Stopped waiting. The run is still going; Ctrl-C doesn't cancel it.[/yellow]"
+        )
+        run_id = str(live[0].get("id"))
+        _print(f"Check on it: [bold]{_status_command(agent, run_id)}[/bold]")
+        _print(f"Cancel it:   [bold]{_cancel_command(agent, run_id)}[/bold]")
     else:
-        _render_run(last, agent)
-    raise typer.Exit(exit_code_for(last))
+        _print(
+            f"\n[yellow]Stopped waiting. {len(live)} runs are still going; Ctrl-C doesn't "
+            "cancel them.[/yellow]"
+        )
+        _print(f"Check on them: [bold]{PIPECAT_CLI_NAME} eval list {agent}[/bold]")
+        for r in live:
+            _print(f"Cancel one:    [bold]{_cancel_command(agent, str(r.get('id')))}[/bold]")
+    if console.json_output:
+        console.output_json(runs if as_list else runs[0])
+    raise typer.Exit(EXIT_INTERRUPTED)
+
+
+async def _follow(org: str, agent: str, rows: list[_Row], verbose: bool, as_list: bool) -> NoReturn:
+    """Wait for the rows' runs to end, showing them as they go, then report and exit."""
+    tracked = [r for r in rows if r.run is not None]
+    started = _monotonic()
+    view = _RunsView(rows, agent, started)
+
+    def on_update(runs: list[dict]) -> None:
+        now = _monotonic()
+        for row, run in zip(tracked, runs):
+            row.run = run
+            if row.first_running is None and run.get("status") == "running":
+                row.first_running = now
+        if console.json_output or console.rich_output:
+            return
+        for row in rows:
+            if row.ended and not row.printed:
+                _print_row_line(row, agent)
+
+    display = (
+        Live(view, console=console, refresh_per_second=8)
+        if console.rich_output and not console.json_output
+        else nullcontext()
+    )
+    try:
+        with display:
+            on_update([r.run for r in tracked if r.run is not None])
+            if any(_is_live(r.run) for r in tracked if r.run is not None):
+                await _wait_for_end(
+                    org, agent, [r.run for r in tracked if r.run is not None], on_update
+                )
+            view.final = _monotonic()
+    except _Interrupted as stopped:
+        _interrupted(stopped.runs, agent, as_list)
+
+    if console.json_output:
+        runs = [r.run for r in tracked if r.run is not None]
+        console.output_json(runs if as_list else runs[0])
+    else:
+        if not console.rich_output:
+            _print()
+            _print(_summary_text(rows, (view.final or _monotonic()) - started))
+        _report(rows, agent, verbose)
+    raise typer.Exit(_exit_code(rows))
 
 
 # ---- Commands ----
@@ -486,12 +923,19 @@ _ORG_OPTION = typer.Option(
 _JSON_OPTION = typer.Option(
     False, "--json", help="Print the run as JSON on stdout (alias for the global --output json)"
 )
+_VERBOSE_OPTION = typer.Option(
+    False,
+    "--verbose",
+    "-v",
+    help="Also print each run's conversation and what decided it, once the runs have ended",
+)
 
 
 @eval_cli.command(
     name="run",
     cls=_EvalCommand,
-    help="Run a scenario against an agent. Pass --session to judge a finished session instead.",
+    help="Run a file's scenarios against an agent, side by side: every one, or those "
+    "named with --scenario. Pass --session to judge a finished session instead.",
 )
 @synchronizer.create_blocking
 async def run(
@@ -499,10 +943,10 @@ async def run(
     scenario_file: Path = typer.Argument(
         ..., help="Scenario YAML file", show_default=False, dir_okay=False
     ),
-    scenario: str = typer.Option(
-        None,
+    scenario: list[str] = typer.Option(
+        [],
         "--scenario",
-        help="Name of the scenario in the file. Optional when the file holds one.",
+        help="A scenario in the file to run. Repeat for several. Every one by default.",
     ),
     session: str = typer.Option(
         None,
@@ -519,7 +963,7 @@ async def run(
         None,
         "--deadline",
         min=1,
-        help="Seconds the run may take, from creation. The API sets the bounds.",
+        help="Seconds each run may take, from creation. The API sets the bounds.",
     ),
     root: Path = typer.Option(
         None,
@@ -528,8 +972,9 @@ async def run(
         "Defaults to the scenario file's directory.",
     ),
     wait: bool = typer.Option(
-        False, "--wait", help="Wait for the run to end and exit with its verdict"
+        False, "--wait", help="Wait for the runs to end and exit with their verdicts"
     ),
+    verbose: bool = _VERBOSE_OPTION,
     organization: str = _ORG_OPTION,
     output_json: bool = _JSON_OPTION,
 ):
@@ -545,39 +990,93 @@ async def run(
         bundle = build_bundle(scenario_file, root)
     except BundleError as e:
         _fail(str(e), code="CLI-BUNDLE")
-    name = _scenario_name(scenario, bundle.scenario_names, bundle.scenario_path)
+    names = _selected_scenarios(scenario, bundle.scenario_names, bundle.scenario_path)
+    if session and len(names) > 1:
+        _fail(
+            f"--session judges one session by one scenario, and {bundle.scenario_path!r} "
+            f"holds several. Choose one with --scenario: {', '.join(names)}."
+        )
 
-    body: dict[str, Any] = {
-        "kind": "session" if session else "synthetic",
-        "files": bundle.files,
-        "scenarioPath": bundle.scenario_path,
-        "scenarioName": name,
-    }
-    if session:
-        body["sessionId"] = session
-    if params:
-        body["params"] = params
-    if deadline is not None:
-        body["deadlineSeconds"] = deadline
+    data = bundle.data if isinstance(bundle.data, dict) else {}
+    file_name = data.get("name") if isinstance(data.get("name"), str) else None
+    file_label = file_name or Path(bundle.scenario_path).stem
+    labels = {name: f"{file_label}/{name}" for name in names}
+    if wait and not console.json_output:
+        _print_scenario_header([(labels[n], _scenario_view(data, n)) for n in names])
+        _print_settings(agent, len(names))
+
+    def body_for(name: str) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "kind": "session" if session else "synthetic",
+            "files": bundle.files,
+            "scenarioPath": bundle.scenario_path,
+            "scenarioName": name,
+        }
+        if session:
+            body["sessionId"] = session
+        if params:
+            body["params"] = params
+        if deadline is not None:
+            body["deadlineSeconds"] = deadline
+        return body
 
     # Creating a run is not idempotent, so a failed request is never repeated here.
+    rows: list[_Row] = []
     try:
-        with console.status(f"[dim]Starting a run on [bold]'{agent}'[/bold][/dim]", spinner="dots"):
-            data, error = await _api().eval_run_create(org, agent, body)
+        if len(names) == 1:
+            with console.status(
+                f"[dim]Starting a run on [bold]'{agent}'[/bold][/dim]", spinner="dots"
+            ):
+                created, error = await _api().eval_run_create(org, agent, body_for(names[0]))
+            rows.append(_Row(labels[names[0]], run=_check(created, error)))
+        else:
+            with console.status(
+                f"[dim]Starting {len(names)} runs on [bold]'{agent}'[/bold][/dim]", spinner="dots"
+            ):
+                for name in names:
+                    created, error = await API.bubble_error().eval_run_create(
+                        org, agent, body_for(name)
+                    )
+                    if created:
+                        rows.append(_Row(labels[name], run=created))
+                    else:
+                        message = (error or {}).get("error") if isinstance(error, dict) else None
+                        rows.append(
+                            _Row(labels[name], error=str(message or "The API didn't answer."))
+                        )
     except (KeyboardInterrupt, asyncio.CancelledError):
         _interrupted_starting(agent)
-    run_data = _check(data, error)
 
+    as_list = len(names) > 1
     if wait:
-        if not console.json_output:
-            console.print(f"Started run [bold]{run_data.get('id')}[/bold]")
-        await _wait_and_report(org, agent, run_data)
-        return
+        await _follow(org, agent, rows, verbose, as_list)
 
+    created_runs = [r.run for r in rows if r.run is not None]
     if console.json_output:
-        console.output_json(run_data)
-        return
-    _render_run(run_data, agent)
+        if as_list:
+            console.output_json(
+                [
+                    r.run if r.run is not None else {"scenarioName": r.label, "error": r.error}
+                    for r in rows
+                ]
+            )
+        else:
+            console.output_json(created_runs[0])
+    elif not as_list:
+        _render_run(created_runs[0], agent, verbose)
+    else:
+        for row in rows:
+            mark, agent_cell, label, _ = _row_cells(row, agent)
+            run_id = row.run.get("id") if row.run else ""
+            detail = (
+                f"[dim]{escape(str(run_id))}[/dim]"
+                if row.run
+                else f"[red]{escape(row.error or '')}[/red]"
+            )
+            _print(f"  {mark} {agent_cell} {label} {detail}")
+        _print(f"[dim]Follow them with [bold]{PIPECAT_CLI_NAME} eval list {agent}[/bold].[/dim]")
+    if any(r.error is not None for r in rows):
+        raise typer.Exit(EXIT_ERROR)
 
 
 @eval_cli.command(
@@ -592,6 +1091,7 @@ async def status(
     wait: bool = typer.Option(
         False, "--wait", help="Wait for the run to end and exit with its verdict"
     ),
+    verbose: bool = _VERBOSE_OPTION,
     organization: str = _ORG_OPTION,
     output_json: bool = _JSON_OPTION,
 ):
@@ -603,13 +1103,12 @@ async def status(
     run_data = _check(data, error)
 
     if wait:
-        await _wait_and_report(org, agent, run_data)
-        return
+        await _follow(org, agent, [_Row(_run_label(run_data), run=run_data)], verbose, False)
 
     if console.json_output:
         console.output_json(run_data)
         return
-    _render_run(run_data, agent)
+    _render_run(run_data, agent, verbose)
 
 
 @eval_cli.command(name="list", cls=_EvalCommand, help="List an agent's eval runs, newest first.")
@@ -637,7 +1136,7 @@ async def list_runs(
 
     runs = result.get("runs") or []
     if not runs:
-        console.print(f"[dim]No eval runs on [bold]'{agent}'[/bold].[/dim]")
+        _print(f"[dim]No eval runs on [bold]'{agent}'[/bold].[/dim]")
         return
     _table(
         ["ID", "Status", "Verdict", "Kind", "Scenario", "Created"],
@@ -655,7 +1154,7 @@ async def list_runs(
     )
     total = result.get("total_count")
     if isinstance(total, int) and total > offset + len(runs):
-        console.print(
+        _print(
             f"[dim]Showing {offset + 1} to {offset + len(runs)} of {total}. "
             f"For the next page use --offset {offset + len(runs)}.[/dim]"
         )
@@ -684,9 +1183,9 @@ async def cancel(
         console.output_json(run_data)
         return
     if run_data.get("status") == "cancelled":
-        console.print(f"Run [bold]{run_id}[/bold] is cancelled.")
+        _print(f"Run [bold]{run_id}[/bold] is cancelled.")
     else:
-        console.print(
+        _print(
             f"Cancellation requested for run [bold]{run_id}[/bold]. It ends as soon as it can. "
             f"Check on it: [bold]{_status_command(agent, run_id)}[/bold]"
         )
