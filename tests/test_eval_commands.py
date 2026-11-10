@@ -119,7 +119,13 @@ def sleeps():
 
 
 def invoke(*args):
-    return runner.invoke(entrypoint_cli_typer, ["eval", *map(str, args)])
+    """Run `pipecat cloud eval`. `run` waits by default, so a test of `run` that
+    doesn't say --wait is about starting runs, and gets --no-wait; TestWaitIsTheDefault
+    covers the default itself."""
+    argv = [*map(str, args)]
+    if argv[:1] == ["run"] and "--wait" not in argv and "--no-wait" not in argv:
+        argv.append("--no-wait")
+    return runner.invoke(entrypoint_cli_typer, ["eval", *argv])
 
 
 # ---- run ----
@@ -152,12 +158,28 @@ class TestRun:
         assert result.exit_code == 0, result.output
         assert api.eval_run_create.await_args.args[2]["scenarioName"] == "hours"
 
-    def test_several_scenarios_without_a_choice_is_refused_before_any_request(self, api, tmp_path):
+    def test_without_a_choice_every_scenario_in_the_file_runs(self, api, tmp_path):
         path = tmp_path / "calls.yaml"
         path.write_text(TWO_SCENARIOS, encoding="utf-8")
         result = invoke("run", "a", path)
+        assert result.exit_code == 0, result.output
+        names = [c.args[2]["scenarioName"] for c in api.eval_run_create.await_args_list]
+        assert names == ["book", "hours"]
+
+    def test_scenario_can_be_repeated_to_pick_several(self, api, tmp_path):
+        path = tmp_path / "calls.yaml"
+        path.write_text(TWO_SCENARIOS, encoding="utf-8")
+        result = invoke("run", "a", path, "--scenario", "hours", "--scenario", "book")
+        assert result.exit_code == 0, result.output
+        names = [c.args[2]["scenarioName"] for c in api.eval_run_create.await_args_list]
+        assert names == ["hours", "book"]
+
+    def test_a_session_run_takes_one_scenario(self, api, tmp_path):
+        path = tmp_path / "calls.yaml"
+        path.write_text(TWO_SCENARIOS, encoding="utf-8")
+        result = invoke("run", "a", path, "--session", SESSION_ID)
         assert result.exit_code == 3
-        assert "book" in result.output and "hours" in result.output
+        assert "--scenario" in result.output
         api.eval_run_create.assert_not_awaited()
 
     def test_unknown_scenario_name_is_refused_before_any_request(self, api, scenario_file):
@@ -307,8 +329,11 @@ class TestWait:
         api.eval_run_get.side_effect = [(make_run("running"), None), (ended, None)]
         result = invoke("run", "a", scenario_file, "--wait")
         assert result.exit_code == 0, result.output
-        assert "PASSED" in result.stdout
-        assert "All good." in result.stdout
+        assert "✓ a calls/book" in result.stdout
+        assert "1/1 passed  ·  1/1 done" in result.stdout
+        # A pass needs no explaining; the command for its details does.
+        assert "All good." not in result.stdout
+        assert f"eval status {RUN_ID} --agent a -v" in result.stdout
         assert api.eval_run_get.await_count == 2
 
     def test_a_failed_run_exits_one_and_shows_why(self, api, sleeps, scenario_file):
@@ -317,7 +342,8 @@ class TestWait:
         result = invoke("run", "a", scenario_file, "--wait")
         assert result.exit_code == 1, result.output
         out = result.stdout
-        assert "FAILED" in out
+        assert "✗ a calls/book" in out
+        assert "0/1 passed" in out
         assert "The caller was never told the closing time." in out
         assert "judge_no" in out and "Hours were wrong" in out
         assert "accurate" in out and "0.2" in out and "Wrong hours given." in out
@@ -328,8 +354,7 @@ class TestWait:
         api.eval_run_get.side_effect = [(ended, None)]
         result = invoke("run", "a", scenario_file, "--wait")
         assert result.exit_code == 2, result.output
-        assert "NO VERDICT" in result.stdout
-        assert status in result.stdout
+        assert f"no verdict ({status})" in result.stdout
         assert "Ended early." in result.stdout
 
     def test_a_skipped_run_exits_zero_and_says_skipped(self, api, sleeps, scenario_file):
@@ -337,7 +362,9 @@ class TestWait:
         api.eval_run_get.side_effect = [(ended, None)]
         result = invoke("run", "a", scenario_file, "--wait")
         assert result.exit_code == 0, result.output
-        assert "SKIPPED" in result.stdout
+        assert "⊘ a calls/book" in result.stdout
+        # As in `pipecat eval`, a skip is listed but not explained; `status` explains it.
+        assert "Failures" not in result.stdout
 
     def test_starting_is_a_live_status(self, api, sleeps, scenario_file):
         api.eval_run_get.side_effect = [
@@ -470,7 +497,7 @@ class TestStatus:
         result = invoke("status", RUN_ID, "--agent", "my-agent")
         assert result.exit_code == 0, result.output
         assert api.eval_run_get.await_args.args == ("test-org", "my-agent", RUN_ID)
-        assert "FAILED" in result.stdout
+        assert "✗ my-agent calls/book" in result.stdout
         assert "Hours were wrong" in result.stdout
 
     def test_a_live_run_says_how_to_wait(self, api):
@@ -981,3 +1008,318 @@ class TestOutput:
     def test_the_status_hint_is_printed_once(self, api, scenario_file):
         result = invoke("run", "a", scenario_file)
         assert result.stdout.count(f"eval status {RUN_ID}") == 1
+
+
+# ---- Several runs, and how they read ----
+
+PASSED_RESULT = {
+    "reason": "The agent passed the scenario.",
+    "metrics": [
+        {"name": "concise", "score": 1, "passed": True, "reason": "all 2 turn(s)"},
+    ],
+    "details": {
+        "kind": "simulation",
+        "turns": [
+            {"turn": 1, "checks": [{"name": "concise", "passed": True}]},
+            {"turn": 2, "checks": [{"name": "concise", "passed": True}]},
+        ],
+        "failures": [],
+        "goal": {"criterion": "a table for two was booked", "verdict": "yes", "passed": True},
+    },
+    "conversation": [
+        {"role": "assistant", "content": "Hello, how many in your party?"},
+        {"role": "user", "content": "Two, please."},
+        {"role": "tool_call", "name": "book_table", "arguments": {"size": 2}, "cancelled": False},
+        {"role": "assistant", "content": "Booked a table for two."},
+    ],
+    "ignored": [],
+    "ignoredTotal": 0,
+    "truncated": False,
+}
+
+METRIC_FAILED_RESULT = {
+    **PASSED_RESULT,
+    "reason": "The agent fell short on the metric 'concise'.",
+    "metrics": [{"name": "concise", "score": 0.5, "passed": False, "reason": "1 of 2 turn(s)"}],
+    "details": {
+        **PASSED_RESULT["details"],
+        "turns": [
+            {"turn": 1, "checks": [{"name": "concise", "passed": True}]},
+            {"turn": 2, "checks": [{"name": "concise", "passed": False, "reason": "rambles on"}]},
+        ],
+    },
+}
+
+ENDED = {
+    "sessionId": SESSION_ID,
+    "startedAt": "2026-11-07T10:00:02.000Z",
+    "finishedAt": "2026-11-07T10:00:20.500Z",
+}
+
+OTHER_ID = "99999999-2222-4333-8444-555555555555"
+
+HEADED = """\
+name: calls
+persona: A caller named Jamie.
+max_turns: 8
+scenarios:
+  - name: book
+    goal: Book a table for two,
+      then end the call.
+    success: A table was booked.
+  - name: hours
+    goal: Ask the hours.
+    success: Hours were given.
+    simulator: {service: ollama, model: gemma4:12b}
+  - name: scripted
+    turns:
+      - user: Hi
+"""
+
+
+def invoke_rich(*args):
+    return runner.invoke(entrypoint_cli_typer, ["--output", "rich", "eval", *map(str, args)])
+
+
+@pytest.fixture
+def two_runs(api, tmp_path):
+    """A file of two scenarios, whose runs the API tells apart by id."""
+    path = tmp_path / "calls.yaml"
+    path.write_text(TWO_SCENARIOS, encoding="utf-8")
+    created = {
+        "book": make_run(id=RUN_ID, scenarioName="book"),
+        "hours": make_run(id=OTHER_ID, scenarioName="hours"),
+    }
+
+    async def create(org, agent, body):
+        return created[body["scenarioName"]], None
+
+    api.eval_run_create.side_effect = create
+    ended = {
+        RUN_ID: make_run(
+            "completed", "passed", PASSED_RESULT, id=RUN_ID, scenarioName="book", **ENDED
+        ),
+        OTHER_ID: make_run(
+            "completed", "failed", METRIC_FAILED_RESULT, id=OTHER_ID, scenarioName="hours", **ENDED
+        ),
+    }
+    polls = {RUN_ID: [make_run("running", id=RUN_ID, scenarioName="book")], OTHER_ID: []}
+
+    async def get(org, agent, run_id):
+        queue = polls[run_id]
+        return (queue.pop(0) if queue else ended[run_id]), None
+
+    api.eval_run_get.side_effect = get
+    return path
+
+
+class TestSeveralRuns:
+    def test_wait_follows_every_run_and_exits_with_the_worst(self, api, sleeps, two_runs):
+        result = invoke("run", "a", two_runs, "--wait")
+        assert result.exit_code == 1, result.output
+        out = result.stdout
+        assert "✓ a calls/book (18500ms)" in out
+        assert "✗ a calls/hours (18500ms)" in out
+        assert "1/2 passed  ·  2/2 done" in out
+        assert f"eval list a" in out
+
+    def test_runs_are_polled_in_one_loop_until_each_has_ended(self, api, sleeps, two_runs):
+        invoke("run", "a", two_runs, "--wait")
+        polled = [c.args[2] for c in api.eval_run_get.await_args_list]
+        # The first pass polls both; the second only the one still running.
+        assert polled == [RUN_ID, OTHER_ID, RUN_ID]
+        assert [c.args[0] for c in sleeps.await_args_list] == [2.0, 3.0]
+
+    def test_only_the_runs_that_did_not_pass_are_explained(self, api, sleeps, two_runs):
+        out = invoke("run", "a", two_runs, "--wait").stdout
+        assert "rambles on" in out and "turn 2:" in out and "Booked a table for two." in out
+        assert "1/2 turns" in out
+        assert f"eval status {OTHER_ID} --agent a -v" in out
+        assert f"agent logs a --session-id {SESSION_ID}" in out
+        # The passing run gets its line and nothing more.
+        assert f"eval status {RUN_ID} --agent a -v" not in out
+
+    def test_verbose_explains_every_run_with_its_conversation(self, api, sleeps, two_runs):
+        out = invoke("run", "a", two_runs, "--wait", "-v").stdout
+        assert out.count("bot: Hello, how many in your party?") == 2
+        assert "→ book_table(size=2)" in out
+        assert "yes — a table for two was booked" in out
+
+    def test_a_run_that_cannot_start_is_a_row_and_the_others_go_on(self, api, sleeps, tmp_path):
+        path = tmp_path / "calls.yaml"
+        path.write_text(TWO_SCENARIOS, encoding="utf-8")
+
+        async def create(org, agent, body):
+            if body["scenarioName"] == "hours":
+                return None, {
+                    "error": "modality 'audio' isn't supported on Pipecat Cloud",
+                    "code": "400",
+                }
+            return make_run(scenarioName="book"), None
+
+        api.eval_run_create.side_effect = create
+        api.eval_run_get.return_value = (
+            make_run("completed", "passed", PASSED_RESULT, **ENDED),
+            None,
+        )
+        result = invoke("run", "a", path, "--wait")
+        assert result.exit_code == 3, result.output
+        out = result.stdout
+        assert "✓ a calls/book" in out
+        assert "✗ a calls/hours modality 'audio' isn't supported on Pipecat Cloud" in out
+        assert "1/2 passed  ·  2/2 done" in out
+
+    def test_json_is_the_list_of_runs(self, api, sleeps, two_runs):
+        result = invoke("run", "a", two_runs, "--wait", "--json")
+        assert result.exit_code == 1
+        runs = json.loads(result.stdout)
+        assert [(r["id"], r["verdict"]) for r in runs] == [(RUN_ID, "passed"), (OTHER_ID, "failed")]
+
+    def test_without_wait_each_run_is_listed_with_its_id(self, api, two_runs):
+        result = invoke("run", "a", two_runs)
+        assert result.exit_code == 0, result.output
+        assert RUN_ID in result.stdout and OTHER_ID in result.stdout
+        assert "eval list a" in result.stdout
+        api.eval_run_get.assert_not_awaited()
+
+    def test_ctrl_c_leaves_them_all_going_and_says_how_to_follow_them(self, api, sleeps, two_runs):
+        sleeps.side_effect = KeyboardInterrupt
+        result = invoke("run", "a", two_runs, "--wait")
+        assert result.exit_code == 130
+        assert "2 runs are still going" in result.output
+        assert "eval list a" in result.output
+        assert f"eval cancel {RUN_ID} --agent a" in result.output
+        assert f"eval cancel {OTHER_ID} --agent a" in result.output
+        api.eval_run_cancel.assert_not_awaited()
+
+    def test_rich_mode_draws_the_table_and_its_summary(self, api, sleeps, two_runs):
+        result = invoke_rich("run", "a", two_runs, "--wait")
+        assert result.exit_code == 1, result.output
+        out = result.stdout
+        assert "calls/book" in out and "18500ms" in out
+        assert "1/2 passed  ·  2/2 done" in out
+
+
+class TestScenarioHeader:
+    def test_it_lists_each_scenario_as_pipecat_eval_does(self, api, sleeps, tmp_path):
+        path = tmp_path / "calls.yaml"
+        path.write_text(HEADED, encoding="utf-8")
+        api.eval_run_get.return_value = (
+            make_run("completed", "passed", PASSED_RESULT, **ENDED),
+            None,
+        )
+        out = invoke("run", "a", path, "--wait").stdout
+        assert "Scripted scenarios:\n  calls/scripted:" in out
+        assert "Simulated scenarios:\n  calls/book:" in out
+        assert "user  -> modality: text | persona: hosted | max_turns: 8" in out
+        assert "judge -> modality: text | eval: hosted" in out
+        assert "goal  -> Book a table for two, then end the call." in out
+        # A scenario's own simulator isn't what runs on Pipecat Cloud.
+        assert "gemma4" not in out
+        assert out.index("Simulated scenarios:") < out.index("✓ a calls/book")
+
+    def test_audio_names_its_speech_and_transcription(self, api, sleeps, tmp_path):
+        path = tmp_path / "calls.yaml"
+        path.write_text(
+            SCENARIO.replace(
+                "    success: A table was booked.\n",
+                "    success: A table was booked.\n"
+                "    user: {modality: audio, speech: {service: kokoro, voice: af_heart}}\n"
+                "    judge: {modality: audio}\n",
+            ),
+            encoding="utf-8",
+        )
+        api.eval_run_get.return_value = (
+            make_run("completed", "passed", PASSED_RESULT, **ENDED),
+            None,
+        )
+        out = invoke("run", "a", path, "--wait").stdout
+        assert "user  -> modality: audio | speech: kokoro/af_heart | persona: hosted" in out
+        assert "judge -> modality: audio | transcription: moonshine | eval: hosted" in out
+
+    def test_it_is_left_out_of_json_and_of_a_run_without_wait(self, api, scenario_file):
+        assert "scenarios:" not in invoke("run", "a", scenario_file).stdout
+        assert "scenarios:" not in invoke("run", "a", scenario_file, "--json").stdout
+
+
+class TestRows:
+    def test_a_running_row_shows_how_long_it_has_run(self, clock):
+        row = evals._Row("calls/book", run=make_run("running"), first_running=0.0)
+        clock["now"] = 9.44
+        # Dim, and padded to the width of `2m 04s`, as `pipecat eval` draws it.
+        assert evals._row_cells(row, "a")[3] == "[dim]  9.4s[/dim]"
+
+    @pytest.mark.parametrize("status", ["queued", "starting"])
+    def test_a_waiting_row_says_what_it_waits_on(self, status):
+        mark, _, _, when = evals._row_cells(evals._Row("calls/book", run=make_run(status)), "a")
+        assert "·" in mark and status in when
+
+    def test_elapsed_reads_like_pipecat_eval(self):
+        assert evals._fmt_seconds(57.04) == "57.0s"
+        assert evals._fmt_seconds(89) == "1m 29s"
+
+    def test_the_status_of_one_ended_run_explains_it_even_when_it_passed(self, api):
+        api.eval_run_get.return_value = (
+            make_run("completed", "passed", PASSED_RESULT, **ENDED),
+            None,
+        )
+        out = invoke("status", RUN_ID, "--agent", "a").stdout
+        assert "✓ a calls/book (18500ms)" in out
+        assert "yes — a table for two was booked" in out
+        assert "concise: 1.00" in out and "2/2 turns" in out
+
+
+class TestWaitIsTheDefault:
+    def test_run_waits_and_exits_with_the_verdict_unless_told_not_to(
+        self, api, sleeps, scenario_file
+    ):
+        api.eval_run_get.side_effect = [(make_run("completed", "failed", FAILED_RESULT), None)]
+        result = runner.invoke(entrypoint_cli_typer, ["eval", "run", "a", str(scenario_file)])
+        assert result.exit_code == 1, result.output
+        api.eval_run_get.assert_awaited_once()
+
+    def test_no_wait_starts_the_run_and_returns(self, api, scenario_file):
+        result = runner.invoke(
+            entrypoint_cli_typer, ["eval", "run", "a", str(scenario_file), "--no-wait"]
+        )
+        assert result.exit_code == 0, result.output
+        api.eval_run_get.assert_not_awaited()
+
+    def test_status_still_shows_the_run_as_it_is(self, api):
+        api.eval_run_get.return_value = (make_run("running"), None)
+        result = runner.invoke(entrypoint_cli_typer, ["eval", "status", RUN_ID, "--agent", "a"])
+        assert result.exit_code == 0
+        assert api.eval_run_get.await_count == 1
+
+
+class TestPipecatEvalStyle:
+    def test_failures_are_listed_under_their_heading(self, api, sleeps, two_runs):
+        out = invoke("run", "a", two_runs, "--wait").stdout
+        assert "Failures (1 of 2):" in out
+        failures = out[out.index("Failures (1 of 2):") :]
+        assert "✗ a calls/hours" in failures and "calls/book" not in failures
+
+    def test_settings_name_the_agent_and_the_runs(self, api, sleeps, two_runs):
+        out = invoke("run", "a", two_runs, "--wait").stdout
+        assert "Settings:\n  agent       -> a\n  runs        -> 2\n" in out
+
+    def test_config_keywords_take_pipecat_evals_colors(self):
+        view = {
+            "persona": "x",
+            "max_turns": 8,
+            "user": {"modality": "audio", "speech": {"service": "kokoro", "voice": "af_heart"}},
+            "judge": {"modality": "audio"},
+        }
+        user, judge = (evals._config_markup(k, b) for k, b in evals._config_lines(view)[:2])
+        assert user.startswith("[bold]user [/bold][dim] -> [/dim]")
+        assert "[yellow]modality:[/yellow] audio" in user
+        assert "[green]speech:[/green] kokoro/af_heart" in user
+        assert "[magenta]persona:[/magenta] hosted" in user
+        assert "[cyan]max_turns:[/cyan] 8" in user
+        assert "[dim] | [/dim]" in user
+        assert "[green]transcription:[/green] moonshine" in judge
+        assert "[magenta]eval:[/magenta] hosted" in judge
+
+    def test_durations_read_like_pipecat_eval_and_never_say_60s(self):
+        assert evals._fmt_seconds(59.96) == "1m 00s"
+        assert evals._fmt_seconds(12.34) == "12.3s"

@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leaves the run going, prints the commands to check on it or cancel it, and
   exits 130. `eval list` takes `--limit` and `--offset`. All four commands
   take `--json`, and where evals aren't turned on yet they say so.
+- `eval run` runs every scenario in the file, side by side, unless `--scenario`
+  names some (repeat it for several), and waits for them by default, as
+  `pipecat eval run` does. `--no-wait` starts them and returns. It reads like
+  `pipecat eval`, in the same colors: each scenario's settings, a row a run
+  while they go, a summary, and under `Failures` each run that failed or ended
+  without a verdict, with its reason, the judge's verdict on `success:`, its
+  failures and its metrics with the replies they failed on. `-v` on `eval run`
+  and `eval status` explains every run, with its conversation. With several
+  runs, the exit code is the first that applies of 3, 1 and 2, and `--json`
+  prints a list.
 - `pyyaml` is now a dependency, to read a scenario file's includes.
 
 ## [1.5.0] - 2026-11-05
