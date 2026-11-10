@@ -119,7 +119,13 @@ def sleeps():
 
 
 def invoke(*args):
-    return runner.invoke(entrypoint_cli_typer, ["eval", *map(str, args)])
+    """Run `pipecat cloud eval`. `run` waits by default, so a test of `run` that
+    doesn't say --wait is about starting runs, and gets --no-wait; TestWaitIsTheDefault
+    covers the default itself."""
+    argv = [*map(str, args)]
+    if argv[:1] == ["run"] and "--wait" not in argv and "--no-wait" not in argv:
+        argv.append("--no-wait")
+    return runner.invoke(entrypoint_cli_typer, ["eval", *argv])
 
 
 # ---- run ----
@@ -1261,6 +1267,29 @@ class TestRows:
         assert "✓ a calls/book (18500ms)" in out
         assert "yes — a table for two was booked" in out
         assert "concise: 1.00" in out and "2/2 turns" in out
+
+
+class TestWaitIsTheDefault:
+    def test_run_waits_and_exits_with_the_verdict_unless_told_not_to(
+        self, api, sleeps, scenario_file
+    ):
+        api.eval_run_get.side_effect = [(make_run("completed", "failed", FAILED_RESULT), None)]
+        result = runner.invoke(entrypoint_cli_typer, ["eval", "run", "a", str(scenario_file)])
+        assert result.exit_code == 1, result.output
+        api.eval_run_get.assert_awaited_once()
+
+    def test_no_wait_starts_the_run_and_returns(self, api, scenario_file):
+        result = runner.invoke(
+            entrypoint_cli_typer, ["eval", "run", "a", str(scenario_file), "--no-wait"]
+        )
+        assert result.exit_code == 0, result.output
+        api.eval_run_get.assert_not_awaited()
+
+    def test_status_still_shows_the_run_as_it_is(self, api):
+        api.eval_run_get.return_value = (make_run("running"), None)
+        result = runner.invoke(entrypoint_cli_typer, ["eval", "status", RUN_ID, "--agent", "a"])
+        assert result.exit_code == 0
+        assert api.eval_run_get.await_count == 1
 
 
 class TestPipecatEvalStyle:

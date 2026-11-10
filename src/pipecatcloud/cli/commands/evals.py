@@ -7,19 +7,20 @@
 """`pipecat cloud eval`: run scenarios against an agent and read the verdicts.
 
 `run` starts a run for each scenario it's given, every one in the file unless
-`--scenario` names some, and the service runs them side by side. With `--wait`
-it follows them the way `pipecat eval` does: the scenarios' settings, a row a
+`--scenario` names some, and the service runs them side by side. It follows
+them the way `pipecat eval` does: the scenarios' settings, a row a
 run, a summary, and what went wrong with each run that didn't pass.
 
-Exit codes of `run --wait` and `status --wait`, for several runs the first
-that applies:
+`run` waits by default (`--no-wait` starts the runs and returns); `status`
+shows a run as it is, and waits with `--wait`. Exit codes when they wait, for
+several runs the first that applies:
 
     3  an API error, or a usage error (including a bundle that can't be sent)
     1  a verdict is `failed`
     2  a run ended without a verdict (cancelled, expired, refused, ...)
     0  every verdict is `passed` or `skipped`
 
-Without `--wait`, 0 means every request was accepted. Ctrl-C while waiting
+Without waiting, 0 means every request was accepted. Ctrl-C while waiting
 exits 130 and leaves the runs going.
 """
 
@@ -972,7 +973,10 @@ async def run(
         "Defaults to the scenario file's directory.",
     ),
     wait: bool = typer.Option(
-        False, "--wait", help="Wait for the runs to end and exit with their verdicts"
+        True,
+        "--wait/--no-wait",
+        help="Wait for the runs to end and exit with their verdicts, as `pipecat eval` does. "
+        "With --no-wait, start them and return.",
     ),
     verbose: bool = _VERBOSE_OPTION,
     organization: str = _ORG_OPTION,
