@@ -1200,6 +1200,112 @@ class TestSeveralRuns:
         assert "1/2 passed  ·  2/2 done" in out
 
 
+class TestSubmissionRecovery:
+    @pytest.mark.parametrize("wait_flag", ["--wait", "--no-wait"])
+    @pytest.mark.parametrize("all_refused", [False, True])
+    def test_json_accounts_for_every_selected_scenario(
+        self, api, sleeps, tmp_path, wait_flag, all_refused
+    ):
+        path = tmp_path / "calls.yaml"
+        path.write_text(TWO_SCENARIOS, encoding="utf-8")
+        refusal = {"error": "The scenario was refused.", "code": "SCENARIO-REFUSED"}
+
+        async def create(org, agent, body):
+            if all_refused or body["scenarioName"] == "hours":
+                return None, refusal
+            return make_run(scenarioName="book"), None
+
+        api.eval_run_create.side_effect = create
+        api.eval_run_get.return_value = (make_run("completed", "passed"), None)
+        result = invoke("run", "a", path, wait_flag, "--json")
+        assert result.exit_code == 3, result.output
+        rows = json.loads(result.stdout)
+        assert [r["scenarioName"] for r in rows] == ["book", "hours"]
+        assert rows[1] == {
+            "scenarioPath": "calls.yaml",
+            "scenarioName": "hours",
+            "submissionStatus": "error",
+            "error": refusal,
+        }
+        if all_refused:
+            assert all(r["error"] == refusal for r in rows)
+            assert all("id" not in r for r in rows)
+            api.eval_run_get.assert_not_awaited()
+        else:
+            assert rows[0]["id"] == RUN_ID
+            assert "submissionStatus" not in rows[0]
+        assert api.eval_run_create.await_count == 2
+        api.eval_run_cancel.assert_not_awaited()
+
+    def test_waiting_interrupt_keeps_refusals_and_the_latest_accepted_run(
+        self, api, sleeps, tmp_path
+    ):
+        path = tmp_path / "calls.yaml"
+        path.write_text(TWO_SCENARIOS, encoding="utf-8")
+        refusal = {"error": "The scenario was refused.", "code": "SCENARIO-REFUSED"}
+        api.eval_run_create.side_effect = [(make_run(), None), (None, refusal)]
+        api.eval_run_get.return_value = (make_run("running"), None)
+        sleeps.side_effect = [None, asyncio.CancelledError()]
+        result = invoke("run", "a", path, "--wait", "--json")
+        assert result.exit_code == 130, result.output
+        rows = json.loads(result.stdout)
+        assert len(rows) == 2
+        assert rows[0]["id"] == RUN_ID and rows[0]["status"] == "running"
+        assert rows[1]["scenarioName"] == "hours" and rows[1]["error"] == refusal
+        assert f"eval cancel {RUN_ID} --agent a" in result.stderr
+        api.eval_run_get.assert_awaited_once()
+        api.eval_run_cancel.assert_not_awaited()
+
+    @pytest.mark.parametrize("output", ["plain", "rich", "json"])
+    def test_creation_interrupt_distinguishes_accepted_unknown_and_unattempted(
+        self, api, tmp_path, output
+    ):
+        path = tmp_path / "calls.yaml"
+        path.write_text(
+            TWO_SCENARIOS
+            + "  - name: later\n    turns: [{user: hi}]\n"
+            + "  - name: last\n    turns: [{user: bye}]\n",
+            encoding="utf-8",
+        )
+        refusal = {"error": "The scenario was refused.", "code": "SCENARIO-REFUSED"}
+        accepted = make_run(scenarioName="hours")
+        api.eval_run_create.side_effect = [
+            (None, refusal),
+            (accepted, None),
+            asyncio.CancelledError(),
+        ]
+        result = runner.invoke(
+            entrypoint_cli_typer,
+            ["--output", output, "eval", "run", "a", str(path)],
+        )
+        assert result.exit_code == 130, result.output
+        human = " ".join((result.stderr if output == "json" else result.stdout).split())
+        assert RUN_ID in human
+        assert f"eval status {RUN_ID} --agent a --wait" in human
+        assert f"eval cancel {RUN_ID} --agent a" in human
+        assert "calls/later" in human and "may have reached" in human
+        assert "Not submitted: calls/last" in human
+        if output == "json":
+            rows = json.loads(result.stdout)
+            assert [r["scenarioName"] for r in rows] == ["book", "hours", "later", "last"]
+            assert rows[0]["submissionStatus"] == "error" and rows[0]["error"] == refusal
+            assert rows[1] == accepted
+            assert rows[2]["submissionStatus"] == "unknown"
+            assert rows[2]["error"]["code"] == "CLI-INTERRUPTED"
+            assert rows[3] == {
+                "scenarioPath": "calls.yaml",
+                "scenarioName": "last",
+                "submissionStatus": "not_submitted",
+            }
+        assert [c.args[2]["scenarioName"] for c in api.eval_run_create.await_args_list] == [
+            "book",
+            "hours",
+            "later",
+        ]
+        api.eval_run_get.assert_not_awaited()
+        api.eval_run_cancel.assert_not_awaited()
+
+
 class TestScenarioHeader:
     def test_it_lists_each_scenario_as_pipecat_eval_does(self, api, sleeps, tmp_path):
         path = tmp_path / "calls.yaml"

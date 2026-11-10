@@ -30,7 +30,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, Literal, NoReturn
 
 import typer
 from rich import box
@@ -42,7 +42,7 @@ from rich.table import Table
 from rich.text import Text
 from typer.core import TyperCommand, TyperGroup
 
-# Typer 0.29 bundles its own copy of click and raises that copy's exceptions,
+# Typer 0.26+ bundles its own copy of click and raises that copy's exceptions,
 # which the click package's classes don't match. Earlier typer is built on the
 # click package. typer.Exit and typer.Abort are the right classes either way;
 # UsageError, ClickException and Context have no public typer name that matches
@@ -473,7 +473,10 @@ class _Row:
 
     label: str
     run: dict | None = None
-    error: str | None = None
+    error: dict[str, Any] | None = None
+    scenario_path: str | None = None
+    scenario_name: str | None = None
+    submission_status: Literal["error", "unknown", "not_submitted"] = "not_submitted"
     first_running: float | None = None
     spinner: Spinner = field(default_factory=lambda: Spinner("dots", style="cyan"))
     printed: bool = False
@@ -486,12 +489,29 @@ class _Row:
     def passed(self) -> bool:
         return self.run is not None and self.run.get("verdict") == "passed"
 
+    @property
+    def error_message(self) -> str:
+        return str((self.error or {}).get("error") or "The API didn't answer.")
+
+    def as_json(self) -> dict[str, Any]:
+        """Keep server run objects intact; unacknowledged submissions have no run ID."""
+        if self.run is not None:
+            return self.run
+        entry: dict[str, Any] = {
+            "scenarioPath": self.scenario_path,
+            "scenarioName": self.scenario_name,
+            "submissionStatus": self.submission_status,
+        }
+        if self.error is not None:
+            entry["error"] = self.error
+        return entry
+
 
 def _row_cells(row: _Row, agent: str) -> tuple[Any, str, str, str]:
     """The mark, agent, scenario and time of a row, in rich markup or a renderable."""
     label = f"[cyan]{escape(row.label)}[/cyan]"
     if row.error is not None:
-        return "[red]✗[/red]", escape(agent), label, f"[red]{escape(row.error)}[/red]"
+        return "[red]✗[/red]", escape(agent), label, f"[red]{escape(row.error_message)}[/red]"
     run = row.run or {}
     status = str(run.get("status"))
     if not _is_live(run):
@@ -611,7 +631,7 @@ def _print_details(row: _Row, agent: str, verbose: bool) -> None:
     if row.error is not None:
         _print(
             f"  [red]✗[/red] {escape(agent)} [cyan]{escape(row.label)}[/cyan] "
-            f"[dim]— {escape(row.error)}[/dim]"
+            f"[dim]— {escape(row.error_message)}[/dim]"
         )
         return
     _print(f"  {_mark(run)} {escape(agent)} [cyan]{escape(row.label)}[/cyan]")
@@ -691,7 +711,7 @@ def _report(rows: list[_Row], agent: str, verbose: bool, *, every: bool = False)
 
 def _exit_code(rows: list[_Row]) -> int:
     """For several runs, the first that applies: an error, a failure, a run without a verdict."""
-    if any(r.error is not None for r in rows):
+    if any(r.run is None or r.error is not None for r in rows):
         return EXIT_ERROR
     codes = {exit_code_for(r.run) for r in rows if r.run is not None}
     for code in (EXIT_FAILED, EXIT_NO_VERDICT):
@@ -836,8 +856,31 @@ def _wait_over(limit: float | None, started: float, run: dict, agent: str) -> No
     )
 
 
-def _interrupted_starting(agent: str) -> NoReturn:
+def _interrupted_starting(agent: str, rows: list[_Row], as_list: bool) -> NoReturn:
     """Ctrl-C while a run is being created: the request may have got through."""
+    if as_list:
+        _print("\n[yellow]Stopped submitting runs. Accepted runs were not cancelled.[/yellow]")
+        for row in rows:
+            if row.run is not None:
+                run_id = str(row.run["id"])
+                _print(f"Accepted {escape(row.label)}: {escape(run_id)}")
+                _print(f"Check on it: [bold]{_status_command(agent, run_id)}[/bold]")
+                if _is_live(row.run):
+                    _print(f"Cancel it:   [bold]{_cancel_command(agent, run_id)}[/bold]")
+            elif row.submission_status == "unknown":
+                message = (
+                    f"Submission of {row.label} was interrupted. The request may have reached "
+                    f"the API; check `{PIPECAT_CLI_NAME} eval list {agent}` before starting it again."
+                )
+                row.error = {"error": message, "code": "CLI-INTERRUPTED"}
+                _print(f"[yellow]{escape(message)}[/yellow]")
+            elif row.error is not None:
+                _print(f"[red]{escape(row.label)}: {escape(row.error_message)}[/red]")
+            else:
+                _print(f"Not submitted: {escape(row.label)}")
+        if console.json_output:
+            console.output_json([r.as_json() for r in rows])
+        raise typer.Exit(EXIT_INTERRUPTED)
     message = (
         "Stopped while starting the run. The request may have reached the API, so a run "
         f"may exist. See: {PIPECAT_CLI_NAME} eval list {agent}"
@@ -849,8 +892,8 @@ def _interrupted_starting(agent: str) -> NoReturn:
     raise typer.Exit(EXIT_INTERRUPTED)
 
 
-def _interrupted(runs: list[dict], agent: str, as_list: bool) -> NoReturn:
-    live = [r for r in runs if _is_live(r)] or runs
+def _interrupted(rows: list[_Row], agent: str, as_list: bool) -> NoReturn:
+    live = [r.run for r in rows if r.run is not None and _is_live(r.run)]
     if len(live) == 1:
         _print(
             "\n[yellow]Stopped waiting. The run is still going; Ctrl-C doesn't cancel it.[/yellow]"
@@ -858,7 +901,7 @@ def _interrupted(runs: list[dict], agent: str, as_list: bool) -> NoReturn:
         run_id = str(live[0].get("id"))
         _print(f"Check on it: [bold]{_status_command(agent, run_id)}[/bold]")
         _print(f"Cancel it:   [bold]{_cancel_command(agent, run_id)}[/bold]")
-    else:
+    elif live:
         _print(
             f"\n[yellow]Stopped waiting. {len(live)} runs are still going; Ctrl-C doesn't "
             "cancel them.[/yellow]"
@@ -866,8 +909,10 @@ def _interrupted(runs: list[dict], agent: str, as_list: bool) -> NoReturn:
         _print(f"Check on them: [bold]{PIPECAT_CLI_NAME} eval list {agent}[/bold]")
         for r in live:
             _print(f"Cancel one:    [bold]{_cancel_command(agent, str(r.get('id')))}[/bold]")
+    else:
+        _print("\n[yellow]Stopped waiting. No runs were cancelled.[/yellow]")
     if console.json_output:
-        console.output_json(runs if as_list else runs[0])
+        console.output_json([r.as_json() for r in rows] if as_list else rows[0].as_json())
     raise typer.Exit(EXIT_INTERRUPTED)
 
 
@@ -903,11 +948,11 @@ async def _follow(org: str, agent: str, rows: list[_Row], verbose: bool, as_list
                 )
             view.final = _monotonic()
     except _Interrupted as stopped:
-        _interrupted(stopped.runs, agent, as_list)
+        on_update(stopped.runs)
+        _interrupted(rows, agent, as_list)
 
     if console.json_output:
-        runs = [r.run for r in tracked if r.run is not None]
-        console.output_json(runs if as_list else runs[0])
+        console.output_json([r.as_json() for r in rows] if as_list else rows[0].as_json())
     else:
         if not console.rich_output:
             _print()
@@ -1025,45 +1070,46 @@ async def run(
         return body
 
     # Creating a run is not idempotent, so a failed request is never repeated here.
-    rows: list[_Row] = []
+    rows = [
+        _Row(labels[name], scenario_path=bundle.scenario_path, scenario_name=name) for name in names
+    ]
+    as_list = len(names) > 1
     try:
         if len(names) == 1:
+            rows[0].submission_status = "unknown"
             with console.status(
                 f"[dim]Starting a run on [bold]'{agent}'[/bold][/dim]", spinner="dots"
             ):
                 created, error = await _api().eval_run_create(org, agent, body_for(names[0]))
-            rows.append(_Row(labels[names[0]], run=_check(created, error)))
+            rows[0].run = _check(created, error)
         else:
             with console.status(
                 f"[dim]Starting {len(names)} runs on [bold]'{agent}'[/bold][/dim]", spinner="dots"
             ):
-                for name in names:
+                for name, row in zip(names, rows):
+                    row.submission_status = "unknown"
                     created, error = await API.bubble_error().eval_run_create(
                         org, agent, body_for(name)
                     )
                     if created:
-                        rows.append(_Row(labels[name], run=created))
+                        row.run = created
                     else:
-                        message = (error or {}).get("error") if isinstance(error, dict) else None
-                        rows.append(
-                            _Row(labels[name], error=str(message or "The API didn't answer."))
+                        row.submission_status = "error"
+                        row.error = (
+                            dict(error)
+                            if isinstance(error, dict)
+                            else {"error": "The API didn't answer.", "code": "CLI-SUBMISSION"}
                         )
     except (KeyboardInterrupt, asyncio.CancelledError):
-        _interrupted_starting(agent)
+        _interrupted_starting(agent, rows, as_list)
 
-    as_list = len(names) > 1
     if wait:
         await _follow(org, agent, rows, verbose, as_list)
 
     created_runs = [r.run for r in rows if r.run is not None]
     if console.json_output:
         if as_list:
-            console.output_json(
-                [
-                    r.run if r.run is not None else {"scenarioName": r.label, "error": r.error}
-                    for r in rows
-                ]
-            )
+            console.output_json([r.as_json() for r in rows])
         else:
             console.output_json(created_runs[0])
     elif not as_list:
@@ -1075,7 +1121,7 @@ async def run(
             detail = (
                 f"[dim]{escape(str(run_id))}[/dim]"
                 if row.run
-                else f"[red]{escape(row.error or '')}[/red]"
+                else f"[red]{escape(row.error_message)}[/red]"
             )
             _print(f"  {mark} {agent_cell} {label} {detail}")
         _print(f"[dim]Follow them with [bold]{PIPECAT_CLI_NAME} eval list {agent}[/bold].[/dim]")

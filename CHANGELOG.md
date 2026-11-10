@@ -34,7 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `eval status` explains every run, with its conversation. With several
   runs, the exit code is the first that applies of 3, 1 and 2, and `--json`
   prints a list.
+- Multi-scenario JSON output retains submission errors with their scenario names
+  and API error codes. Ctrl-C during submission preserves accepted run IDs and
+  distinguishes the interrupted request from scenarios not yet submitted.
 - `pyyaml` is now a dependency, to read a scenario file's includes.
+
+### Fixed
+
+- Eval commands preserve verdict, usage-error and Ctrl-C exit codes with Typer
+  0.26 and later, which use Typer's bundled Click exceptions.
 
 ## [1.5.0] - 2026-11-05
 
