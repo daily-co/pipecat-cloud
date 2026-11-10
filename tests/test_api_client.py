@@ -643,6 +643,17 @@ class TestFailuresWithNothingRecorded:
                 await api.whoami()
 
     @pytest.mark.asyncio
+    async def test_a_live_display_is_stopped_before_a_local_failure_is_raised(self, api_client):
+        """Whatever the failure, the spinner does not outlive the call and leave
+        the traceback printing over it."""
+        live = MagicMock()
+        with patch.object(api_client, "_whoami", side_effect=TypeError("'buildId'")):
+            with pytest.raises(TypeError):
+                await api_client.whoami(live=live)
+
+        live.stop.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_a_refusal_still_comes_back_as_the_error(self, api_client):
         """Unchanged: what the API answered with is returned, not raised."""
         refusal = {"error": "Not a member", "code": "NOT_A_MEMBER"}
@@ -684,3 +695,51 @@ class TestRequestsThatGetNoResponse:
         # carry the URL and the body the request was sent with.
         assert type(failure).__name__ in error["error"]
         assert "secret" not in error["error"]
+
+    @pytest.mark.asyncio
+    async def test_an_answer_that_times_out_mid_body_is_recorded_the_same_way(self, api_client):
+        """aiohttp returns from `request()` once the headers are in, so a body
+        read that times out raises after that, with a status that says only that
+        the server had begun to answer."""
+
+        class _Resp:
+            ok = True
+            status = 200
+            headers = {}
+
+            @staticmethod
+            async def json():
+                raise TimeoutError("reading https://api/x?token=secret")
+
+        class _Session:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            async def request(self, **_kwargs):
+                return _Resp()
+
+        with patch("aiohttp.ClientSession", lambda *a, **k: _Session()):
+            found, error = await api_client.bubble_error().github_installation(org="o")
+
+        assert found is None
+        assert "Could not read the answer from the Pipecat Cloud API" in error["error"]
+        assert "TimeoutError" in error["error"]
+        assert api_client.error_status is None
+        assert api_client.no_response() is True
+        assert "secret" not in error["error"]
+
+    @pytest.mark.asyncio
+    async def test_the_sdk_sees_the_transport_exception_itself(self):
+        """Not an AgentStartError: there is nothing the API said to put in one.
+        The rendered error stays on the client for whoever wants it."""
+        api = _API(token="test-token", is_cli=False)
+        dropped = aiohttp.ClientConnectionError("dropped")
+
+        with patch("aiohttp.ClientSession", _session_raising(dropped)):
+            with pytest.raises(aiohttp.ClientConnectionError):
+                await api.github_installation(org="o")
+
+        assert api.no_response() is True

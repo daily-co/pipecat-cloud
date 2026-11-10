@@ -164,6 +164,30 @@ class _API:
         self.token = new_token
         return new_token
 
+    def _record_unread_answer(self, e: BaseException, reading_the_answer: bool = False) -> None:
+        """Record a request that produced no answer this client could read, in
+        the shape of an error body from the API so that it renders as the
+        failure it is. The exception's type is named, never its text, which can
+        carry the URL and the body the request was sent with.
+
+        `error_status` and `error_retry_after` stay None whether the answer never
+        began or stopped part way through: there is no answer to take the
+        outcome from. That is what `no_response()` reads, and what tells a
+        caller the request may still have been carried out.
+        """
+        reach = (
+            "Could not read the answer from the Pipecat Cloud API"
+            if reading_the_answer
+            else "Could not reach the Pipecat Cloud API"
+        )
+        self.error = {
+            "error": (
+                f"{reach} ({describe_exception(e)}). Check your network connection and try again."
+            )
+        }
+        self.error_status = None
+        self.error_retry_after = None
+
     # TODO: several auth.py and agent.py calls bypass _base_request() with their
     # own aiohttp.ClientSession(). A longer-term cleanup could route all PCC API
     # calls through _base_request() so headers (User-Agent, Auth) are set in one place.
@@ -204,20 +228,10 @@ class _API:
             except (aiohttp.ClientError, TimeoutError) as e:
                 # The request got no answer at all: the host could not be
                 # resolved or reached, the connection dropped, the request timed
-                # out. There is no status and no body to read, so record the
-                # failure here, in the shape of an error body from the API, and
-                # it renders like any other refusal. `error_status` stays None,
-                # which is what None means: no response. The exception's type is
-                # named, never its text, which can carry the URL and the body it
-                # was sent with. Without this the wrapper in `create_api_method`
-                # would find an exception with no error recorded and raise it,
-                # turning a dropped network into a traceback.
-                self.error = {
-                    "error": (
-                        f"Could not reach the Pipecat Cloud API ({describe_exception(e)}). "
-                        "Check your network connection and try again."
-                    )
-                }
+                # out. Record it before raising, so it renders like any other
+                # failure rather than turning a dropped network into a traceback
+                # from the wrapper in `create_api_method`.
+                self._record_unread_answer(e)
                 raise
             self.capabilities_header = response.headers.get(CAPABILITIES_HEADER)
 
@@ -262,6 +276,19 @@ class _API:
                 # `create_api_method` that used to produce this is gone.
                 logger.debug(f"Response body is not JSON: {response.status}")
                 return None
+            except (aiohttp.ClientError, TimeoutError, ValueError) as e:
+                # The answer's headers arrived but its body did not: aiohttp
+                # returns from `request()` as soon as the headers are in, so a
+                # connection lost mid-body, a read that timed out, or a body
+                # that ends part way through its JSON all land here rather than
+                # in the catch above. It is the same transport failure, just
+                # later, and the status says only that the server had begun to
+                # answer — not what became of the request. So it is recorded the
+                # same way, with no status: a poll reads it as a blip worth
+                # repeating and a write as one that may or may not have landed,
+                # which is what they did before this answer could be read.
+                self._record_unread_answer(e, reading_the_answer=True)
+                raise
 
     def create_api_method(self, method_func: Callable) -> Callable:
         """Factory method that wraps API methods with error handling and live context"""
@@ -300,6 +327,13 @@ class _API:
                     raise
 
                 if not self.is_cli and self.error and not self.bubble_next:
+                    if self.no_response():
+                        # Nothing the API said, so there is nothing to put in an
+                        # AgentStartError: the exception itself is what went
+                        # wrong, and it is what a caller of a client library
+                        # expects to catch. The recorded error stays readable on
+                        # the client for anyone who wants the rendered text.
+                        raise e
                     if isinstance(self.error, dict) and self.error.get("status", "429"):
                         raise AgentStartError(self.error)
                     else:
@@ -333,8 +367,9 @@ class _API:
         return self
 
     def no_response(self) -> bool:
-        """Whether the last call failed without a response: the API could not be
-        reached, the connection dropped, or the request timed out. A read that
+        """Whether the last call failed without an answer this client could
+        read: the API could not be reached, the connection dropped, the request
+        timed out, or the answer stopped part way through its body. A read that
         got no answer simply has none; a write that got no answer may or may not
         have landed, which is what the user has to be told. A failure the server
         did answer with carries its status, so this is False for it."""
