@@ -87,6 +87,11 @@ async def _write_keys_together(
         region=region,  # Pass region if provided, otherwise API uses org default
     )
     if error:
+        if API.no_response():
+            # No answer, so no refusal to show and nothing to fall back to: the
+            # write may or may not have landed.
+            _report_no_answer()
+            raise typer.Exit(1)
         if API.error_status in (400, 413) and not API.last_response_offers_bulk_write():
             return await _write_keys_one_at_a_time(name, secrets_dict, org, region)
         API.print_error()
@@ -113,7 +118,10 @@ async def _write_keys_one_at_a_time(
     does not take them together. Returns the region used."""
     used_region = None
     for key, value in secrets_dict.items():
-        data, error = await API.secrets_upsert(
+        # bubble_error: a write that got no answer needs to be told as one, not
+        # as the refusal the client prints by default — the two said one after
+        # the other would be the same failure twice.
+        data, error = await API.bubble_error().secrets_upsert(
             data={
                 "name": name,
                 "isImagePullSecret": False,
@@ -126,8 +134,13 @@ async def _write_keys_one_at_a_time(
         )
 
         if error or data is None:
-            if not error:
+            # No answer: either nothing came back from the request, or it
+            # carried no body to read.
+            no_answer = not error or API.no_response()
+            if no_answer:
                 _report_no_answer()
+            else:
+                API.print_error()
             if len(secrets_dict) > 1:
                 # Keys go one request at a time. Say how far it got: each
                 # write replaces its key, so running the command again is
@@ -147,7 +160,7 @@ async def _write_keys_one_at_a_time(
                         "Wait for the region to become ready, then run the same "
                         "command again to finish it."
                     )
-                elif not error:
+                elif no_answer:
                     next_step = "Run the same command again to finish it."
                 else:
                     next_step = "Fix the error above, then run the same command again."

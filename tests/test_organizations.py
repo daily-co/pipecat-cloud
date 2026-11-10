@@ -8,11 +8,13 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 # Import from source, not installed package
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from pipecatcloud.api import _API
 from pipecatcloud.cli.entry_point import entrypoint_cli_typer
 
 runner = CliRunner()
@@ -101,3 +103,29 @@ class TestApiKeyCreateDefaultMessaging:
         assert result.exit_code == 0
         assert "Using as default in local config" in result.output
         mock_update.assert_called_once()
+
+
+class TestAccountWithNoOrganization:
+    """An account that belongs to no organization is an answer, not a failed
+    request. `_organizations` used to signal it with a bare `raise`, which the
+    API wrapper swallowed into (None, None); the wrapper no longer swallows, so
+    the empty list is returned."""
+
+    @pytest.mark.asyncio
+    async def test_an_empty_answer_is_an_empty_list(self):
+        api = _API(token="test-token", is_cli=True)
+        with patch.object(api, "_base_request", new=AsyncMock(return_value={"organizations": []})):
+            orgs, error = await api.organizations()
+
+        assert (orgs, error) == ([], None)
+
+    def test_the_command_says_there_are_none(self):
+        api = _API(token="test-token", is_cli=True)
+        with patch.object(api, "_base_request", new=AsyncMock(return_value={"organizations": []})):
+            with patch("pipecatcloud.cli.commands.organizations.API", api):
+                result = runner.invoke(
+                    entrypoint_cli_typer, ["--output", "plain", "organizations", "list"]
+                )
+
+        assert result.exit_code == 1
+        assert "No organizations associated with user account" in result.output

@@ -59,6 +59,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   watch paths, and, for a project, whether PR previews are on and whether bot
   pull requests get them. For a PR preview it names the pull request.
 
+### Fixed
+
+- A command no longer reports an operation as done when the CLI never managed
+  to make the request. A mistake inside the client, such as a call made with a
+  name the API method does not take, was handed back as an empty result, and
+  every command reads an empty error as success: a build promotion printed
+  "Promoted build ..." having sent no request at all. Such a failure now ends
+  the command with a non-zero exit code.
+- A command that cannot reach the API, or cannot read its answer, now says so
+  and exits 1. A dropped connection, a host that does not resolve, a request
+  that timed out and an answer that stops part way through were all read as an
+  empty answer, which most commands reported as success. `secrets set`
+  already said so, and still says whether a write it got no answer for may have
+  been stored. `deploy` and `github connect` still treat it as a blip while
+  they are waiting, and keep polling.
+
 ## [1.5.0] - 2026-11-05
 
 ### Added
