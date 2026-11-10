@@ -23,12 +23,26 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, NoReturn
 
-import click
 import typer
 from rich import box
 from rich.markup import escape
 from rich.table import Table
 from typer.core import TyperCommand, TyperGroup
+
+# Typer 0.29 bundles its own copy of click and raises that copy's exceptions,
+# which the click package's classes don't match. Earlier typer is built on the
+# click package. typer.Exit and typer.Abort are the right classes either way;
+# UsageError, ClickException and Context have no public typer name that matches
+# the base classes below, so take them from whichever click typer runs on.
+try:
+    from typer._click.core import Context  # pyright: ignore[reportMissingImports]
+    from typer._click.exceptions import (  # pyright: ignore[reportMissingImports]
+        ClickException,
+        UsageError,
+    )
+except ImportError:
+    from click.core import Context
+    from click.exceptions import ClickException, UsageError
 
 from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
@@ -78,20 +92,20 @@ class _EvalCommand(TyperCommand):
     The usage error is still shown by Typer, in its usual format.
     """
 
-    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+    def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
         try:
             return super().parse_args(ctx, args)
-        except click.UsageError as e:
+        except UsageError as e:
             e.exit_code = EXIT_ERROR
             raise
 
-    def invoke(self, ctx: click.Context) -> Any:
+    def invoke(self, ctx: Context) -> Any:
         try:
             return super().invoke(ctx)
-        except click.UsageError as e:
+        except UsageError as e:
             e.exit_code = EXIT_ERROR
             raise
-        except (click.ClickException, click.exceptions.Exit, click.Abort):
+        except (ClickException, typer.Exit, typer.Abort):
             raise
         except Exception as e:
             # The type only: the text of an exception can quote a file or a token.
@@ -105,17 +119,17 @@ class _EvalCommand(TyperCommand):
 class _EvalGroup(TyperGroup):
     """A group whose usage errors exit 3, like its commands'."""
 
-    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+    def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
         try:
             return super().parse_args(ctx, args)
-        except click.UsageError as e:
+        except UsageError as e:
             e.exit_code = EXIT_ERROR
             raise
 
-    def invoke(self, ctx: click.Context) -> Any:
+    def invoke(self, ctx: Context) -> Any:
         try:
             return super().invoke(ctx)
-        except click.UsageError as e:
+        except UsageError as e:
             e.exit_code = EXIT_ERROR
             raise
 
