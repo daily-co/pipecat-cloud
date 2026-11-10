@@ -142,6 +142,7 @@ class TestCLIRegionValidation:
             # The existence check fetches the set itself (see cli#197 and the
             # secrets-set sibling fix); None = no set of that name yet.
             mock_api.secrets_get = AsyncMock(return_value=(None, None))
+            mock_api.bubble_error.return_value = mock_api
             mock_api.secrets_upsert = AsyncMock(return_value=({"status": "OK"}, None))
 
             # Act

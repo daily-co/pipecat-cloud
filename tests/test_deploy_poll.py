@@ -14,9 +14,22 @@ class TestTransientFailures:
     """Failures that should be retried rather than failing the deploy."""
 
     def test_no_error_payload_is_transient(self):
-        # Network-level failures (timeout, connection reset) and 200-without-body
-        # responses surface as (None, None) — no structured error at all.
+        # A service object not yet visible, or an answer with no body, surfaces
+        # as (None, None) — no structured error at all. A request that got no
+        # response carries one now; that is the next test.
         assert _poll_failure_is_transient(None) is True
+
+    def test_no_response_at_all_is_transient(self):
+        # A request that never reached the API, or whose answer never came back,
+        # is recorded with no status and an error describing the connection
+        # rather than anything the server said. A blip, so keep polling.
+        assert (
+            _poll_failure_is_transient(
+                {"error": "Could not reach the Pipecat Cloud API (ClientConnectionError)."},
+                no_response=True,
+            )
+            is True
+        )
 
     def test_502_bad_gateway_is_transient(self):
         # The exact case from the ticket: API pod cycled by its liveness probe.

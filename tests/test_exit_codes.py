@@ -109,3 +109,19 @@ def test_no_discarded_typer_exit_in_source():
         "Found discarded typer.Exit/Abort (must be raised, not returned or dropped): "
         + ", ".join(offenders)
     )
+
+
+def test_a_failure_with_nothing_recorded_does_not_exit_zero():
+    """A wrapped API method that raises without an API error recorded used to
+    come back as (None, None). Every command reads a falsy error as success, so
+    the command printed its happy path and the process exited 0 — a build
+    promotion reported "Promoted build ..." having sent no request at all
+    (cli#223 review). The failure must reach the process exit code."""
+    with patch(
+        "pipecatcloud.cli.commands.agent.API._agent",
+        side_effect=TypeError("got an unexpected keyword argument 'buildId'"),
+    ):
+        result = runner.invoke(entrypoint_cli_typer, ["agent", "status", TEST_AGENT])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, TypeError)
