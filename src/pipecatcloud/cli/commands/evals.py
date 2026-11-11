@@ -4,14 +4,17 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""`pipecat cloud eval`: run scenarios against an agent and read the verdicts.
+"""`pipecat cloud eval`: run scenarios, judge finished calls, and read the verdicts.
 
 `run` starts a run for each scenario it's given, every one in the file unless
 `--scenario` names some, and the service runs them side by side. It follows
 them the way `pipecat eval` does: the scenarios' settings, a row a
 run, a summary, and what went wrong with each run that didn't pass.
 
-`run` waits by default (`--no-wait` starts the runs and returns); `status`
+`judge` submits finished sessions against one criteria policy, without starting
+an agent session. Each submission and result retains its source session ID.
+
+`run` and `judge` wait by default (`--no-wait` submits and returns); `status`
 shows a run as it is, and waits with `--wait`. Exit codes when they wait, for
 several runs the first that applies:
 
@@ -26,11 +29,13 @@ exits 130 and leaves the runs going.
 
 import asyncio
 import time
+from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, NoReturn
+from uuid import UUID
 
 import typer
 from rich import box
@@ -158,7 +163,7 @@ class _EvalGroup(TyperGroup):
 eval_cli = typer.Typer(
     name="eval",
     cls=_EvalGroup,
-    help="Run scenarios against an agent and read the results",
+    help="Run scenarios, judge finished sessions, and read the results",
     no_args_is_help=True,
 )
 
@@ -337,13 +342,14 @@ def _duration_ms(run: dict) -> int | None:
 
 
 def _run_label(run: dict) -> str:
-    """A run's scenario as `pipecat eval` names it, <file>/<scenario>, from the run alone."""
+    """The scenario, with the source session for a finished-call judgment."""
     path = str(run.get("scenarioPath") or "")
     stem = Path(path).stem if path else ""
     name = run.get("scenarioName")
-    if stem and name:
-        return f"{stem}/{name}"
-    return stem or str(name or "")
+    label = f"{stem}/{name}" if stem and name else stem or str(name or "")
+    if run.get("kind") == "session" and run.get("sessionId"):
+        return f"{label} ({run['sessionId']})"
+    return label
 
 
 # The marks and colors `pipecat eval` gives an outcome.
@@ -456,6 +462,22 @@ def _print_scenario_header(scenarios: list[tuple[str, dict]]) -> None:
         _print()
 
 
+def _print_judge_header(label: str, view: dict, session_ids: list[str]) -> None:
+    """The criteria and finished sessions to judge, without a simulated caller."""
+    _print("Criteria:")
+    _print(f"  [bold cyan]{escape(label)}:[/bold cyan]")
+    for key, body in _config_lines(view):
+        if key == "judge":
+            _print(f"    {_config_markup(key, body)}")
+    if isinstance(success := view.get("success"), str) and success.strip():
+        _print(f"    {_config_markup('success', ' '.join(success.split()))}")
+    _print()
+    _print("Sessions:")
+    for session_id in session_ids:
+        _print(f"  {escape(session_id)}")
+    _print()
+
+
 def _print_settings(agent: str, runs: int) -> None:
     """How the runs will go, in `pipecat eval suite`'s Settings block."""
     _print("Settings:")
@@ -476,6 +498,7 @@ class _Row:
     error: dict[str, Any] | None = None
     scenario_path: str | None = None
     scenario_name: str | None = None
+    session_id: str | None = None
     submission_status: Literal["error", "unknown", "not_submitted"] = "not_submitted"
     first_running: float | None = None
     spinner: Spinner = field(default_factory=lambda: Spinner("dots", style="cyan"))
@@ -502,6 +525,8 @@ class _Row:
             "scenarioName": self.scenario_name,
             "submissionStatus": self.submission_status,
         }
+        if self.session_id is not None:
+            entry["sessionId"] = self.session_id
         if self.error is not None:
             entry["error"] = self.error
         return entry
@@ -733,6 +758,7 @@ def _render_run(run: dict, agent: str, verbose: bool = False) -> None:
                 ("Run", run_id),
                 ("Agent", agent),
                 ("Kind", run.get("kind")),
+                ("Session", run.get("sessionId") if run.get("kind") == "session" else None),
                 ("Status", run.get("status")),
                 ("Scenario", scenario),
                 ("Created", format_timestamp(run["createdAt"]) if run.get("createdAt") else None),
@@ -858,7 +884,7 @@ def _wait_over(limit: float | None, started: float, run: dict, agent: str) -> No
 
 def _interrupted_starting(agent: str, rows: list[_Row], as_list: bool) -> NoReturn:
     """Ctrl-C while a run is being created: the request may have got through."""
-    if as_list:
+    if as_list or rows[0].session_id is not None:
         _print("\n[yellow]Stopped submitting runs. Accepted runs were not cancelled.[/yellow]")
         for row in rows:
             if row.run is not None:
@@ -879,7 +905,7 @@ def _interrupted_starting(agent: str, rows: list[_Row], as_list: bool) -> NoRetu
             else:
                 _print(f"Not submitted: {escape(row.label)}")
         if console.json_output:
-            console.output_json([r.as_json() for r in rows])
+            console.output_json([r.as_json() for r in rows] if as_list else rows[0].as_json())
         raise typer.Exit(EXIT_INTERRUPTED)
     message = (
         "Stopped while starting the run. The request may have reached the API, so a run "
@@ -961,6 +987,76 @@ async def _follow(org: str, agent: str, rows: list[_Row], verbose: bool, as_list
     raise typer.Exit(_exit_code(rows))
 
 
+async def _submit_runs(
+    org: str,
+    agent: str,
+    rows: list[_Row],
+    body_for: Callable[[_Row], dict[str, Any]],
+    *,
+    wait: bool,
+    verbose: bool,
+) -> None:
+    """Submit each requested run once, then follow it or show its acknowledgment."""
+    as_list = len(rows) > 1
+    try:
+        if len(rows) == 1 and rows[0].session_id is None:
+            rows[0].submission_status = "unknown"
+            with console.status(
+                f"[dim]Starting a run on [bold]'{agent}'[/bold][/dim]", spinner="dots"
+            ):
+                created, error = await _api().eval_run_create(org, agent, body_for(rows[0]))
+            rows[0].run = _check(created, error)
+        else:
+            with console.status(
+                f"[dim]Submitting {len(rows)} eval {'runs' if as_list else 'run'} on "
+                f"[bold]'{agent}'[/bold][/dim]",
+                spinner="dots",
+            ):
+                for row in rows:
+                    row.submission_status = "unknown"
+                    created, error = await API.bubble_error().eval_run_create(
+                        org, agent, body_for(row)
+                    )
+                    if created:
+                        row.run = created
+                    else:
+                        row.submission_status = "error"
+                        row.error = (
+                            dict(error)
+                            if isinstance(error, dict)
+                            else {"error": "The API didn't answer.", "code": "CLI-SUBMISSION"}
+                        )
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        _interrupted_starting(agent, rows, as_list)
+
+    if wait:
+        await _follow(org, agent, rows, verbose, as_list)
+
+    if console.json_output:
+        if as_list:
+            console.output_json([r.as_json() for r in rows])
+        else:
+            console.output_json(rows[0].as_json())
+    elif not as_list:
+        if rows[0].run is not None:
+            _render_run(rows[0].run, agent, verbose)
+        else:
+            _print_row_line(rows[0], agent)
+    else:
+        for row in rows:
+            mark, agent_cell, label, _ = _row_cells(row, agent)
+            run_id = row.run.get("id") if row.run else ""
+            detail = (
+                f"[dim]{escape(str(run_id))}[/dim]"
+                if row.run
+                else f"[red]{escape(row.error_message)}[/red]"
+            )
+            _print(f"  {mark} {agent_cell} {label} {detail}")
+        _print(f"[dim]Follow them with [bold]{PIPECAT_CLI_NAME} eval list {agent}[/bold].[/dim]")
+    if any(r.error is not None for r in rows):
+        raise typer.Exit(EXIT_ERROR)
+
+
 # ---- Commands ----
 
 _ORG_OPTION = typer.Option(
@@ -981,7 +1077,7 @@ _VERBOSE_OPTION = typer.Option(
     name="run",
     cls=_EvalCommand,
     help="Run a file's scenarios against an agent, side by side: every one, or those "
-    "named with --scenario. Pass --session to judge a finished session instead.",
+    "named with --scenario.",
 )
 @synchronizer.create_blocking
 async def run(
@@ -993,11 +1089,6 @@ async def run(
         [],
         "--scenario",
         help="A scenario in the file to run. Repeat for several. Every one by default.",
-    ),
-    session: str = typer.Option(
-        None,
-        "--session",
-        help="Judge this finished session of the agent, by the scenario's success: and metrics:.",
     ),
     param: list[str] = typer.Option(
         [],
@@ -1031,8 +1122,6 @@ async def run(
     await _login_check()
     org = _org(organization)
 
-    if session and param:
-        _fail("--param is for synthetic runs. A session run takes no params.")
     params = _parse_params(param)
 
     try:
@@ -1040,11 +1129,6 @@ async def run(
     except BundleError as e:
         _fail(str(e), code="CLI-BUNDLE")
     names = _selected_scenarios(scenario, bundle.scenario_names, bundle.scenario_path)
-    if session and len(names) > 1:
-        _fail(
-            f"--session judges one session by one scenario, and {bundle.scenario_path!r} "
-            f"holds several. Choose one with --scenario: {', '.join(names)}."
-        )
 
     data = bundle.data if isinstance(bundle.data, dict) else {}
     file_name = data.get("name") if isinstance(data.get("name"), str) else None
@@ -1054,15 +1138,13 @@ async def run(
         _print_scenario_header([(labels[n], _scenario_view(data, n)) for n in names])
         _print_settings(agent, len(names))
 
-    def body_for(name: str) -> dict[str, Any]:
+    def body_for(row: _Row) -> dict[str, Any]:
         body: dict[str, Any] = {
-            "kind": "session" if session else "synthetic",
+            "kind": "synthetic",
             "files": bundle.files,
             "scenarioPath": bundle.scenario_path,
-            "scenarioName": name,
+            "scenarioName": row.scenario_name,
         }
-        if session:
-            body["sessionId"] = session
         if params:
             body["params"] = params
         if deadline is not None:
@@ -1073,60 +1155,101 @@ async def run(
     rows = [
         _Row(labels[name], scenario_path=bundle.scenario_path, scenario_name=name) for name in names
     ]
-    as_list = len(names) > 1
+    await _submit_runs(org, agent, rows, body_for, wait=wait, verbose=verbose)
+
+
+@eval_cli.command(
+    name="judge",
+    cls=_EvalCommand,
+    help="Judge finished sessions against one criteria policy. No agent session is started.",
+)
+@synchronizer.create_blocking
+async def judge(
+    agent: str = typer.Argument(..., help="Name of the sessions' agent", show_default=False),
+    session_ids: list[UUID] = typer.Argument(
+        ..., help="Finished session IDs to judge", show_default=False
+    ),
+    criteria: Path = typer.Option(
+        ...,
+        "--criteria",
+        help="YAML file containing exactly one named criteria entry under scenarios:",
+        show_default=False,
+        dir_okay=False,
+    ),
+    deadline: int = typer.Option(
+        None,
+        "--deadline",
+        min=1,
+        help="Seconds each judgment may take, from creation. The API sets the bounds.",
+    ),
+    root: Path = typer.Option(
+        None,
+        "--root",
+        help="Directory the criteria's included files are read from, and may not leave. "
+        "Defaults to the criteria file's directory.",
+    ),
+    wait: bool = typer.Option(
+        True,
+        "--wait/--no-wait",
+        help="Wait for the judgments and exit with their verdicts. With --no-wait, submit and return.",
+    ),
+    verbose: bool = _VERBOSE_OPTION,
+    organization: str = _ORG_OPTION,
+    output_json: bool = _JSON_OPTION,
+):
+    _use_json(output_json)
+    await _login_check()
+    org = _org(organization)
+    sessions = [str(session_id) for session_id in session_ids]
+    seen: set[str] = set()
+    for session_id in sessions:
+        if session_id in seen:
+            _fail(f"Session ID {session_id!r} was provided more than once.")
+        seen.add(session_id)
+
     try:
-        if len(names) == 1:
-            rows[0].submission_status = "unknown"
-            with console.status(
-                f"[dim]Starting a run on [bold]'{agent}'[/bold][/dim]", spinner="dots"
-            ):
-                created, error = await _api().eval_run_create(org, agent, body_for(names[0]))
-            rows[0].run = _check(created, error)
-        else:
-            with console.status(
-                f"[dim]Starting {len(names)} runs on [bold]'{agent}'[/bold][/dim]", spinner="dots"
-            ):
-                for name, row in zip(names, rows):
-                    row.submission_status = "unknown"
-                    created, error = await API.bubble_error().eval_run_create(
-                        org, agent, body_for(name)
-                    )
-                    if created:
-                        row.run = created
-                    else:
-                        row.submission_status = "error"
-                        row.error = (
-                            dict(error)
-                            if isinstance(error, dict)
-                            else {"error": "The API didn't answer.", "code": "CLI-SUBMISSION"}
-                        )
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        _interrupted_starting(agent, rows, as_list)
+        bundle = build_bundle(criteria, root)
+    except BundleError as e:
+        _fail(str(e), code="CLI-BUNDLE")
+    data = bundle.data if isinstance(bundle.data, dict) else {}
+    entries = data.get("scenarios")
+    names = bundle.scenario_names
+    if (
+        not isinstance(entries, list)
+        or len(entries) != 1
+        or len(names) != 1
+        or not names[0].strip()
+    ):
+        _fail("--criteria requires exactly one named entry under scenarios:.")
+    name = names[0]
+    file_name = data.get("name") if isinstance(data.get("name"), str) else None
+    label = f"{file_name or Path(bundle.scenario_path).stem}/{name}"
+    if wait and not console.json_output:
+        _print_judge_header(label, _scenario_view(data, name), sessions)
+        _print_settings(agent, len(sessions))
+    rows = [
+        _Row(
+            f"{label} ({session_id})",
+            scenario_path=bundle.scenario_path,
+            scenario_name=name,
+            session_id=session_id,
+        )
+        for session_id in sessions
+    ]
 
-    if wait:
-        await _follow(org, agent, rows, verbose, as_list)
+    def body_for(row: _Row) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "kind": "session",
+            "sessionId": row.session_id,
+            "files": bundle.files,
+            "scenarioPath": bundle.scenario_path,
+            "scenarioName": name,
+        }
+        if deadline is not None:
+            body["deadlineSeconds"] = deadline
+        return body
 
-    created_runs = [r.run for r in rows if r.run is not None]
-    if console.json_output:
-        if as_list:
-            console.output_json([r.as_json() for r in rows])
-        else:
-            console.output_json(created_runs[0])
-    elif not as_list:
-        _render_run(created_runs[0], agent, verbose)
-    else:
-        for row in rows:
-            mark, agent_cell, label, _ = _row_cells(row, agent)
-            run_id = row.run.get("id") if row.run else ""
-            detail = (
-                f"[dim]{escape(str(run_id))}[/dim]"
-                if row.run
-                else f"[red]{escape(row.error_message)}[/red]"
-            )
-            _print(f"  {mark} {agent_cell} {label} {detail}")
-        _print(f"[dim]Follow them with [bold]{PIPECAT_CLI_NAME} eval list {agent}[/bold].[/dim]")
-    if any(r.error is not None for r in rows):
-        raise typer.Exit(EXIT_ERROR)
+    await _submit_runs(org, agent, rows, body_for, wait=wait, verbose=verbose)
 
 
 @eval_cli.command(

@@ -1,4 +1,4 @@
-"""Tests for `pipecat cloud eval run | status | list | cancel` and their API methods."""
+"""Tests for `pipecat cloud eval` commands and their API methods."""
 
 import asyncio
 import json
@@ -25,6 +25,7 @@ runner = CliRunner()
 
 RUN_ID = "11111111-2222-4333-8444-555555555555"
 SESSION_ID = "7538a263-3966-48d8-807c-904c33f9afe5"
+SECOND_SESSION_ID = "86c1f86e-96b7-4fce-8a65-21303b592be6"
 
 SCENARIO = """\
 name: calls
@@ -44,6 +45,17 @@ TWO_SCENARIOS = (
     success: Hours were given.
 """
 )
+
+CRITERIA = """\
+name: session_review
+scenarios:
+  - name: call
+    success: The bot answered the caller's question correctly.
+    metrics:
+      - name: concise
+        criterion: The bot asked one question at a time.
+        min_score: 0.8
+"""
 
 
 def make_run(status="queued", verdict=None, result=None, **extra):
@@ -91,6 +103,13 @@ def scenario_file(tmp_path):
 
 
 @pytest.fixture
+def criteria_file(tmp_path):
+    path = tmp_path / "criteria.yaml"
+    path.write_text(CRITERIA, encoding="utf-8")
+    return path
+
+
+@pytest.fixture
 def api():
     """A stand-in for the CLI's API client; each test sets the answers it needs."""
     with patch("pipecatcloud.cli.commands.evals.API") as mock_api:
@@ -119,11 +138,12 @@ def sleeps():
 
 
 def invoke(*args):
-    """Run `pipecat cloud eval`. `run` waits by default, so a test of `run` that
-    doesn't say --wait is about starting runs, and gets --no-wait; TestWaitIsTheDefault
-    covers the default itself."""
+    """Run `pipecat cloud eval`; submission tests opt out of the default wait.
+
+    TestWaitIsTheDefault covers the actual command defaults directly.
+    """
     argv = [*map(str, args)]
-    if argv[:1] == ["run"] and "--wait" not in argv and "--no-wait" not in argv:
+    if argv[:1] in (["run"], ["judge"]) and "--wait" not in argv and "--no-wait" not in argv:
         argv.append("--no-wait")
     return runner.invoke(entrypoint_cli_typer, ["eval", *argv])
 
@@ -174,27 +194,11 @@ class TestRun:
         names = [c.args[2]["scenarioName"] for c in api.eval_run_create.await_args_list]
         assert names == ["hours", "book"]
 
-    def test_a_session_run_takes_one_scenario(self, api, tmp_path):
-        path = tmp_path / "calls.yaml"
-        path.write_text(TWO_SCENARIOS, encoding="utf-8")
-        result = invoke("run", "a", path, "--session", SESSION_ID)
-        assert result.exit_code == 3
-        assert "--scenario" in result.output
-        api.eval_run_create.assert_not_awaited()
-
     def test_unknown_scenario_name_is_refused_before_any_request(self, api, scenario_file):
         result = invoke("run", "a", scenario_file, "--scenario", "nope")
         assert result.exit_code == 3
         assert "nope" in result.output and "book" in result.output
         api.eval_run_create.assert_not_awaited()
-
-    def test_session_run_sends_the_session_and_its_kind(self, api, scenario_file):
-        result = invoke("run", "a", scenario_file, "--session", SESSION_ID)
-        assert result.exit_code == 0, result.output
-        body = api.eval_run_create.await_args.args[2]
-        assert body["kind"] == "session"
-        assert body["sessionId"] == SESSION_ID
-        assert "params" not in body
 
     def test_params_and_deadline_are_sent_as_numbers(self, api, scenario_file):
         result = invoke(
@@ -221,14 +225,6 @@ class TestRun:
     def test_bad_params_are_refused_before_any_request(self, api, scenario_file, param):
         result = invoke("run", "a", scenario_file, "--param", param)
         assert result.exit_code == 3
-        api.eval_run_create.assert_not_awaited()
-
-    def test_params_with_a_session_are_refused(self, api, scenario_file):
-        result = invoke(
-            "run", "a", scenario_file, "--session", SESSION_ID, "--param", "defaultTimeoutMs=1"
-        )
-        assert result.exit_code == 3
-        assert "synthetic" in result.output
         api.eval_run_create.assert_not_awaited()
 
     def test_root_keys_the_files_relative_to_it(self, api, tmp_path):
@@ -284,9 +280,7 @@ class TestRun:
         assert json.loads(result.stdout) == {"error": error}
 
     def test_a_refusal_in_json_mode_is_an_error_object(self, api, scenario_file):
-        result = invoke(
-            "run", "a", scenario_file, "--session", SESSION_ID, "--param", "x=1", "--json"
-        )
+        result = invoke("run", "a", scenario_file, "--param", "x=1", "--json")
         assert result.exit_code == 3
         assert json.loads(result.stdout)["error"]["code"] == "CLI-USAGE"
 
@@ -800,8 +794,26 @@ class TestInterruptionAsTheSynchronizerDeliversIt:
 class _RunningHandler(BaseHTTPRequestHandler):
     hit = threading.Event()
 
+    def do_POST(self):  # noqa: N802
+        source = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        setattr(self.server, "eval_source", source)
+        body = json.dumps(make_run(kind=source["kind"], sessionId=source.get("sessionId"))).encode()
+        self.send_response(202)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):  # noqa: N802
-        body = json.dumps(make_run("running", deadlineAt="2099-01-01T00:00:00.000Z")).encode()
+        source = getattr(self.server, "eval_source", {})
+        body = json.dumps(
+            make_run(
+                "running",
+                deadlineAt="2099-01-01T00:00:00.000Z",
+                kind=source.get("kind", "synthetic"),
+                sessionId=source.get("sessionId"),
+            )
+        ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -815,7 +827,10 @@ class _RunningHandler(BaseHTTPRequestHandler):
 
 class TestRealSigint:
     @pytest.mark.parametrize("extra", [[], ["--json"]])
-    def test_sigint_while_waiting_prints_the_lines_and_exits_130(self, extra):
+    @pytest.mark.parametrize("command", ["status", "judge"])
+    def test_sigint_while_waiting_prints_the_lines_and_exits_130(
+        self, extra, command, criteria_file
+    ):
         _RunningHandler.hit.clear()
         server = HTTPServer(("127.0.0.1", 0), _RunningHandler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -830,11 +845,11 @@ class TestRealSigint:
                 "-c",
                 code,
                 "eval",
-                "status",
-                RUN_ID,
-                "--agent",
-                "a",
-                "--wait",
+                *(
+                    ["status", RUN_ID, "--agent", "a", "--wait"]
+                    if command == "status"
+                    else ["judge", "a", SESSION_ID, "--criteria", str(criteria_file)]
+                ),
                 *extra,
             ],
             env=env,
@@ -857,6 +872,8 @@ class TestRealSigint:
         assert "still going" in combined
         if extra:
             assert json.loads(out)["status"] == "running"
+            if command == "judge":
+                assert json.loads(out)["sessionId"] == SESSION_ID
 
 
 class TestUnexpectedFailures:
@@ -1429,3 +1446,299 @@ class TestPipecatEvalStyle:
     def test_durations_read_like_pipecat_eval_and_never_say_60s(self):
         assert evals._fmt_seconds(59.96) == "1m 00s"
         assert evals._fmt_seconds(12.34) == "12.3s"
+
+
+# ---- Finished-session judging ----
+
+
+def judgment(session_id=SESSION_ID, run_id=RUN_ID, **extra):
+    return make_run(
+        **{
+            "id": run_id,
+            "kind": "session",
+            "sessionId": session_id,
+            "scenarioPath": "criteria.yaml",
+            "scenarioName": "call",
+            **extra,
+        }
+    )
+
+
+class TestJudge:
+    def test_submits_one_finished_session_with_unmodified_criteria(self, api, criteria_file):
+        accepted = judgment()
+        api.eval_run_create.return_value = accepted, None
+        result = invoke("judge", "a", SESSION_ID, "--criteria", criteria_file, "--json")
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout) == accepted
+        api.eval_run_create.assert_awaited_once_with(
+            "test-org",
+            "a",
+            {
+                "kind": "session",
+                "sessionId": SESSION_ID,
+                "files": {"criteria.yaml": CRITERIA},
+                "scenarioPath": "criteria.yaml",
+                "scenarioName": "call",
+            },
+        )
+        api.eval_run_get.assert_not_awaited()
+
+    def test_sessions_are_submitted_in_input_order(self, api, criteria_file):
+        accepted = [judgment(), judgment(SECOND_SESSION_ID, OTHER_ID)]
+        api.eval_run_create.side_effect = [(run, None) for run in accepted]
+        result = invoke(
+            "judge", "a", SESSION_ID, SECOND_SESSION_ID, "--criteria", criteria_file, "--json"
+        )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout) == accepted
+        assert [c.args[2]["sessionId"] for c in api.eval_run_create.await_args_list] == [
+            SESSION_ID,
+            SECOND_SESSION_ID,
+        ]
+
+    def test_deadline_and_organization_apply_to_each_judgment(self, api, criteria_file):
+        api.eval_run_create.return_value = judgment(), None
+        result = invoke(
+            "judge",
+            "a",
+            SESSION_ID,
+            "--criteria",
+            criteria_file,
+            "--deadline",
+            "300",
+            "-o",
+            "other-org",
+        )
+        assert result.exit_code == 0, result.output
+        org, agent, body = api.eval_run_create.await_args.args
+        assert (org, agent, body["deadlineSeconds"]) == ("other-org", "a", 300)
+        assert "params" not in body
+
+    @pytest.mark.parametrize("sessions", [["invalid"], [SESSION_ID, "invalid"]])
+    def test_all_session_ids_are_validated_before_any_submission(
+        self, api, criteria_file, sessions
+    ):
+        result = invoke("judge", "a", *sessions, "--criteria", criteria_file)
+        assert result.exit_code == 3, result.output
+        api.eval_run_create.assert_not_awaited()
+
+    def test_canonical_duplicates_are_refused_before_any_submission(self, api, criteria_file):
+        result = invoke(
+            "judge", "a", SESSION_ID, SESSION_ID.upper(), "--criteria", criteria_file, "--json"
+        )
+        assert result.exit_code == 3, result.output
+        assert json.loads(result.stdout)["error"]["code"] == "CLI-USAGE"
+        assert "more than once" in result.stdout
+        api.eval_run_create.assert_not_awaited()
+
+    @pytest.mark.parametrize("missing", ["sessions", "criteria"])
+    def test_sessions_and_criteria_are_required(self, api, criteria_file, missing):
+        args = ["--criteria", criteria_file] if missing == "sessions" else [SESSION_ID]
+        result = invoke("judge", "a", *args)
+        assert result.exit_code == 3, result.output
+        api.eval_run_create.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "flag,value", [("--scenario", "call"), ("--param", "defaultTimeoutMs=1")]
+    )
+    def test_synthetic_selection_and_runtime_settings_are_not_judge_options(
+        self, api, criteria_file, flag, value
+    ):
+        result = invoke("judge", "a", SESSION_ID, "--criteria", criteria_file, flag, value)
+        assert result.exit_code == 3, result.output
+        api.eval_run_create.assert_not_awaited()
+
+    def test_run_no_longer_accepts_the_unreleased_session_option(self, api, scenario_file):
+        result = invoke("run", "a", scenario_file, "--session", SESSION_ID)
+        assert result.exit_code == 3, result.output
+        api.eval_run_create.assert_not_awaited()
+
+    @pytest.mark.parametrize("entries", ["[]", "[{name: a}, {name: b}]", "[{name: ''}]", "[{}]"])
+    def test_criteria_requires_one_named_entry(self, api, tmp_path, entries):
+        path = tmp_path / "criteria.yaml"
+        path.write_text(f"scenarios: {entries}\n", encoding="utf-8")
+        result = invoke("judge", "a", SESSION_ID, "--criteria", path)
+        assert result.exit_code == 3, result.output
+        assert "exactly one named entry" in result.output
+        api.eval_run_create.assert_not_awaited()
+
+    def test_criteria_include_closure_uses_the_existing_safe_root(self, api, tmp_path):
+        (tmp_path / "policies").mkdir()
+        (tmp_path / "shared").mkdir()
+        path = tmp_path / "policies" / "criteria.yaml"
+        path.write_text(
+            "name: session_review\nscenarios:\n  - name: call\n"
+            "    success: !include ../shared/success.yaml\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "shared" / "success.yaml").write_text("A correct answer.\n", encoding="utf-8")
+        api.eval_run_create.return_value = judgment(), None
+        result = invoke("judge", "a", SESSION_ID, "--criteria", path, "--root", tmp_path)
+        assert result.exit_code == 0, result.output
+        body = api.eval_run_create.await_args.args[2]
+        assert sorted(body["files"]) == ["policies/criteria.yaml", "shared/success.yaml"]
+        assert body["scenarioPath"] == "policies/criteria.yaml"
+        assert "!include ../shared/success.yaml" in body["files"]["policies/criteria.yaml"]
+
+    def test_hidden_includes_are_refused_before_submission(self, api, criteria_file):
+        criteria_file.write_text(CRITERIA + "private: !include .env\n", encoding="utf-8")
+        (criteria_file.parent / ".env").write_text("TOKEN=private\n", encoding="utf-8")
+        result = invoke("judge", "a", SESSION_ID, "--criteria", criteria_file)
+        assert result.exit_code == 3, result.output
+        assert "hidden" in result.output
+        api.eval_run_create.assert_not_awaited()
+
+    def test_header_names_the_session_and_actual_criteria_without_fake_caller(
+        self, api, sleeps, tmp_path
+    ):
+        path = tmp_path / "criteria.yaml"
+        path.write_text(
+            CRITERIA.replace(
+                "    success:",
+                "    persona: Fake caller canary.\n    goal: Fake goal canary.\n    success:",
+            ),
+            encoding="utf-8",
+        )
+        accepted = judgment(status="completed", verdict="passed", result=PASSED_RESULT)
+        api.eval_run_create.return_value = accepted, None
+        out = invoke("judge", "a", SESSION_ID, "--criteria", path, "--wait").stdout
+        assert "Criteria:" in out and "session_review/call" in out
+        assert "Sessions:" in out and SESSION_ID in out
+        assert "judge -> modality: text | eval: hosted" in out
+        assert "success -> The bot answered" in out
+        assert "Fake caller canary" not in out and "Fake goal canary" not in out
+        assert "user  ->" not in out and "goal  ->" not in out
+        assert "Simulated scenarios:" not in out
+
+    def test_session_status_keeps_source_identity(self, api):
+        api.eval_run_get.return_value = judgment(status="running"), None
+        out = invoke("status", RUN_ID, "--agent", "a").stdout
+        assert "Session" in out and SESSION_ID in out
+        api.eval_run_get.return_value = judgment(status="completed", verdict="passed"), None
+        out = invoke("status", RUN_ID, "--agent", "a").stdout
+        assert f"criteria/call ({SESSION_ID})" in out
+
+    @pytest.mark.parametrize("wait_flag", ["--wait", "--no-wait"])
+    @pytest.mark.parametrize("single", [True, False])
+    def test_refused_judgments_preserve_session_identity(
+        self, api, criteria_file, wait_flag, single
+    ):
+        refusal = {"error": "Conversation not published", "code": "EVAL-CONVERSATION-MISSING"}
+        api.eval_run_create.return_value = None, refusal
+        sessions = [SESSION_ID] if single else [SESSION_ID, SECOND_SESSION_ID]
+        result = invoke("judge", "a", *sessions, "--criteria", criteria_file, wait_flag, "--json")
+        assert result.exit_code == 3, result.output
+        rows = json.loads(result.stdout)
+        rows = [rows] if single else rows
+        assert [row["sessionId"] for row in rows] == sessions
+        assert all(row["submissionStatus"] == "error" and row["error"] == refusal for row in rows)
+        assert all("id" not in row for row in rows)
+        assert api.eval_run_create.await_count == len(sessions)
+        api.eval_run_get.assert_not_awaited()
+        api.eval_run_cancel.assert_not_awaited()
+
+    @pytest.mark.parametrize("output", ["plain", "rich", "json"])
+    def test_partial_submission_interrupt_keeps_accepted_unknown_and_unattempted_ids(
+        self, api, criteria_file, output
+    ):
+        third = "e3b7eaef-058f-4219-bd3e-4dc303a3d656"
+        accepted = judgment()
+        api.eval_run_create.side_effect = [(accepted, None), asyncio.CancelledError()]
+        result = runner.invoke(
+            entrypoint_cli_typer,
+            [
+                "--output",
+                output,
+                "eval",
+                "judge",
+                "a",
+                SESSION_ID,
+                SECOND_SESSION_ID,
+                third,
+                "--criteria",
+                str(criteria_file),
+                "--no-wait",
+            ],
+        )
+        assert result.exit_code == 130, result.output
+        human = result.stderr if output == "json" else result.stdout
+        assert RUN_ID in human and SECOND_SESSION_ID in human and third in human
+        if output == "json":
+            rows = json.loads(result.stdout)
+            assert rows[0] == accepted
+            assert rows[1]["sessionId"] == SECOND_SESSION_ID
+            assert rows[1]["submissionStatus"] == "unknown"
+            assert rows[2]["sessionId"] == third and rows[2]["submissionStatus"] == "not_submitted"
+        assert api.eval_run_create.await_count == 2
+        api.eval_run_cancel.assert_not_awaited()
+
+    def test_single_interrupted_submission_preserves_unknown_session_identity(
+        self, api, criteria_file
+    ):
+        api.eval_run_create.side_effect = asyncio.CancelledError()
+        result = invoke("judge", "a", SESSION_ID, "--criteria", criteria_file, "--json")
+        assert result.exit_code == 130, result.output
+        value = json.loads(result.stdout)
+        assert value["sessionId"] == SESSION_ID and value["submissionStatus"] == "unknown"
+        assert value["error"]["code"] == "CLI-INTERRUPTED"
+        assert "id" not in value
+        api.eval_run_create.assert_awaited_once()
+        api.eval_run_cancel.assert_not_awaited()
+
+    def test_waiting_interrupt_keeps_failed_siblings_and_latest_accepted_session(
+        self, api, sleeps, criteria_file
+    ):
+        refusal = {"error": "Missing conversation", "code": "CONVERSATION-MISSING"}
+        api.eval_run_create.side_effect = [(judgment(), None), (None, refusal)]
+        running = judgment(status="running")
+        api.eval_run_get.return_value = running, None
+        sleeps.side_effect = [None, asyncio.CancelledError()]
+        result = invoke(
+            "judge",
+            "a",
+            SESSION_ID,
+            SECOND_SESSION_ID,
+            "--criteria",
+            criteria_file,
+            "--wait",
+            "--json",
+        )
+        assert result.exit_code == 130, result.output
+        rows = json.loads(result.stdout)
+        assert rows[0] == running
+        assert rows[1]["sessionId"] == SECOND_SESSION_ID and rows[1]["error"] == refusal
+        api.eval_run_cancel.assert_not_awaited()
+
+    def test_judge_waits_by_default_and_uses_the_shared_exit_priority(
+        self, api, sleeps, criteria_file
+    ):
+        api.eval_run_create.side_effect = [
+            (judgment(), None),
+            (judgment(SECOND_SESSION_ID, OTHER_ID), None),
+        ]
+        ended = {
+            RUN_ID: judgment(status="completed", verdict="passed"),
+            OTHER_ID: judgment(SECOND_SESSION_ID, OTHER_ID, status="completed", verdict="failed"),
+        }
+
+        async def get(org, agent, run_id):
+            return ended[run_id], None
+
+        api.eval_run_get.side_effect = get
+        result = runner.invoke(
+            entrypoint_cli_typer,
+            [
+                "eval",
+                "judge",
+                "a",
+                SESSION_ID,
+                SECOND_SESSION_ID,
+                "--criteria",
+                str(criteria_file),
+                "--json",
+            ],
+        )
+        assert result.exit_code == 1, result.output
+        assert json.loads(result.stdout) == [ended[RUN_ID], ended[OTHER_ID]]
+        assert api.eval_run_get.await_count == 2

@@ -9,20 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `eval run`, `eval status`, `eval list` and `eval cancel` run a scenario
+- `eval run`, `eval judge`, `eval status`, `eval list` and `eval cancel` run a scenario
   against a deployed agent and read the result. `eval run AGENT SCENARIO_FILE`
   sends the scenario file and the files it `!include`s from `--root` (by
   default the scenario file's directory), as UTF-8 text, up to 256 KiB. Hidden
   files, files that look like they hold secrets, symlinks that leave the root
-  and files that aren't UTF-8 are refused before anything is sent. Pass
-  `--session ID` to judge a finished session by the scenario's `success:` and
-  `metrics:`, `--param KEY=VALUE` to set a synthetic run's timeouts, and
-  `--deadline SECONDS` to bound the run.
-- With `--wait`, `eval run` and `eval status` poll until the run ends and exit
+  and files that aren't UTF-8 are refused before anything is sent.
+  `eval judge AGENT SESSION_ID [SESSION_ID...] --criteria FILE` judges finished
+  sessions against one named `scenarios:` entry with `success:` and optional
+  judged metrics, without a simulated caller. Both commands accept
+  `--deadline SECONDS`; `--param KEY=VALUE` sets synthetic run timeouts.
+- With `--wait`, `eval run`, `eval judge` and `eval status` poll until the run ends and exit
   0 for a `passed` or `skipped` verdict, 1 for `failed`, 2 for a run that ended
   without a verdict and 3 for an API or usage error. Ctrl-C stops waiting,
   leaves the run going, prints the commands to check on it or cancel it, and
-  exits 130. `eval list` takes `--limit` and `--offset`. All four commands
+  exits 130. `eval list` takes `--limit` and `--offset`. All five commands
   take `--json`, and where evals aren't turned on yet they say so.
 - `eval run` runs every scenario in the file, side by side, unless `--scenario`
   names some (repeat it for several), and waits for them by default, as
@@ -34,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `eval status` explains every run, with its conversation. With several
   runs, the exit code is the first that applies of 3, 1 and 2, and `--json`
   prints a list.
+- `eval judge` waits by default and supports `--no-wait`, `-v`, and the same
+  verdict exit codes. Each session is submitted once; duplicate or invalid IDs
+  are refused before submission. Single-result JSON is an object and multiple
+  results form an ordered list. Unacknowledged judgments retain their session
+  IDs, submission status and API errors, including during Ctrl-C recovery.
 - Multi-scenario JSON output retains submission errors with their scenario names
   and API error codes. Ctrl-C during submission preserves accepted run IDs and
   distinguishes the interrupted request from scenarios not yet submitted.
