@@ -8,8 +8,9 @@ region support, error handling, and request construction.
 # Import from source, not installed package
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -491,6 +492,37 @@ class TestNoContentResponses:
         assert result is None
         assert json_called is False
 
+    @pytest.mark.asyncio
+    async def test_an_ok_answer_that_is_not_json_is_read_as_no_body(self, api_client):
+        """The operation succeeded; there is simply nothing to read. Spelled out
+        here because the wrapper no longer swallows the parse error into an
+        empty result, and a completed write must not be reported as failed."""
+
+        class _Resp:
+            ok = True
+            status = 200
+            headers = {}
+
+            @staticmethod
+            async def json():
+                raise aiohttp.ContentTypeError(MagicMock(), ())
+
+        class _Session:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            async def request(self, **_kwargs):
+                return _Resp()
+
+        with patch("aiohttp.ClientSession", lambda *a, **k: _Session()):
+            result = await api_client._base_request("PUT", "https://example/x")
+
+        assert result is None
+        assert api_client.error is None
+
 
 def _session_answering(*responses):
     """An aiohttp session stand-in that answers each request with the next
@@ -559,3 +591,155 @@ class TestErrorStatus:
 
         assert (found, error) == (None, None)
         assert api_client.error_status is None
+
+
+def _session_raising(exc: Exception):
+    """An aiohttp session stand-in whose request never gets a response."""
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def request(self, **_kwargs):
+            raise exc
+
+    return lambda *a, **k: _Session()
+
+
+class TestFailuresWithNothingRecorded:
+    """A wrapped method that raises without an API error recorded is a failure
+    on this side of the call. It used to come back as `(None, None)`, which
+    every command reads as success — a build promotion printed "Promoted
+    build ..." having sent no request at all (cli#223 review)."""
+
+    @pytest.fixture
+    def api_client(self):
+        return _API(token="test-token", is_cli=True)
+
+    @pytest.mark.asyncio
+    async def test_a_wrong_keyword_reaches_the_caller(self, api_client):
+        """The cli#223 shape exactly: a keyword the method does not take."""
+        with patch.object(api_client, "_whoami", side_effect=TypeError("'buildId'")):
+            with pytest.raises(TypeError):
+                await api_client.whoami()
+
+    @pytest.mark.asyncio
+    async def test_bubbling_the_error_does_not_bring_the_swallow_back(self, api_client):
+        with patch.object(api_client, "_whoami", side_effect=AttributeError("gone")):
+            with pytest.raises(AttributeError):
+                await api_client.bubble_error().whoami()
+        # And the request to bubble does not leak into the next call.
+        assert api_client.bubble_next is False
+
+    @pytest.mark.asyncio
+    async def test_the_sdk_sees_the_original_exception(self):
+        """Not an AgentStartError: there is no API error to put in one."""
+        api = _API(token="test-token", is_cli=False)
+        with patch.object(api, "_whoami", side_effect=KeyError("organizations")):
+            with pytest.raises(KeyError):
+                await api.whoami()
+
+    @pytest.mark.asyncio
+    async def test_a_live_display_is_stopped_before_a_local_failure_is_raised(self, api_client):
+        """Whatever the failure, the spinner does not outlive the call and leave
+        the traceback printing over it."""
+        live = MagicMock()
+        with patch.object(api_client, "_whoami", side_effect=TypeError("'buildId'")):
+            with pytest.raises(TypeError):
+                await api_client.whoami(live=live)
+
+        live.stop.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_a_refusal_still_comes_back_as_the_error(self, api_client):
+        """Unchanged: what the API answered with is returned, not raised."""
+        refusal = {"error": "Not a member", "code": "NOT_A_MEMBER"}
+        with patch("aiohttp.ClientSession", _session_answering(_response(403, refusal))):
+            found, error = await api_client.bubble_error().github_installation(org="o")
+
+        assert (found, error) == (None, refusal)
+        assert api_client.error_status == 403
+        assert api_client.no_response() is False
+
+
+class TestRequestsThatGetNoResponse:
+    """A request the API never answered — the host unreachable, the connection
+    dropped, the request timed out. There is no status and no body, but it is a
+    failure, and it has to read as one rather than as an empty result."""
+
+    @pytest.fixture
+    def api_client(self):
+        return _API(token="test-token", is_cli=True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            aiohttp.ClientConnectionError("dropped while sending KEY=secret"),
+            TimeoutError("timed out on https://api/x?token=secret"),
+        ],
+        ids=["connection", "timeout"],
+    )
+    async def test_it_comes_back_as_an_error_naming_no_status(self, api_client, failure):
+        with patch("aiohttp.ClientSession", _session_raising(failure)):
+            found, error = await api_client.bubble_error().github_installation(org="o")
+
+        assert found is None
+        assert "Could not reach the Pipecat Cloud API" in error["error"]
+        assert api_client.error_status is None
+        assert api_client.no_response() is True
+        # The type of the failure, never its text: an exception's message can
+        # carry the URL and the body the request was sent with.
+        assert type(failure).__name__ in error["error"]
+        assert "secret" not in error["error"]
+
+    @pytest.mark.asyncio
+    async def test_an_answer_that_times_out_mid_body_is_recorded_the_same_way(self, api_client):
+        """aiohttp returns from `request()` once the headers are in, so a body
+        read that times out raises after that, with a status that says only that
+        the server had begun to answer."""
+
+        class _Resp:
+            ok = True
+            status = 200
+            headers = {}
+
+            @staticmethod
+            async def json():
+                raise TimeoutError("reading https://api/x?token=secret")
+
+        class _Session:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            async def request(self, **_kwargs):
+                return _Resp()
+
+        with patch("aiohttp.ClientSession", lambda *a, **k: _Session()):
+            found, error = await api_client.bubble_error().github_installation(org="o")
+
+        assert found is None
+        assert "Could not read the answer from the Pipecat Cloud API" in error["error"]
+        assert "TimeoutError" in error["error"]
+        assert api_client.error_status is None
+        assert api_client.no_response() is True
+        assert "secret" not in error["error"]
+
+    @pytest.mark.asyncio
+    async def test_the_sdk_sees_the_transport_exception_itself(self):
+        """Not an AgentStartError: there is nothing the API said to put in one.
+        The rendered error stays on the client for whoever wants it."""
+        api = _API(token="test-token", is_cli=False)
+        dropped = aiohttp.ClientConnectionError("dropped")
+
+        with patch("aiohttp.ClientSession", _session_raising(dropped)):
+            with pytest.raises(aiohttp.ClientConnectionError):
+                await api.github_installation(org="o")
+
+        assert api.no_response() is True

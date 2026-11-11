@@ -7,14 +7,16 @@ Tests focus on core behaviors and edge cases, not implementation details.
 # Import from source, not installed package
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import aiohttp
 import pytest
 import typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pipecatcloud.cli.commands.agent import (
+    API,
     _session_status_display,
     sessions,
 )
@@ -44,14 +46,36 @@ class TestAgentSessionsCommand:
 
     def test_handles_api_error_gracefully(self, mock_api):
         """API errors should be handled without crashing."""
-        # Arrange: _agent_sessions raises exception (API error)
-        mock_api.side_effect = Exception("Agent not found")
+
+        # Arrange: the API refuses the request, as `_base_request` reports one —
+        # the body and status recorded, then the response's exception raised.
+        async def refuse(*_args, **_kwargs):
+            API.error = {"error": "Agent not found", "code": "404"}
+            API.error_status = 404
+            raise aiohttp.ClientResponseError(MagicMock(), (), status=404)
+
+        mock_api.side_effect = refuse
 
         # Act & Assert: Should raise typer.Exit on error
         with pytest.raises(typer.Exit):
             sessions(
                 deploy_config=None,
                 agent_name="nonexistent-agent",
+                session_id=None,
+                organization=TEST_ORG,
+            )
+
+    def test_a_failure_with_nothing_recorded_reaches_the_caller(self, mock_api):
+        """An exception that recorded no API error is a failure on this side of
+        the call — a keyword that does not match the method, a missing
+        attribute. It has to reach the caller: handed back as an empty result it
+        would be read as an operation that completed (cli#223 review)."""
+        mock_api.side_effect = TypeError("unexpected keyword argument 'buildId'")
+
+        with pytest.raises(TypeError):
+            sessions(
+                deploy_config=None,
+                agent_name=TEST_AGENT,
                 session_id=None,
                 organization=TEST_ORG,
             )
