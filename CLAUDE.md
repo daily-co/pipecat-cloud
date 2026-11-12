@@ -107,7 +107,9 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 
 ## Changelog entries
 
-Don't edit `CHANGELOG.md` in a feature PR. Each PR with a user-facing change adds **changelog fragments** to `changelog/`, which towncrier assembles at release time, so parallel PRs never conflict on the changelog. Write them with `/pipecat-dev:changelog <PR number>`, which then runs `/pipecat-dev:prose-review` over them. Both come from the `pipecat-dev` plugin in the Pipecat repo, which `.claude/settings.json` enables for this repo.
+Don't edit `CHANGELOG.md` in a feature PR. Each PR with a user-facing change adds **changelog fragments** to `changelog/`, which towncrier assembles at release time, so parallel PRs never conflict on the changelog.
+
+Open PRs with `/pipecat-dev:pr-submit`. It runs `/pipecat-dev:prose-review` on the branch, opens the PR, writes its fragments with `/pipecat-dev:changelog <PR number>`, and fills in the description with `/pipecat-dev:pr-description`. For a PR that's already open, run `/pipecat-dev:changelog <PR number>` on its own. These skills come from the `pipecat-dev` plugin in the Pipecat repo, which `.claude/settings.json` enables for this repo.
 
 - Name a fragment `<PR number>.<type>.md`, with type one of `added`, `changed`, `deprecated`, `removed`, `fixed`, `performance`, `security`, `other`. A second entry of the same type is `<PR number>.<type>.2.md`.
 - The content is one `- ` bullet on a single line, no wrapping, starting with ⚠️ for a breaking change. Code blocks and sub-bullets go below it, indented two spaces. The release section links each entry to its PR.
