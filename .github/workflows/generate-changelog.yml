@@ -1,0 +1,142 @@
+name: Generate Changelog for Release
+
+# Assembles the changelog/ fragments into a CHANGELOG.md section for the given
+# version, deletes them, and opens a release PR. After it merges, tag the merge
+# commit and run publish-pypi.yml with that tag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., 1.7.0)"
+        required: true
+        type: string
+      date:
+        description: "Release date (YYYY-MM-DD format, defaults to today)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  generate-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Validate inputs
+        id: inputs
+        env:
+          VERSION: ${{ inputs.version }}
+          DATE: ${{ inputs.date }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: version must be X.Y.Z with no leading v (e.g., 1.7.0)"
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "Error: tag v$VERSION already exists"
+            exit 1
+          fi
+          if grep -q "^## \[$VERSION\]" CHANGELOG.md; then
+            echo "Error: CHANGELOG.md already has a section for $VERSION"
+            exit 1
+          fi
+          if [ -z "$DATE" ]; then
+            DATE=$(date +%Y-%m-%d)
+          elif ! date -d "$DATE" >/dev/null 2>&1 || ! [[ "$DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "Error: date must be YYYY-MM-DD (e.g., 2026-12-01)"
+            exit 1
+          fi
+          echo "Release $VERSION dated $DATE"
+          echo "release_date=$DATE" >> "$GITHUB_OUTPUT"
+
+      - name: Check changelog fragments
+        id: fragments
+        run: |
+          VALID_TYPES="added changed deprecated removed fixed performance security other"
+          COUNT=0
+          INVALID=""
+          for file in changelog/*.md; do
+            [ -e "$file" ] || continue
+            COUNT=$((COUNT + 1))
+            name=$(basename "$file")
+            # 1234.added.md or 1234.added.2.md
+            type=$(echo "$name" | sed -nE 's/^[0-9]+\.([a-z]+)(\.[0-9]+)?\.md$/\1/p')
+            if [ -z "$type" ] || ! echo "$VALID_TYPES" | grep -wq "$type"; then
+              INVALID="$INVALID\n  - $name"
+            fi
+          done
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "Error: no changelog fragments in changelog/. Nothing to release."
+            exit 1
+          fi
+          if [ -n "$INVALID" ]; then
+            echo -e "Error: badly named changelog fragments:$INVALID"
+            echo "Name them <PR number>.<type>.md or <PR number>.<type>.<n>.md,"
+            echo "with type one of: $VALID_TYPES"
+            exit 1
+          fi
+          echo "Found $COUNT changelog fragment(s)"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Build changelog
+        env:
+          VERSION: ${{ inputs.version }}
+          DATE: ${{ steps.inputs.outputs.release_date }}
+        run: uv run towncrier build --version "$VERSION" --date "$DATE" --yes
+
+      - name: Preview release notes
+        id: notes
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          uv run python scripts/release-changelog.py --no-heading "$VERSION" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            cat "$RUNNER_TEMP/notes.md"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Release ${{ inputs.version }}"
+          title: "Release ${{ inputs.version }}"
+          body: |
+            Assembles the CHANGELOG.md section for **${{ inputs.version }}** (${{ steps.inputs.outputs.release_date }}) from ${{ steps.fragments.outputs.count }} changelog fragment(s) and deletes them.
+
+            Edit `CHANGELOG.md` on this branch to fix wording before merging: the GitHub Release notes are generated from it.
+
+            After merging:
+
+            1. Tag the merge commit: `git tag -a v${{ inputs.version }} -m v${{ inputs.version }} && git push origin v${{ inputs.version }}`
+            2. Run `publish-pypi.yml` with `v${{ inputs.version }}`. It publishes to PyPI and creates the GitHub Release.
+
+            <details>
+            <summary>Release notes preview</summary>
+
+            ${{ steps.notes.outputs.body }}
+
+            </details>
+          branch: release-${{ inputs.version }}
+          delete-branch: true
+          labels: |
+            release

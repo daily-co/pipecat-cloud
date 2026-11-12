@@ -105,13 +105,23 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 - Krisp VIVA audio filter names are `Literal["tel", "pro"]` in `constants.py`. These must match the server-side ConfigMap, so coordinate changes with the backend.
 - Never log a request or response body, a header, or an exception's text: they can hold secret values and tokens. Use `_utils/log_utils.py`. `tests/test_log_redaction.py` fails on a log call that reads a name or attribute it knows can hold one, however it is formatted, or that uses `logger.opt`, `logger.exception` or `logger.catch`. Only `describe_*` and `len` calls are exempt.
 
+## Changelog entries
+
+Don't edit `CHANGELOG.md` in a feature PR. Each PR with a user-facing change adds **changelog fragments** to `changelog/`, which towncrier assembles at release time, so parallel PRs never conflict on the changelog. The `pipecat-dev:changelog` skill writes them.
+
+- Name a fragment `<PR number>.<type>.md`, with type one of `added`, `changed`, `deprecated`, `removed`, `fixed`, `performance`, `security`, `other`. A second entry of the same type is `<PR number>.<type>.2.md`.
+- The content is one `- ` bullet on a single line, no wrapping, starting with ⚠️ for a breaking change. Code blocks and sub-bullets go below it, indented two spaces. The release section links each entry to its PR.
+- Skip a fragment for docs, tests, CI, internal refactors, and fixes to changes that haven't shipped (edit that change's fragment instead).
+- Preview the next section with `uv run towncrier build --draft --version X.Y.Z`. Don't run it without `--draft`: it rewrites `CHANGELOG.md`, deletes the fragments and stages both.
+
 ## Release flow
 
-1. Update `CHANGELOG.md` following Keep a Changelog format.
-2. Tag the commit with `v<MAJOR>.<MINOR>.<PATCH>`.
-3. Trigger `publish-pypi.yml` manually with that tag. `setuptools_scm` picks up the version from the tag.
+1. Pick the version by semantic versioning from the pending fragments: a breaking change (its entry starts with ⚠️) bumps major, `added` or `deprecated` bumps minor, otherwise patch. A `removed` entry is not breaking by itself: 1.4.0 and 1.6.0 removed things that never worked.
+2. Run the **Generate Changelog for Release** workflow (`generate-changelog.yml`) with the version. It builds the `CHANGELOG.md` section, deletes the fragments and opens a `Release X.Y.Z` PR with a preview of the release notes. Fix wording on that branch, then merge it.
+3. Tag the merge commit with `v<MAJOR>.<MINOR>.<PATCH>` and push the tag.
+4. Trigger `publish-pypi.yml` manually with that tag. `setuptools_scm` picks up the version from the tag.
 
-After publishing to PyPI, the workflow creates (or updates) the GitHub Release for the tag. Its notes are the tag's `CHANGELOG.md` section, reformatted by `scripts/release-changelog.py`, so fix release-note wording in the changelog rather than on GitHub: a re-run overwrites edits made there. Preview the notes locally with `python scripts/release-changelog.py --no-heading 1.3.0`.
+After publishing to PyPI, the workflow creates (or updates) the GitHub Release for the tag. Its notes are the tag's `CHANGELOG.md` section, reformatted by `scripts/release-changelog.py`, so fix release-note wording in the changelog rather than on GitHub: a re-run overwrites edits made there. Preview the notes locally with `uv run python scripts/release-changelog.py --no-heading 1.3.0`.
 
 ## Writing style for generated content in this repo
 
