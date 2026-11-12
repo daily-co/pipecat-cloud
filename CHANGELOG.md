@@ -28,8 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   - `project env add <project> <name> --agent <agent>` links an existing agent
     as an environment. `project env remove` unlinks it, leaving it running as
-    a project of its own. `project env list` lists them, named ones first and
-    then PR previews.
+    a project of its own. `project env list` lists them: `production`, which
+    is the project's own agent, then the named environments and then the PR
+    previews.
+  - `--env production` is the project itself, which is the environment it
+    doubles as, so it means the same as naming the project with no `--env`.
+    `env promote` and `env remove` name an environment to act on, so they
+    refuse `production` and say why.
   - `project env promote <project> <name>` deploys an environment's running
     build, or the image it was deployed from, onto the project. Code only: the
     project keeps its own secrets, scaling and profile. It confirms first, and

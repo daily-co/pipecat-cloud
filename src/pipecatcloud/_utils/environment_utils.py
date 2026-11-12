@@ -79,6 +79,19 @@ def environments_of(services: list[dict], project: dict) -> list[dict]:
     return sorted(children, key=lambda s: environment_sort_key(s.get("environmentName") or ""))
 
 
+def environments_with_production(services: list[dict], project: dict) -> list[dict]:
+    """A project's environments, the project itself first as `production`.
+
+    The project doubles as that environment, so a listing that left it out
+    would contradict the model the rest of the group works to. Callers that
+    mean only the agents linked to the project use `environments_of`.
+    """
+    return [
+        {**project, "environmentName": PRODUCTION_ENVIRONMENT_NAME},
+        *environments_of(services, project),
+    ]
+
+
 def promotion_source(environment: dict) -> dict | None:
     """What promoting this environment deploys: its build, or the image it runs.
 

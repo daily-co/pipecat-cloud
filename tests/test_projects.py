@@ -5,6 +5,7 @@ own, addressed through its project with `--env`. One group covers both, and
 `agent` is the same group under a deprecated name.
 """
 
+import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -20,6 +21,7 @@ from pipecatcloud._utils.environment_utils import (
     environment_name_problem,
     environment_sort_key,
     environments_of,
+    environments_with_production,
     is_preview_name,
     previews_on,
     project_label,
@@ -171,6 +173,13 @@ class TestEnvironmentShape:
             "staging",
             "pr-7",
         ]
+
+    def test_the_project_is_its_own_production_environment(self):
+        # The model the group works to: `--env production` and `env promote`
+        # both treat the project as that environment, so a listing says so.
+        listed = environments_with_production(ALL_SERVICES, PROJECT)
+        assert [e["environmentName"] for e in listed] == ["production", "staging", "pr-7"]
+        assert listed[0]["name"] == "my-bot"
 
     def test_named_environments_sort_before_previews(self):
         names = ["pr-2", "staging", "pr-11", "dev"]
@@ -335,6 +344,18 @@ class TestEnvironmentAddressing:
         assert api.agent.await_args.kwargs["agent_name"] == "my-bot"
         api.agents.assert_not_awaited()
 
+    def test_env_production_is_the_project_itself(self):
+        with api_mock() as api:
+            api.agents = AsyncMock()
+            api.agent = AsyncMock(return_value=(status_payload(), None))
+            result = runner.invoke(
+                entrypoint_cli_typer, ["project", "status", "my-bot", "--env", "production"]
+            )
+        assert result.exit_code == 0
+        assert api.agent.await_args.kwargs["agent_name"] == "my-bot"
+        # The project is that environment, so there is nothing to look up.
+        api.agents.assert_not_awaited()
+
     def test_an_unknown_environment_is_refused(self):
         with api_mock() as api:
             api.agents = AsyncMock(return_value=(ALL_SERVICES, None))
@@ -367,6 +388,34 @@ class TestEnvList:
         assert "staging" in result.output
         assert "#7" in result.output
 
+    def test_production_is_the_first_row(self):
+        with api_mock() as api:
+            api.agents = AsyncMock(return_value=(ALL_SERVICES, None))
+            result = runner.invoke(
+                entrypoint_cli_typer, ["--output", "plain", "project", "env", "list", "my-bot"]
+            )
+        assert result.exit_code == 0
+        rows = [line.split("\t") for line in result.output.splitlines() if "\t" in line]
+        assert [row[0] for row in rows] == [
+            "Environment",
+            "production",
+            "staging",
+            "pr-7",
+        ]
+        # The project's own agent, branch and running commit fill the row.
+        assert rows[1][:4] == ["production", "my-bot", "main", "abc1234"]
+
+    def test_production_is_in_the_json_payload(self):
+        with api_mock() as api:
+            api.agents = AsyncMock(return_value=(ALL_SERVICES, None))
+            result = runner.invoke(
+                entrypoint_cli_typer, ["--output", "json", "project", "env", "list", "my-bot"]
+            )
+        assert result.exit_code == 0
+        environments = json.loads(result.stdout)["environments"]
+        assert [e["environmentName"] for e in environments] == ["production", "staging", "pr-7"]
+        assert environments[0]["name"] == "my-bot"
+
     def test_refuses_an_environment(self):
         with api_mock() as api:
             api.agents = AsyncMock(return_value=(ALL_SERVICES, None))
@@ -383,12 +432,13 @@ class TestEnvList:
         assert result.exit_code == 1
         assert "not found" in result.output
 
-    def test_no_environments_points_at_add(self):
+    def test_no_environments_still_shows_production_and_points_at_add(self):
         with api_mock() as api:
             api.agents = AsyncMock(return_value=([UNRELATED], None))
             result = runner.invoke(entrypoint_cli_typer, ["project", "env", "list", "other-bot"])
         assert result.exit_code == 0
-        assert "no environments" in result.output
+        assert "production" in result.output
+        assert "no environments of its own" in result.output
         assert "project env add" in result.output
 
 
@@ -444,6 +494,19 @@ class TestEnvironmentLink:
         assert "staging" in result.output
         api.environment_unlink.assert_not_awaited()
 
+    def test_remove_refuses_production(self):
+        # The project is that environment: unlinking it from itself is not a
+        # thing, and the message says where to go instead.
+        with api_mock() as api:
+            api.agents = AsyncMock(return_value=(ALL_SERVICES, None))
+            api.environment_unlink = AsyncMock()
+            result = runner.invoke(
+                entrypoint_cli_typer, ["project", "env", "remove", "my-bot", "production"]
+            )
+        assert result.exit_code == 1
+        assert "the project itself" in result.output
+        api.environment_unlink.assert_not_awaited()
+
 
 class TestPromote:
     def test_promotes_the_build_onto_the_project(self):
@@ -462,6 +525,18 @@ class TestPromote:
             "build_id": BUILD_ID,
             "image": None,
         }
+
+    def test_promoting_production_is_refused(self):
+        with api_mock() as api:
+            api.agents = AsyncMock(return_value=(ALL_SERVICES, None))
+            api.agent_update_source = AsyncMock()
+            result = runner.invoke(
+                entrypoint_cli_typer,
+                ["project", "env", "promote", "my-bot", "production", "--force"],
+            )
+        assert result.exit_code == 1
+        assert "the project itself" in result.output
+        api.agent_update_source.assert_not_awaited()
 
     def test_promotes_an_image_when_there_is_no_build(self):
         staging = dict(STAGING, deployment={"manifest": {"spec": {"image": "docker.io/me/bot:2"}}})

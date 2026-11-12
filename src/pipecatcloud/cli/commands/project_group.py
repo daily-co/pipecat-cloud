@@ -23,7 +23,12 @@ from rich import box
 from rich.table import Table
 
 from pipecatcloud._utils.console_utils import console
-from pipecatcloud._utils.environment_utils import environments_of, is_environment
+from pipecatcloud._utils.environment_utils import (
+    PRODUCTION_ENVIRONMENT_NAME,
+    environments_of,
+    environments_with_production,
+    is_environment,
+)
 from pipecatcloud._utils.github_utils import short_sha
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
@@ -106,12 +111,24 @@ def find_project(services: list[dict], project_name: str, org: str | None) -> di
 
 
 def find_environment(services: list[dict], project: dict, environment_name: str) -> dict:
-    """A project's environment by its environment name."""
+    """A project's environment by its environment name.
+
+    `production` is the project itself rather than one of the agents linked to
+    it, so it is not among these and is refused saying so: `env promote` and
+    `env remove` both name an environment to act on. `--env production` means
+    the project and is answered in `resolve_agent` before it reaches here.
+    """
     environments = environments_of(services, project)
     found = next((e for e in environments if e.get("environmentName") == environment_name), None)
     if found:
         return found
     have = ", ".join(e.get("environmentName") or "?" for e in environments) or "none"
+    if environment_name == PRODUCTION_ENVIRONMENT_NAME:
+        console.error(
+            f"'{PRODUCTION_ENVIRONMENT_NAME}' is the project itself, not one of its "
+            f"environments.\n[dim]Environments: {have}[/dim]"
+        )
+        raise typer.Exit(1)
     console.error(
         f"Project '{project.get('name')}' has no environment '{environment_name}'.\n"
         f"[dim]Environments: {have}[/dim]"
@@ -122,13 +139,18 @@ def find_environment(services: list[dict], project: dict, environment_name: str)
 async def resolve_agent(project_name: str, environment: str | None, org: str | None) -> str:
     """The agent to act on: the project itself, or the named environment of it.
 
-    Without `--env` this is the name as given, so nothing is looked up and a
-    command costs exactly what it did before. With it, the project's
-    environments are read to find the agent behind the name.
+    Without `--env`, and with `--env production`, this is the name as given, so
+    nothing is looked up and a command costs exactly what it did before. With
+    any other environment, the project's environments are read to find the
+    agent behind the name.
     """
     # Direct (non-Typer) calls leave the OptionInfo default in place, so only
     # a real string means --env was given.
     if not environment or not isinstance(environment, str):
+        return project_name
+    # The project is its own production environment, so this is the name as
+    # given, and asking for it costs no lookup either.
+    if environment == PRODUCTION_ENVIRONMENT_NAME:
         return project_name
     services = await load_services(org)
     project = find_project(services, project_name, org)
@@ -139,9 +161,14 @@ ENVIRONMENT_COLUMNS = ["Environment", "Agent", "Branch", "Running Commit", "Pull
 
 
 def environment_rows(services: list[dict], project: dict) -> list[tuple]:
-    """One row per environment: name, agent, branch, running commit, PR."""
+    """One row per environment: name, agent, branch, running commit, PR.
+
+    `production` is the first row, which is the project's own agent: it is an
+    environment of the project like any other, and the only one a project is
+    certain to have.
+    """
     rows = []
-    for environment in environments_of(services, project):
+    for environment in environments_with_production(services, project):
         git = environment.get("git") or {}
         deployed = environment.get("deployedCommit") or {}
         pull_request = git.get("pullRequestNumber")
@@ -157,25 +184,26 @@ def environment_rows(services: list[dict], project: dict) -> list[tuple]:
     return rows
 
 
-def print_environments(services: list[dict], project: dict, quiet_when_empty: bool = False) -> None:
-    """The project's environments as a table, or a pointer to `env add`."""
+def print_environments(services: list[dict], project: dict) -> None:
+    """The project's environments as a table, `production` included.
+
+    That row is always there, so the table always prints, and the pointer to
+    `env add` follows it while the project has nothing else linked to it.
+    """
     rows = environment_rows(services, project)
-    project_name = project.get("name")
-    if not rows:
-        if quiet_when_empty:
-            return
-        console.print(
-            f"[yellow]Project '{project_name}' has no environments.[/yellow]\n"
-            f"[dim]Add one with [bold]{PIPECAT_CLI_NAME} project env add {project_name} "
-            "<name> --agent <agent>[/bold].[/dim]"
-        )
-        return
     if not console.rich_output:
         console.print_records(ENVIRONMENT_COLUMNS, rows)
-        return
-    table = Table(show_header=True, header_style="bold", box=box.SIMPLE, border_style="dim")
-    for column in ENVIRONMENT_COLUMNS:
-        table.add_column(column)
-    for row in rows:
-        table.add_row(*row)
-    console.print(table)
+    else:
+        table = Table(show_header=True, header_style="bold", box=box.SIMPLE, border_style="dim")
+        for column in ENVIRONMENT_COLUMNS:
+            table.add_column(column)
+        for row in rows:
+            table.add_row(*row)
+        console.print(table)
+    if not environments_of(services, project):
+        project_name = project.get("name")
+        console.print(
+            f"[dim]'{project_name}' has no environments of its own yet. Add one with "
+            f"[bold]{PIPECAT_CLI_NAME} project env add {project_name} <name> "
+            "--agent <agent>[/bold].[/dim]"
+        )

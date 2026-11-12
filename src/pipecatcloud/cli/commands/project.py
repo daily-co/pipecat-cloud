@@ -21,6 +21,7 @@ from pipecatcloud._utils.environment_utils import (
     describe_promotion_source,
     environment_name_problem,
     environments_of,
+    environments_with_production,
     is_preview_name,
     previews_on,
     promotion_source,
@@ -76,7 +77,7 @@ async def env_list(
     project = find_project(services, project_name, org)
 
     if console.json_output:
-        console.output_json({"environments": environments_of(services, project)})
+        console.output_json({"environments": environments_with_production(services, project)})
         return
 
     print_environments(services, project)

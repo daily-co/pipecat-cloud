@@ -61,10 +61,7 @@ from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.commands.project_group import (
     ENVIRONMENT_OPTION,
-    find_project,
     invoked_as_agent,
-    load_services,
-    print_environments,
     project_cli,
     resolve_agent,
 )
