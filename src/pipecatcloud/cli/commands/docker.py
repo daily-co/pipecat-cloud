@@ -6,11 +6,13 @@
 
 import subprocess
 from enum import Enum
+from pathlib import Path
 
 import typer
 from rich.panel import Panel
 
 from pipecatcloud._utils.async_utils import synchronizer
+from pipecatcloud._utils.base_image import warn_latest_base_image
 from pipecatcloud._utils.console_utils import console
 from pipecatcloud._utils.deploy_utils import (
     CONFIG_FILE_OPTION,
@@ -336,6 +338,9 @@ async def build_push(
         *build_tags,
         ".",
     ]
+
+    # The build below takes the Dockerfile in the current directory.
+    warn_latest_base_image(Path("Dockerfile"))
 
     # Display build configuration
     tags_display = [version_tag]

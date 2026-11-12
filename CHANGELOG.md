@@ -54,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a project's environment count and preview setting, and `--all` names each
   environment's project.
 
+- `deploy`, when it runs a cloud build, and `docker build-push` warn when the
+  Dockerfile builds `FROM dailyco/pipecat-base:latest`, or from
+  `dailyco/pipecat-base` with no tag. That tag names no Python, runs Python
+  3.12, and stops building on 2027-04-05. The warning names the line, and the
+  tag that keeps the same Python: `dailyco/pipecat-base:latest-py3.12`.
+
 ### Changed
 
 - `agent` is **deprecated**. It is the same group under its old name: every
