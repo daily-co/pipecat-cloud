@@ -1559,3 +1559,123 @@ class _API:
             The deploy intent: id, commitSha, ref, status
         """
         return self.create_api_method(self._agent_git_deploy)
+
+    # Projects and environments
+
+    async def _environment_link(
+        self, agent_name: str, org: str, parent: str, environment_name: str
+    ) -> dict | None:
+        url = self.construct_api_url("service_parent_path").format(org=org, service=agent_name)
+        return await self._base_request(
+            "PUT", url, json={"parent": parent, "environmentName": environment_name}
+        )
+
+    @property
+    def environment_link(self):
+        """Link an agent as an environment of a project.
+
+        A PUT, so it also renames an environment or moves it to another
+        project. The API refuses a link across regions, a chain in either
+        direction, a name another environment holds, and any change to a PR
+        preview's own link.
+
+        Args:
+            agent_name: Name of the agent to become an environment
+            org: Organization ID
+            parent: Name of the project it belongs to
+            environment_name: What to call it among that project's environments
+        Returns:
+            serviceName, parent, environmentName
+        """
+        return self.create_api_method(self._environment_link)
+
+    async def _environment_unlink(self, agent_name: str, org: str) -> dict | None:
+        url = self.construct_api_url("service_parent_path").format(org=org, service=agent_name)
+        return await self._base_request("DELETE", url)
+
+    @property
+    def environment_unlink(self):
+        """Unlink an environment from its project.
+
+        It stays an ordinary agent, running as before. Idempotent: an agent
+        that isn't an environment answers 200.
+
+        Args:
+            agent_name: Name of the environment's agent
+            org: Organization ID
+        Returns:
+            serviceName, parent (null), environmentName (null)
+        """
+        return self.create_api_method(self._environment_unlink)
+
+    async def _previews_update(
+        self, agent_name: str, org: str, secret_set: str | None, bot_pull_requests: bool | None
+    ) -> dict | None:
+        url = self.construct_api_url("service_previews_path").format(org=org, service=agent_name)
+        payload: dict = {"secretSet": secret_set}
+        if bot_pull_requests is not None:
+            payload["botPullRequests"] = bot_pull_requests
+        return await self._base_request("PUT", url, json=payload)
+
+    @property
+    def previews_update(self):
+        """Turn a project's PR previews on with the secret set they mount, or off.
+
+        Choosing the set is what turns previews on; `secret_set=None` turns
+        them off, which also deletes the previews that exist. Leaving
+        `bot_pull_requests` as None keeps the stored value.
+
+        Args:
+            agent_name: Name of the project
+            org: Organization ID
+            secret_set: Secret set previews mount, or None to turn them off
+            bot_pull_requests: Whether PRs opened by bots get previews too
+        """
+        return self.create_api_method(self._previews_update)
+
+    async def _watch_paths_update(
+        self, agent_name: str, org: str, watch_paths: list[str]
+    ) -> dict | None:
+        url = self.construct_api_url("service_watch_paths_path").format(org=org, service=agent_name)
+        result = await self._base_request("PUT", url, json={"watchPaths": watch_paths}) or {}
+        return result
+
+    @property
+    def watch_paths_update(self):
+        """Set a project's watch paths. An empty list clears them.
+
+        A project setting: its production, its environments and its PR
+        previews all follow this one list, so the API refuses it on an
+        environment.
+
+        Args:
+            agent_name: Name of the project
+            org: Organization ID
+            watch_paths: Glob patterns a change must match to deploy
+        Returns:
+            watchPaths, as stored
+        """
+        return self.create_api_method(self._watch_paths_update)
+
+    async def _agent_update_source(
+        self, agent_name: str, org: str, build_id: str | None = None, image: str | None = None
+    ) -> dict | None:
+        url = f"{self.construct_api_url('services_path').format(org=org)}/{agent_name}"
+        payload = {"buildId": build_id} if build_id else {"image": image}
+        return await self._base_request("POST", url, json=payload)
+
+    @property
+    def agent_update_source(self):
+        """Deploy a build or an image onto an agent, changing nothing else.
+
+        The update merges only the artifact into the agent's live manifest, so
+        its secrets, scaling and profile are left as they are. This is what
+        promotion does.
+
+        Args:
+            agent_name: Name of the agent to deploy onto
+            org: Organization ID
+            build_id: Build to deploy
+            image: Image to deploy, when there is no build
+        """
+        return self.create_api_method(self._agent_update_source)

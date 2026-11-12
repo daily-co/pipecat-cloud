@@ -341,10 +341,10 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                         if current
                         else ""
                     )
-                    + f"[dim]Change its link with [bold]{PIPECAT_CLI_NAME} agent link "
+                    + f"[dim]Change its link with [bold]{PIPECAT_CLI_NAME} project link "
                     f"{params.agent_name} --repo {params.git.repo} --branch "
                     f"{params.git.branch}[/bold], then deploy it with [bold]"
-                    f"{PIPECAT_CLI_NAME} agent deploy {params.agent_name} --github[/bold].[/dim]"
+                    f"{PIPECAT_CLI_NAME} project deploy {params.agent_name} --github[/bold].[/dim]"
                 )
                 raise typer.Exit(1)
 
@@ -496,7 +496,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                             "Error checking deployment status: the API returned a "
                             f"transient error {MAX_CONSECUTIVE_POLL_FAILURES} times in a row.\n"
                             "Your deployment may still be in progress. Check it with "
-                            f"`{PIPECAT_CLI_NAME} agent status {params.agent_name}`"
+                            f"`{PIPECAT_CLI_NAME} project status {params.agent_name}`"
                         )
                         raise typer.Exit(1)
                     # Non-transient error (4xx, auth, etc.) — abort immediately.
@@ -576,7 +576,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         console.success(
             f"Agent deployment [bold]'{params.agent_name}'[/bold] is ready\n\n"
             f"[white]Start a session with your new agent by running:\n[/white]"
-            f"[bold]`{PIPECAT_CLI_NAME} agent start {params.agent_name}`[/bold]"
+            f"[bold]`{PIPECAT_CLI_NAME} project start {params.agent_name}`[/bold]"
             f"{extra_message}",
             title_extra=f"{'Update' if existing_agent else 'Deployment'} complete",
         )
@@ -587,8 +587,8 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
             Panel(
                 f"Service is available and serving traffic, but the new deployment hasn't fully rolled out after {timeout_seconds}s.\n"
                 f"This is normal for deployments with large images or high replica counts.\n\n"
-                f"[bold]Check status:[/bold]  `{PIPECAT_CLI_NAME} agent status {params.agent_name}`\n"
-                f"[bold]View logs:[/bold]    `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`",
+                f"[bold]Check status:[/bold]  `{PIPECAT_CLI_NAME} project status {params.agent_name}`\n"
+                f"[bold]View logs:[/bold]    `{PIPECAT_CLI_NAME} project logs {params.agent_name}`",
                 title="Deployment still in progress",
                 title_align="left",
                 border_style="yellow",
@@ -599,8 +599,8 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         console.print(
             Panel(
                 f"Deployment is degraded: {last_status.degraded_reason}\n\n"
-                f"[bold]Check status:[/bold]  `{PIPECAT_CLI_NAME} agent status {params.agent_name}`\n"
-                f"[bold]View logs:[/bold]    `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`",
+                f"[bold]Check status:[/bold]  `{PIPECAT_CLI_NAME} project status {params.agent_name}`\n"
+                f"[bold]View logs:[/bold]    `{PIPECAT_CLI_NAME} project logs {params.agent_name}`",
                 title="Deployment degraded",
                 title_align="left",
                 border_style="red",
@@ -611,7 +611,7 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         timeout_seconds = MAX_ALIVE_CHECKS * ALIVE_CHECK_SLEEP
         console.error(
             f"Deployment did not become available within {timeout_seconds} seconds.\n"
-            f"Please check logs with `{PIPECAT_CLI_NAME} agent logs {params.agent_name}`"
+            f"Please check logs with `{PIPECAT_CLI_NAME} project logs {params.agent_name}`"
         )
         raise typer.Exit(1)
 
