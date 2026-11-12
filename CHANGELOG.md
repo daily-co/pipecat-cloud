@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   watch paths, and, for a project, whether PR previews are on and whether bot
   pull requests get them. For a PR preview it names the pull request.
 
+### Removed
+
+- `agent scale` is gone. It was never implemented: it printed "Not implemented"
+  and exited. Set an agent's instance counts with `pipecat cloud deploy
+  --min-agents/--max-agents`, or the `[scaling]` section of `pcc-deploy.toml`.
+
 ### Fixed
 
 - A command no longer reports an operation as done when the CLI never managed

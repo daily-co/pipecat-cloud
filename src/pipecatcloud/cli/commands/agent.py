@@ -995,13 +995,6 @@ async def sessions(
         )
 
 
-@project_cli.command(name="scale", help="Modify agent runtime configuration")
-@synchronizer.create_blocking
-@requires_login
-async def scale():
-    console.error("Not implemented")
-
-
 class LogFormat(str, Enum):
     TEXT = "TEXT"
     JSON = "JSON"
