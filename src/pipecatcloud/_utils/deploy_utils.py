@@ -763,7 +763,7 @@ def report_git_deploy_result(
     from pipecatcloud.cli import PIPECAT_CLI_NAME
 
     check_hint = (
-        f"[dim]Check it with [bold]{PIPECAT_CLI_NAME} agent status {agent_name}[/bold].[/dim]"
+        f"[dim]Check it with [bold]{PIPECAT_CLI_NAME} project status {agent_name}[/bold].[/dim]"
     )
     label = "First deploy" if first_deploy else "Deploy"
 

@@ -1,5 +1,16 @@
 {
   "attribution": {
     "commit": ""
+  },
+  "extraKnownMarketplaces": {
+    "pipecat-dev-skills": {
+      "source": {
+        "source": "github",
+        "repo": "pipecat-ai/pipecat"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "pipecat-dev@pipecat-dev-skills": true
   }
 }

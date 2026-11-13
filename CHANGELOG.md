@@ -5,7 +5,78 @@ All notable changes to **Pipecat Cloud** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+<!-- towncrier release notes start -->
+
+## [1.6.0] - 2026-11-12
+
+### Added
+
+- `project` is the command group for everything you deploy and run. A project
+  is an agent with environments; each environment is an agent of its own, and
+  `--env` addresses one through its project.
+
+  ```
+  pipecat cloud project list
+  pipecat cloud project status my-bot --env staging
+  pipecat cloud project logs my-bot --env pr-7
+  ```
+
+  Every command that took an agent name takes `--env` as well: `status`,
+  `logs`, `sessions`, `deployments`, `delete`, `start`, `stop`, `link`,
+  `unlink` and `deploy`. A positional agent name still works, so
+  `project status my-bot-pr-7` resolves the same preview.
+
+- `project env` manages a project's environments.
+
+  - `project env add <project> <name> --agent <agent>` links an existing agent
+    as an environment. `project env remove` unlinks it, leaving it running as
+    a project of its own. `project env list` lists them: `production`, which
+    is the project's own agent, then the named environments and then the PR
+    previews.
+  - `--env production` is the project itself, which is the environment it
+    doubles as, so it means the same as naming the project with no `--env`.
+    `env promote` and `env remove` name an environment to act on, so they
+    refuse `production` and say why.
+  - `project env promote <project> <name>` deploys an environment's running
+    build, or the image it was deployed from, onto the project. Code only: the
+    project keeps its own secrets, scaling and profile. It confirms first, and
+    `--force` skips the prompt.
+
+- `project previews enable <project> --secret-set <set>` turns PR previews on,
+  with `--bot-pull-requests` to include pull requests opened by bots.
+  `project previews disable` turns them off and deletes the previews it has.
+  `project previews status` shows the setting and the open previews.
+
+- `project watch-paths set <project> <pattern>...` sets the glob patterns a
+  change has to match to deploy, `clear` removes them, and `show` prints them. They are a
+  project setting: its environments and previews follow the same list.
+
+- `project list --all` includes environments and PR previews. Without it the
+  listing is projects only, as the dashboard shows them. Both carry columns for
+  a project's environment count and preview setting, and `--all` names each
+  environment's project.
+
+- `deploy`, when it runs a cloud build, and `docker build-push` warn when the
+  Dockerfile builds `FROM dailyco/pipecat-base:latest`, or from
+  `dailyco/pipecat-base` with no tag. That tag names no Python, runs Python
+  3.12, and stops building on 2027-04-05. The warning names the line, and the
+  tag that keeps the same Python: `dailyco/pipecat-base:latest-py3.12`.
+
+### Changed
+
+- `agent` is **deprecated**. It is the same group under its old name: every
+  command goes on working and `agent list` goes on listing every agent, with a
+  notice on stderr pointing at `project`. Use `project`, and `--env` to address
+  an environment.
+- `status` reports the project and environment of an agent that is one, its
+  watch paths, and, for a project, whether PR previews are on and whether bot
+  pull requests get them. For a PR preview it names the pull request.
+
+### Removed
+
+- `agent scale` is gone. It was never implemented: it printed "Not implemented"
+  and exited. Set an agent's instance counts with `pipecat cloud deploy
+  --min-agents/--max-agents`, or the `[scaling]` section of `pcc-deploy.toml`.
 
 ### Added
 

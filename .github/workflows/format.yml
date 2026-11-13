@@ -41,3 +41,6 @@ jobs:
       - name: Ruff linter (all rules)
         id: ruff-check
         run: uv run ruff check
+
+      - name: Changelog fragment names
+        run: uv run python scripts/check-changelog-fragments.py

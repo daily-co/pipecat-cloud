@@ -11,7 +11,8 @@ import typer
 from loguru import logger
 
 from pipecatcloud._utils.console_utils import OutputMode, console
-from pipecatcloud.cli.commands.agent import agent_cli
+from pipecatcloud.cli.commands import agent as _agent_commands  # noqa: F401  (registers them)
+from pipecatcloud.cli.commands import project as _project_commands  # noqa: F401  (registers them)
 from pipecatcloud.cli.commands.agent_profiles import agent_profiles_cli
 from pipecatcloud.cli.commands.auth import auth_cli
 from pipecatcloud.cli.commands.build import build_cli
@@ -20,6 +21,7 @@ from pipecatcloud.cli.commands.docker import create_docker_command
 from pipecatcloud.cli.commands.evals import eval_cli
 from pipecatcloud.cli.commands.github import github_cli
 from pipecatcloud.cli.commands.organizations import organization_cli
+from pipecatcloud.cli.commands.project_group import AGENT_ALIAS_NAME, project_cli
 from pipecatcloud.cli.commands.regions import regions_cli
 from pipecatcloud.cli.commands.secrets import secrets_cli
 from pipecatcloud.cli.commands.spend_limit import spend_limit_cli
@@ -105,7 +107,7 @@ def cli(
         help="Output mode: rich (interactive), plain (line-oriented, no boxes or "
         "truncation), json (machine-readable on stdout). Defaults to rich on a "
         "terminal and plain otherwise; can also be set via PIPECAT_OUTPUT. "
-        "Place before the subcommand: pipecat cloud --output json agent list.",
+        "Place before the subcommand: pipecat cloud --output json project list.",
     ),
 ):
     # Resolution order: --output flag > PIPECAT_OUTPUT env / config file >
@@ -130,8 +132,17 @@ entrypoint_cli_typer.add_typer(organization_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(regions_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(secrets_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(spend_limit_cli, rich_help_panel="Commands")
-# Profiles nest under agent — `pipecat cloud agent profiles <cmd>` — matching
-# how the feature is spoken about (settled in #187 review before customers
-# could script the flat form).
-agent_cli.add_typer(agent_profiles_cli)
-entrypoint_cli_typer.add_typer(agent_cli, rich_help_panel="Commands")
+# Profiles nest under the group — `pipecat cloud project profiles <cmd>` —
+# matching how the feature is spoken about (settled in #187 review before
+# customers could script the flat form).
+project_cli.add_typer(agent_profiles_cli)
+entrypoint_cli_typer.add_typer(project_cli, rich_help_panel="Commands")
+# The same group under its old name. `agent` goes on working, prints a
+# deprecation notice (project_group.project_group), and is left out of help so
+# it isn't offered to anyone new.
+entrypoint_cli_typer.add_typer(
+    project_cli,
+    name=AGENT_ALIAS_NAME,
+    hidden=True,
+    help="Deprecated. Use 'project'; an environment is addressed with --env.",
+)
