@@ -78,48 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and exited. Set an agent's instance counts with `pipecat cloud deploy
   --min-agents/--max-agents`, or the `[scaling]` section of `pcc-deploy.toml`.
 
-### Added
-
-- `eval run`, `eval judge`, `eval status`, `eval list` and `eval cancel` run a scenario
-  against a deployed agent and read the result. `eval run AGENT SCENARIO_FILE`
-  sends the scenario file and the files it `!include`s from `--root` (by
-  default the scenario file's directory), as UTF-8 text, up to 256 KiB. Hidden
-  files, files that look like they hold secrets, symlinks that leave the root
-  and files that aren't UTF-8 are refused before anything is sent.
-  `eval judge AGENT SESSION_ID [SESSION_ID...] --criteria FILE` judges finished
-  sessions against one named `scenarios:` entry with `success:` and optional
-  judged metrics, without a simulated caller. Both commands accept
-  `--deadline SECONDS`; `--param KEY=VALUE` sets synthetic run timeouts.
-- With `--wait`, `eval run`, `eval judge` and `eval status` poll until the run ends and exit
-  0 for a `passed` or `skipped` verdict, 1 for `failed`, 2 for a run that ended
-  without a verdict and 3 for an API or usage error. Ctrl-C stops waiting,
-  leaves the run going, prints the commands to check on it or cancel it, and
-  exits 130. `eval list` takes `--limit` and `--offset`. All five commands
-  take `--json`, and where evals aren't turned on yet they say so.
-- `eval run` runs every scenario in the file, side by side, unless `--scenario`
-  names some (repeat it for several), and waits for them by default, as
-  `pipecat eval run` does. `--no-wait` starts them and returns. It reads like
-  `pipecat eval`, in the same colors: each scenario's settings, a row a run
-  while they go, a summary, and under `Failures` each run that failed or ended
-  without a verdict, with its reason, the judge's verdict on `success:`, its
-  failures and its metrics with the replies they failed on. `-v` on `eval run`
-  and `eval status` explains every run, with its conversation. With several
-  runs, the exit code is the first that applies of 3, 1 and 2, and `--json`
-  prints a list.
-- `eval judge` waits by default and supports `--no-wait`, `-v`, and the same
-  verdict exit codes. Each session is submitted once; duplicate or invalid IDs
-  are refused before submission. Single-result JSON is an object and multiple
-  results form an ordered list. Unacknowledged judgments retain their session
-  IDs, submission status and API errors, including during Ctrl-C recovery.
-- Multi-scenario JSON output retains submission errors with their scenario names
-  and API error codes. Ctrl-C during submission preserves accepted run IDs and
-  distinguishes the interrupted request from scenarios not yet submitted.
-- `pyyaml` is now a dependency, to read a scenario file's includes.
-
 ### Fixed
 
-- Eval commands preserve verdict, usage-error and Ctrl-C exit codes with Typer
-  0.26 and later, which use Typer's bundled Click exceptions.
 - A command no longer reports an operation as done when the CLI never managed
   to make the request. A mistake inside the client, such as a call made with a
   name the API method does not take, was handed back as an empty result, and
