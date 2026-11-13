@@ -68,28 +68,13 @@ jobs:
       - name: Check changelog fragments
         id: fragments
         run: |
-          VALID_TYPES="added changed deprecated removed fixed performance security other"
-          COUNT=0
-          INVALID=""
-          for file in changelog/*.md; do
-            [ -e "$file" ] || continue
-            COUNT=$((COUNT + 1))
-            name=$(basename "$file")
-            # 1234.added.md or 1234.added.2.md
-            type=$(echo "$name" | sed -nE 's/^[0-9]+\.([a-z]+)(\.[0-9]+)?\.md$/\1/p')
-            if [ -z "$type" ] || ! echo "$VALID_TYPES" | grep -wq "$type"; then
-              INVALID="$INVALID\n  - $name"
-            fi
-          done
+          # Also runs on every PR in format.yml, so a misnamed fragment should
+          # never get this far.
+          uv run python scripts/check-changelog-fragments.py
 
+          COUNT=$(find changelog -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')
           if [ "$COUNT" -eq 0 ]; then
             echo "Error: no changelog fragments in changelog/. Nothing to release."
-            exit 1
-          fi
-          if [ -n "$INVALID" ]; then
-            echo -e "Error: badly named changelog fragments:$INVALID"
-            echo "Name them <PR number>.<type>.md or <PR number>.<type>.<n>.md,"
-            echo "with type one of: $VALID_TYPES"
             exit 1
           fi
           echo "Found $COUNT changelog fragment(s)"
