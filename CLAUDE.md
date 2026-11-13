@@ -72,7 +72,9 @@ src/pipecatcloud/
   smallwebrtc/
     session_manager.py   SmallWebRTC support for non-Pipecat agents
 tests/                   Pytest suite, parallel to src/
-.github/workflows/       tests.yml, format.yml, publish-pypi.yml, publish-test.yml
+changelog/               Changelog fragments for the next release, and towncrier's template
+scripts/                 Ruff fix-up, changelog fragment check, release-notes extraction
+.github/workflows/       CI, release and docs workflows (see CI below)
 pcc-deploy.toml          Example deployment config consumed by `pipecat cloud deploy`
 ```
 
@@ -86,8 +88,11 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 ## CI
 
 - `tests.yml` runs the full suite (`uv run pytest -v`) on push to main and PRs, and runs `tests/test_agent_args.py` again with pipecat-ai 1.11.0 and 1.5.0 layered over the lock (`uv run --with ... python -m pytest`, with `PCC_EXPECTED_PIPECAT_AI` so the tests confirm the version they run on).
-- `format.yml` runs `ruff format --diff` and `ruff check`. Both must pass.
+- `format.yml` runs `ruff format --diff`, `ruff check` and `scripts/check-changelog-fragments.py`. All three must pass.
+- `python-compatibility.yml` checks that the CLI imports on Python 3.11 through 3.14.
+- `generate-changelog.yml` is a manual dispatch that assembles the changelog fragments and opens the release PR (see Release flow).
 - `publish-pypi.yml` and `publish-test.yml` are manual dispatches that build and publish a specific git tag.
+- `update-docs.yml` opens a docs PR against `pipecat-ai/docs` when a change under `src/pipecatcloud/` merges. It needs repository secrets that aren't set yet, so it fails at its first step until they are.
 
 ## Config and environment
 
@@ -105,13 +110,25 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 - Krisp VIVA audio filter names are `Literal["tel", "pro"]` in `constants.py`. These must match the server-side ConfigMap, so coordinate changes with the backend.
 - Never log a request or response body, a header, or an exception's text: they can hold secret values and tokens. Use `_utils/log_utils.py`. `tests/test_log_redaction.py` fails on a log call that reads a name or attribute it knows can hold one, however it is formatted, or that uses `logger.opt`, `logger.exception` or `logger.catch`. Only `describe_*` and `len` calls are exempt.
 
+## Changelog entries
+
+Don't edit `CHANGELOG.md` in a feature PR. Each PR with a user-facing change adds **changelog fragments** to `changelog/`, which towncrier assembles at release time, so parallel PRs never conflict on the changelog.
+
+Open PRs with `/pipecat-dev:pr-submit`. It runs `/pipecat-dev:prose-review` on the branch, opens the PR, writes its fragments with `/pipecat-dev:changelog <PR number>`, and fills in the description with `/pipecat-dev:pr-description`. For a PR that's already open, run `/pipecat-dev:changelog <PR number>` on its own. These skills come from the `pipecat-dev` plugin in the Pipecat repo, which `.claude/settings.json` enables for this repo.
+
+- Name a fragment `<PR number>.<type>.md`, with type one of `added`, `changed`, `deprecated`, `removed`, `fixed`, `performance`, `security`, `other`. A second entry of the same type is `<PR number>.<type>.2.md`. The types come from `[tool.towncrier]` in `pyproject.toml`. `uv run python scripts/check-changelog-fragments.py` checks the names, and CI runs it on every PR.
+- The content is one `- ` bullet on a single line, no wrapping, starting with ⚠️ for a breaking change. Code blocks and sub-bullets go below it, indented two spaces. The release section links each entry to its PR.
+- Skip a fragment for docs, tests, CI, internal refactors, and fixes to changes that haven't shipped (edit that change's fragment instead).
+- Preview the next section with `uv run towncrier build --draft --version X.Y.Z`. Don't run it without `--draft`: it rewrites `CHANGELOG.md`, deletes the fragments and stages both.
+
 ## Release flow
 
-1. Update `CHANGELOG.md` following Keep a Changelog format.
-2. Tag the commit with `v<MAJOR>.<MINOR>.<PATCH>`.
-3. Trigger `publish-pypi.yml` manually with that tag. `setuptools_scm` picks up the version from the tag.
+1. Pick the version by semantic versioning from the pending fragments: a breaking change (its entry starts with ⚠️) bumps major, `added` or `deprecated` bumps minor, otherwise patch. A `removed` entry is not breaking by itself: 1.4.0 and 1.6.0 removed things that never worked.
+2. Run the **Generate Changelog for Release** workflow (`generate-changelog.yml`) with the version. It builds the `CHANGELOG.md` section, deletes the fragments and opens a `Release X.Y.Z` PR with a preview of the release notes. Fix wording on that branch, then merge it.
+3. Tag the merge commit with `v<MAJOR>.<MINOR>.<PATCH>` and push the tag.
+4. Trigger `publish-pypi.yml` manually with that tag. `setuptools_scm` picks up the version from the tag.
 
-After publishing to PyPI, the workflow creates (or updates) the GitHub Release for the tag. Its notes are the tag's `CHANGELOG.md` section, reformatted by `scripts/release-changelog.py`, so fix release-note wording in the changelog rather than on GitHub: a re-run overwrites edits made there. Preview the notes locally with `python scripts/release-changelog.py --no-heading 1.3.0`.
+After publishing to PyPI, the workflow creates (or updates) the GitHub Release for the tag. Its notes are the tag's `CHANGELOG.md` section, reformatted by `scripts/release-changelog.py`, so fix release-note wording in the changelog rather than on GitHub: a re-run overwrites edits made there. Preview the notes locally with `uv run python scripts/release-changelog.py --no-heading 1.3.0`.
 
 ## Writing style for generated content in this repo
 
