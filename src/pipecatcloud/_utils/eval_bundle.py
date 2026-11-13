@@ -294,7 +294,15 @@ _DIRECTORY_SECRET_NAME_PATTERNS = (
 )
 # Content no eval file holds: a private key, or a Kubernetes Secret.
 _PRIVATE_KEY_MARKER = "PRIVATE KEY-----"
-_KUBERNETES_SECRET = re.compile(r"^kind:\s*Secret\s*$", re.MULTILINE)
+# `kind: Secret` in YAML, its value quoted or not, or `"kind": "Secret"` in JSON.
+_KUBERNETES_SECRET = re.compile(
+    r"""(^kind:\s*["']?Secret["']?\s*$)|(["']kind["']\s*:\s*["']Secret["'])""", re.MULTILINE
+)
+
+
+def _credential_name(name: str) -> bool:
+    """Whether a file or folder is named the way credentials are commonly kept."""
+    return any(fnmatch.fnmatch(name.lower(), p) for p in _DIRECTORY_SECRET_NAME_PATTERNS)
 
 
 def _secret_content(text: str) -> str | None:
@@ -358,6 +366,8 @@ def collect_directory(directory: Path) -> DirectoryBundle:
             key = (base / name).as_posix()
             if name.startswith("."):
                 found.skipped.append((f"{key}/", "is a hidden folder"))
+            elif _credential_name(name):
+                found.skipped.append((f"{key}/", "is named like it holds credentials"))
             elif (Path(current) / name).is_symlink():
                 found.skipped.append((f"{key}/", "is a linked folder, which isn't followed"))
             else:
@@ -370,10 +380,7 @@ def collect_directory(directory: Path) -> DirectoryBundle:
                     found.other_files += 1
                 continue
             reason = _refused_name(key)
-            if reason is None and any(
-                fnmatch.fnmatch(name.lower(), pattern)
-                for pattern in _DIRECTORY_SECRET_NAME_PATTERNS
-            ):
+            if reason is None and _credential_name(name):
                 reason = "is named like a credential"
             if reason:
                 found.skipped.append((key, reason))

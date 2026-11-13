@@ -333,6 +333,23 @@ class TestRunAsSuite:
         assert "calls/book" in result.output
         assert "calls/rubric" not in result.output
 
+    def test_criteria_only_entries_are_left_out_side_by_side_too(self, api, tmp_path):
+        api.eval_capabilities.return_value = ({"enabled": True, "suites": False}, None)
+        path = tmp_path / "calls.yaml"
+        path.write_text(SCENARIOS + "  - name: rubric\n    success: Polite.\n", encoding="utf-8")
+        result = invoke("run", "agent", path, "--no-wait")
+        assert result.exit_code == 0, result.output
+        sent = [c.args[2]["scenarioName"] for c in api.eval_run_create.call_args_list]
+        assert sent == ["book", "hours"]
+
+    def test_a_file_of_criteria_alone_has_nothing_to_run(self, api, tmp_path):
+        path = tmp_path / "criteria.yaml"
+        path.write_text("name: c\nscenarios:\n  - name: rubric\n    success: Polite.\n")
+        result = invoke("run", "agent", path)
+        assert result.exit_code == 3
+        assert "eval judge" in result.output
+        api.eval_suite_run_create.assert_not_called()
+
     def test_without_suites_it_runs_side_by_side(self, api, scenario_file):
         api.eval_capabilities.return_value = ({"enabled": True, "suites": False}, None)
         result = invoke("run", "agent", scenario_file, "--no-wait")
@@ -432,7 +449,8 @@ class TestCreate:
         assert result.exit_code == 0, result.output
         assert api.eval_suite_run_create.await_count == 1
         assert api.eval_run_create.await_count == 2
-        assert "side by side" in result.output
+        assert "This agent can't take a suite run here" in result.output
+        assert "this organization" not in result.output
 
     def test_with_suite_only_options_that_refusal_is_an_error(self, api, scenario_file):
         api.eval_suite_run_create.return_value = (
@@ -1023,6 +1041,29 @@ class TestCollectDirectory:
         assert list(found.files) == ["calls.yaml"]
         assert found.skipped == [("other.json", why)]
 
+    @pytest.mark.parametrize("folder", ["secrets", "credentials", "service-account-keys"])
+    def test_folders_named_for_credentials_are_left_out(self, tmp_path, folder):
+        (tmp_path / "calls.yaml").write_text("name: c\n")
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "prod.yaml").write_text("password: hunter2\n")
+        found = collect_directory(tmp_path)
+        assert list(found.files) == ["calls.yaml"]
+        assert found.skipped == [(f"{folder}/", "is named like it holds credentials")]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            'apiVersion: v1\nkind: "Secret"\n',
+            "apiVersion: v1\nkind: 'Secret'\n",
+            '{"apiVersion":"v1","kind":"Secret","data":{}}',
+        ],
+    )
+    def test_a_quoted_kubernetes_secret_is_left_out(self, tmp_path, text):
+        (tmp_path / "calls.yaml").write_text("name: c\n")
+        (tmp_path / "db.json").write_text(text)
+        found = collect_directory(tmp_path)
+        assert ("db.json", "is a Kubernetes Secret") in found.skipped
+
     def test_nothing_left_to_send_is_refused(self, tmp_path):
         (tmp_path / "key.json").write_text("-----BEGIN RSA PRIVATE KEY-----")
         with pytest.raises(BundleError, match="nothing to send"):
@@ -1263,6 +1304,14 @@ class TestBundleListAndShow:
         api.eval_bundle_revision_get.return_value = (make_revision(2, files={"x.yaml": text}), None)
         result = invoke("bundle", "show", "calls", "--files")
         assert ":thumbs_up: [bold]not markup[/bold]" in result.output
+
+    def test_show_files_keeps_tabs(self, api):
+        api.eval_bundle_revision_get.return_value = (
+            make_revision(2, files={"x.yaml": "a:\tb\n"}),
+            None,
+        )
+        result = invoke("bundle", "show", "calls", "--files")
+        assert "a:\tb\n" in result.output
 
     def test_show_json_is_the_revision(self, api):
         result = invoke("bundle", "show", "calls@2", "--json")

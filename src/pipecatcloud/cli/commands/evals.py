@@ -1165,6 +1165,15 @@ async def run(
     names = _selected_scenarios(scenario, bundle.scenario_names, bundle.scenario_path)
 
     data = bundle.data if isinstance(bundle.data, dict) else {}
+    if not scenario:
+        # The whole file is its scripts and simulations, as a suite of it runs
+        # them: an entry with criteria alone judges finished sessions instead.
+        names = [n for n in names if _runnable(data, n)]
+        if not names:
+            _fail(
+                f"{bundle.scenario_path!r} holds no scripts or simulations to run. Judge "
+                f"finished sessions against its criteria with `{PIPECAT_CLI_NAME} eval judge`."
+            )
     file_name = data.get("name") if isinstance(data.get("name"), str) else None
     file_label = file_name or Path(bundle.scenario_path).stem
     labels = {name: f"{file_label}/{name}" for name in names}
@@ -1184,10 +1193,7 @@ async def run(
         )
 
     if wait and not console.json_output:
-        # A suite run of the whole file runs its scripts and simulations, not
-        # its criteria-only entries.
-        shown = names if scenario or not as_suite else [n for n in names if _runnable(data, n)]
-        _print_scenario_header([(labels[n], _scenario_view(data, n)) for n in shown])
+        _print_scenario_header([(labels[n], _scenario_view(data, n)) for n in names])
 
     if as_suite:
         suite_body: dict[str, Any] = {"files": bundle.files, "scenarioPath": bundle.scenario_path}

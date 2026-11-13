@@ -605,8 +605,8 @@ async def run_suite(
         if refusal.get("code") in _SUITES_OFF_CODES:
             if not console.json_output:
                 _print(
-                    f"[dim]{escape(str(refusal.get('error')))} The scenarios run side by side."
-                    "[/dim]\n"
+                    "[dim]This agent can't take a suite run here, so the scenarios run side "
+                    "by side.[/dim]\n"
                 )
             return
         if console.json_output:
@@ -1282,5 +1282,8 @@ async def bundle_show(
             for path, text in held.items():
                 _print()
                 _print(f"[bold cyan]==> {escape(str(path))} <==[/bold cyan]")
-                # As stored: no markup, emoji codes, highlighting or wrapping.
-                console.print(str(text), markup=False, emoji=False, highlight=False, soft_wrap=True)
+                # As stored, written past rich, which would expand tabs and read
+                # markup and emoji codes.
+                content = str(text)
+                console.file.write(content if content.endswith("\n") else f"{content}\n")
+                console.file.flush()
