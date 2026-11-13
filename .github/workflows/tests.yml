@@ -15,8 +15,12 @@ concurrency:
 
 jobs:
   test:
-    name: 'Unit Tests'
+    name: ${{ matrix.typer == 'locked' && 'Unit Tests' || 'Unit Tests (latest supported Typer)' }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        typer: ['locked', 'latest-supported']
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -31,11 +35,38 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --group dev
+          uv sync --frozen --group dev
 
-      - name: Run tests
+      - name: Run tests with locked Typer
+        if: matrix.typer == 'locked'
         run: |
-          uv run pytest -v
+          uv run --frozen --no-sync python -m pytest -v
+
+      # A compatible --with requirement can reuse the locked Typer even with
+      # --upgrade-package. Resolve a fresh exact version outside the lock first.
+      - name: Run tests with newest supported Typer
+        if: matrix.typer == 'latest-supported'
+        run: |
+          uv pip compile --python .venv/bin/python --no-deps --upgrade --resolution highest \
+            --no-header --no-annotate --output-file "$RUNNER_TEMP/typer-latest.txt" - <<'REQUIREMENTS'
+          typer>=0.20.0,<1
+          REQUIREMENTS
+          uv run --frozen --no-sync --with-requirements "$RUNNER_TEMP/typer-latest.txt" \
+            python - "$RUNNER_TEMP/typer-latest.txt" <<'PY'
+          import sys
+          from importlib.metadata import version
+          from pathlib import Path
+
+          import pytest
+          import typer
+
+          installed = version("typer")
+          print(f"Testing Typer {installed} from {typer.__file__}", flush=True)
+          expected = Path(sys.argv[1]).read_text().strip()
+          assert expected == f"typer=={installed}", "Installed Typer differs from resolved version"
+          assert installed == typer.__version__, "Imported Typer differs from installed package"
+          raise SystemExit(pytest.main(["-v"]))
+          PY
 
   # The job above runs the agent session-argument types against the pipecat-ai
   # in uv.lock. These legs run them against releases before MOQRunnerArguments

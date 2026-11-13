@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import textwrap
+from importlib.metadata import version
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -249,19 +250,22 @@ class TestEveryOtherPath:
         _assert_clean("".join(debug_log))
 
 
-def test_an_uncaught_error_inside_a_host_cli_shows_no_local_variables(tmp_path):
+def test_an_uncaught_error_inside_a_host_cli_shows_no_local_variables(tmp_path, monkeypatch):
     """A real process, as the except hook needs: the CLI runs as an extension of an
-    outer Typer app with Typer's defaults, which print locals in a traceback."""
+    outer Typer app explicitly configured to print locals in a traceback."""
     script = tmp_path / "host.py"
     script.write_text(
         textwrap.dedent(
             """
+            import os
             import sys
             from unittest.mock import patch
             import typer
             from pipecatcloud.cli.entry_point import entrypoint_cli_typer
 
-            host = typer.Typer()
+            assert "PCC_TEST_PARENT_AUTH" not in os.environ
+            assert typer.__version__ == sys.argv[2]
+            host = typer.Typer(pretty_exceptions_show_locals=True)
             host.add_typer(entrypoint_cli_typer, name="cloud")
             with patch(
                 "pipecatcloud.cli.commands.secrets.validate_secrets",
@@ -272,11 +276,31 @@ def test_an_uncaught_error_inside_a_host_cli_shows_no_local_variables(tmp_path):
             """
         )
     )
-    inherited = {k: v for k, v in os.environ.items() if not k.endswith("STANDARD_TRACEBACK")}
+    # The positive control deliberately prints locals. Forward runtime paths
+    # and the conftest's isolated config, never the parent process's auth env.
+    runtime_env = (
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "SYSTEMROOT",
+        "SystemRoot",
+        "PYTHONPATH",
+        "VIRTUAL_ENV",
+    )
+    monkeypatch.setenv("PCC_TEST_PARENT_AUTH", "parent-auth-canary")
+    inherited = {key: os.environ[key] for key in runtime_env if key in os.environ}
+    # Fail before starting a child if the test config is missing, rather than
+    # falling back to a credentials file under the unchanged HOME.
+    inherited["PIPECAT_CONFIG_PATH"] = os.environ["PIPECAT_CONFIG_PATH"]
 
     def run(env: dict) -> subprocess.CompletedProcess:
         return subprocess.run(
-            [sys.executable, str(script), f"KEY_A={VALUES['KEY_A']}"],
+            [sys.executable, str(script), f"KEY_A={VALUES['KEY_A']}", version("typer")],
             capture_output=True,
             text=True,
             env=env,
