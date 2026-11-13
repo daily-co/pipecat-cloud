@@ -72,7 +72,9 @@ src/pipecatcloud/
   smallwebrtc/
     session_manager.py   SmallWebRTC support for non-Pipecat agents
 tests/                   Pytest suite, parallel to src/
-.github/workflows/       tests.yml, format.yml, publish-pypi.yml, publish-test.yml
+changelog/               Changelog fragments for the next release, and towncrier's template
+scripts/                 Ruff fix-up, changelog fragment check, release-notes extraction
+.github/workflows/       CI, release and docs workflows (see CI below)
 pcc-deploy.toml          Example deployment config consumed by `pipecat cloud deploy`
 ```
 
@@ -86,8 +88,11 @@ pcc-deploy.toml          Example deployment config consumed by `pipecat cloud de
 ## CI
 
 - `tests.yml` runs the full suite (`uv run pytest -v`) on push to main and PRs, and runs `tests/test_agent_args.py` again with pipecat-ai 1.11.0 and 1.5.0 layered over the lock (`uv run --with ... python -m pytest`, with `PCC_EXPECTED_PIPECAT_AI` so the tests confirm the version they run on).
-- `format.yml` runs `ruff format --diff` and `ruff check`. Both must pass.
+- `format.yml` runs `ruff format --diff`, `ruff check` and `scripts/check-changelog-fragments.py`. All three must pass.
+- `python-compatibility.yml` checks that the CLI imports on Python 3.11 through 3.14.
+- `generate-changelog.yml` is a manual dispatch that assembles the changelog fragments and opens the release PR (see Release flow).
 - `publish-pypi.yml` and `publish-test.yml` are manual dispatches that build and publish a specific git tag.
+- `update-docs.yml` opens a docs PR against `pipecat-ai/docs` when a change under `src/pipecatcloud/` merges. It needs repository secrets that aren't set yet, so it fails at its first step until they are.
 
 ## Config and environment
 
@@ -111,7 +116,7 @@ Don't edit `CHANGELOG.md` in a feature PR. Each PR with a user-facing change add
 
 Open PRs with `/pipecat-dev:pr-submit`. It runs `/pipecat-dev:prose-review` on the branch, opens the PR, writes its fragments with `/pipecat-dev:changelog <PR number>`, and fills in the description with `/pipecat-dev:pr-description`. For a PR that's already open, run `/pipecat-dev:changelog <PR number>` on its own. These skills come from the `pipecat-dev` plugin in the Pipecat repo, which `.claude/settings.json` enables for this repo.
 
-- Name a fragment `<PR number>.<type>.md`, with type one of `added`, `changed`, `deprecated`, `removed`, `fixed`, `performance`, `security`, `other`. A second entry of the same type is `<PR number>.<type>.2.md`.
+- Name a fragment `<PR number>.<type>.md`, with type one of `added`, `changed`, `deprecated`, `removed`, `fixed`, `performance`, `security`, `other`. A second entry of the same type is `<PR number>.<type>.2.md`. The types come from `[tool.towncrier]` in `pyproject.toml`. `uv run python scripts/check-changelog-fragments.py` checks the names, and CI runs it on every PR.
 - The content is one `- ` bullet on a single line, no wrapping, starting with ⚠️ for a breaking change. Code blocks and sub-bullets go below it, indented two spaces. The release section links each entry to its PR.
 - Skip a fragment for docs, tests, CI, internal refactors, and fixes to changes that haven't shipped (edit that change's fragment instead).
 - Preview the next section with `uv run towncrier build --draft --version X.Y.Z`. Don't run it without `--draft`: it rewrites `CHANGELOG.md`, deletes the fragments and stages both.
