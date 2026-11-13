@@ -217,6 +217,10 @@ def api():
             return_value=({"total_count": 2, "runs": [make_run(), make_run(RUN_B)]}, None)
         )
         mock_api.eval_run_get = AsyncMock(return_value=(make_run(), None))
+        mock_api.eval_suite_member_runs = AsyncMock(
+            return_value=({"total_count": 2, "runs": [make_run(), make_run(RUN_B)]}, None)
+        )
+        mock_api.eval_org_run_get = AsyncMock(return_value=(make_run(), None))
         mock_api.eval_run_create = AsyncMock(return_value=(make_run(status="queued"), None))
         mock_api.eval_bundles_list = AsyncMock(
             return_value=({"total_count": 1, "bundles": [make_bundle()]}, None)
@@ -311,6 +315,24 @@ class TestRunAsSuite:
         api.eval_suite_run_create.assert_not_called()
         api.eval_run_create.assert_not_called()
 
+    def test_suites_without_bundles_runs_side_by_side(self, api, scenario_file):
+        # A suite run of a file's scenarios has them checked as a bundle's are.
+        api.eval_capabilities.return_value = (
+            {"enabled": True, "suites": True, "bundles": False},
+            None,
+        )
+        result = invoke("run", "agent", scenario_file, "--no-wait")
+        assert result.exit_code == 0, result.output
+        api.eval_suite_run_create.assert_not_called()
+        assert api.eval_run_create.await_count == 2
+
+    def test_the_header_leaves_out_criteria_only_entries(self, api, sleeps, tmp_path):
+        path = tmp_path / "calls.yaml"
+        path.write_text(SCENARIOS + "  - name: rubric\n    success: Polite.\n", encoding="utf-8")
+        result = invoke("run", "agent", path)
+        assert "calls/book" in result.output
+        assert "calls/rubric" not in result.output
+
     def test_without_suites_it_runs_side_by_side(self, api, scenario_file):
         api.eval_capabilities.return_value = ({"enabled": True, "suites": False}, None)
         result = invoke("run", "agent", scenario_file, "--no-wait")
@@ -384,15 +406,90 @@ class TestCreate:
         assert api.eval_suite_run_create.await_count == 1
 
     def test_a_503_without_retry_after_is_not_sent_again(self, api, scenario_file):
-        # Suites not available, say: a retry won't change it.
-        api.eval_suite_run_create.return_value = (
-            None,
-            {"error": "off", "code": "EVAL-SUITES-NOT-AVAILABLE"},
-        )
+        api.eval_suite_run_create.return_value = (None, {"error": "down", "code": "503"})
         api.error_status = 503
         result = invoke("run", "agent", scenario_file)
         assert result.exit_code == 3
         assert api.eval_suite_run_create.await_count == 1
+
+    @pytest.mark.parametrize("status", [502, 504])
+    def test_a_gateway_failure_is_sent_again(self, api, sleeps, scenario_file, status):
+        api.eval_suite_run_create.side_effect = [
+            (None, {"error": "gateway", "code": str(status)}),
+            (make_suite(), None),
+        ]
+        api.error_status = status
+        result = invoke("run", "agent", scenario_file, "--no-wait")
+        assert result.exit_code == 0, result.output
+        assert api.eval_suite_run_create.await_count == 2
+
+    @pytest.mark.parametrize("code", ["EVAL-SUITES-NOT-AVAILABLE", "EVAL-BUNDLES-NOT-AVAILABLE"])
+    def test_an_agent_that_cant_take_a_suite_run_runs_side_by_side(self, api, scenario_file, code):
+        # The organization has suite runs, but not the agent's region, say.
+        api.eval_suite_run_create.return_value = (None, {"error": "Not here.", "code": code})
+        api.error_status = 503
+        result = invoke("run", "agent", scenario_file, "--no-wait")
+        assert result.exit_code == 0, result.output
+        assert api.eval_suite_run_create.await_count == 1
+        assert api.eval_run_create.await_count == 2
+        assert "side by side" in result.output
+
+    def test_with_suite_only_options_that_refusal_is_an_error(self, api, scenario_file):
+        api.eval_suite_run_create.return_value = (
+            None,
+            {"error": "Not here.", "code": "EVAL-SUITES-NOT-AVAILABLE"},
+        )
+        api.error_status = 503
+        result = invoke("run", "agent", scenario_file, "--repeat", "2")
+        assert result.exit_code == 3
+        api.eval_run_create.assert_not_called()
+
+    def test_scenarios_refused_list_their_problems(self, api, scenario_file):
+        problems = [{"file": "calls.yaml", "scenario": "book", "code": "x", "message": "no voice"}]
+        api.eval_suite_run_create.return_value = (
+            None,
+            {"error": "refused", "code": "EVAL-SUITE-SCENARIOS-REFUSED", "problems": problems},
+        )
+        api.error_status = 400
+        result = invoke("run", "agent", scenario_file)
+        assert result.exit_code == 3
+        assert "its scenarios have problems" in result.output
+        assert "calls.yaml book no voice" in result.output
+
+    def test_a_plan_refusal_says_what_and_why(self, api, scenario_file):
+        api.eval_suite_run_create.return_value = (
+            None,
+            {
+                "error": "The suite run can't be planned.",
+                "code": "EVAL-SUITE-PLAN-INVALID",
+                "refusal": {"kind": "repeat_too_large", "repeat": 99, "max": 50},
+            },
+        )
+        api.error_status = 400
+        result = invoke("run", "agent", scenario_file)
+        assert result.exit_code == 3
+        assert "can't be planned" in result.output
+        assert "repeat_too_large" in result.output
+
+    def test_refusals_in_json_are_the_error_object(self, api, scenario_file):
+        refusal = {
+            "error": "x",
+            "code": "EVAL-SUITE-PLAN-INVALID",
+            "refusal": {"kind": "empty_plan"},
+        }
+        api.eval_suite_run_create.return_value = (None, refusal)
+        api.error_status = 400
+        result = invoke("run", "agent", scenario_file, "--json")
+        assert result.exit_code == 3
+        assert json.loads(result.stdout) == {"error": refusal}
+
+    def test_no_answer_at_the_last_try_says_one_may_exist(self, api, sleeps, scenario_file):
+        api.eval_suite_run_create.return_value = (None, {"error": "dropped", "code": "CLI"})
+        api.no_response.return_value = True
+        result = invoke("run", "agent", scenario_file)
+        assert result.exit_code == 3
+        assert "may have started" in result.output
+        assert "eval suite list agent" in result.output
 
     def test_it_gives_up_after_three_tries(self, api, sleeps, scenario_file):
         api.eval_suite_run_create.return_value = (None, {"error": "dropped", "code": "CLI"})
@@ -431,7 +528,7 @@ class TestWaitForSuite:
     )
     def test_the_exit_code_is_the_contracts(self, api, sleeps, scenario_file, suite, code):
         api.eval_suite_run_get.return_value = (suite, None)
-        api.eval_runs_list.return_value = ({"total_count": 0, "runs": []}, None)
+        api.eval_suite_member_runs.return_value = ({"total_count": 0, "runs": []}, None)
         result = invoke("run", "agent", scenario_file)
         assert result.exit_code == code, result.output
 
@@ -461,6 +558,16 @@ class TestWaitForSuite:
         api.error_status = 404
         result = invoke("run", "agent", scenario_file)
         assert result.exit_code == 3
+
+    def test_a_part_of_evals_switched_off_ends_the_wait_at_once(self, api, sleeps, scenario_file):
+        api.eval_suite_run_get.return_value = (
+            None,
+            {"error": "off", "code": "EVAL-SUITES-NOT-AVAILABLE"},
+        )
+        api.error_status = 503
+        result = invoke("run", "agent", scenario_file)
+        assert result.exit_code == 3
+        assert api.eval_suite_run_get.await_count == 1
 
     def test_it_stops_waiting_well_past_the_deadline(self, api, sleeps, clock, scenario_file):
         live = make_suite(status="running", counts=counts(live=2))
@@ -496,19 +603,22 @@ class TestReport:
     def test_failures_are_explained_with_their_entry_and_attempt(self, api, sleeps, scenario_file):
         failed = make_run(RUN_B, verdict="failed", name="hours", result={"reason": "No hours."})
         api.eval_suite_run_get.return_value = (ended("failed"), None)
-        api.eval_runs_list.return_value = ({"total_count": 2, "runs": [make_run(), failed]}, None)
+        api.eval_suite_member_runs.return_value = (
+            {"total_count": 2, "runs": [make_run(), failed]},
+            None,
+        )
         api.eval_suite_run_items.return_value = (
             make_items(make_run(), failed, label="fast", attempts=[1, 2]),
             None,
         )
-        api.eval_run_get.return_value = (failed, None)
+        api.eval_org_run_get.return_value = (failed, None)
         result = invoke("run", "agent", scenario_file)
         assert result.exit_code == 1
         assert "Failures (1 of 2)" in result.output
         assert "fast: calls/hours #2" in result.output
         assert "No hours." in result.output
-        api.eval_run_get.assert_awaited_once()
-        assert api.eval_run_get.call_args.args[2] == RUN_B
+        api.eval_org_run_get.assert_awaited_once()
+        assert api.eval_org_run_get.call_args.args[1] == RUN_B
 
     def test_only_so_many_failures_are_explained(self, api, sleeps, scenario_file):
         runs = [make_run(f"run-{i}", verdict="failed") for i in range(25)]
@@ -516,21 +626,21 @@ class TestReport:
             ended("failed", counts=counts(planned=25, failed=25)),
             None,
         )
-        api.eval_runs_list.return_value = ({"total_count": 25, "runs": runs}, None)
-        api.eval_run_get.return_value = (runs[0], None)
+        api.eval_suite_member_runs.return_value = ({"total_count": 25, "runs": runs}, None)
+        api.eval_org_run_get.return_value = (runs[0], None)
         result = invoke("run", "agent", scenario_file)
-        assert api.eval_run_get.await_count == eval_suites.MAX_EXPLAINED_MEMBERS
+        assert api.eval_org_run_get.await_count == eval_suites.MAX_EXPLAINED_MEMBERS
         assert "And 5 more." in result.output
 
     def test_member_runs_are_read_page_by_page(self, api, sleeps, scenario_file):
-        api.eval_runs_list.side_effect = [
+        api.eval_suite_member_runs.side_effect = [
             ({"total_count": 3, "runs": [make_run(), make_run(RUN_B)]}, None),
             ({"total_count": 3, "runs": [make_run("run-3")]}, None),
         ]
         invoke("run", "agent", scenario_file)
-        offsets = [c.kwargs["offset"] for c in api.eval_runs_list.call_args_list]
+        offsets = [c.kwargs["offset"] for c in api.eval_suite_member_runs.call_args_list]
         assert offsets == [0, 2]
-        assert all(c.kwargs["suite_run_id"] == SUITE_ID for c in api.eval_runs_list.call_args_list)
+        assert all(c.args[1] == SUITE_ID for c in api.eval_suite_member_runs.call_args_list)
 
     def test_a_measurement_shows_pass_rates_not_failures(self, api, sleeps, scenario_file):
         rates = [
@@ -555,7 +665,7 @@ class TestReport:
         assert result.exit_code == 0
         assert "75%" in result.output
         assert "Failures" not in result.output
-        api.eval_run_get.assert_not_called()
+        api.eval_org_run_get.assert_not_called()
 
     def test_mixed_is_a_warning_and_pass_rates_name_their_version(self, api, sleeps, scenario_file):
         rates = [
@@ -595,16 +705,50 @@ class TestReport:
             ended(None, status="error", error=error, counts=counts(without=2)),
             None,
         )
-        api.eval_runs_list.return_value = ({"total_count": 0, "runs": []}, None)
+        api.eval_suite_member_runs.return_value = ({"total_count": 0, "runs": []}, None)
         result = invoke("run", "agent", scenario_file)
         assert result.exit_code == 2
         assert "The agent's version changed" in result.output
         assert "deployment_changed" in result.output
         assert "2 of the members never started" in result.output
 
+    def test_members_that_cant_be_read_keep_the_verdicts_exit_code(
+        self, api, sleeps, scenario_file
+    ):
+        api.eval_suite_run_get.return_value = (ended("failed"), None)
+        api.eval_suite_member_runs.return_value = (None, {"error": "Bad gateway", "code": "502"})
+        result = invoke("run", "agent", scenario_file)
+        assert result.exit_code == 1
+        assert "Couldn't read the suite run's members: Bad gateway" in result.output
+
+    def test_a_result_that_cant_be_read_is_said_and_the_exit_code_kept(
+        self, api, sleeps, scenario_file
+    ):
+        failed = make_run(RUN_B, verdict="failed")
+        api.eval_suite_run_get.return_value = (ended("failed"), None)
+        api.eval_suite_member_runs.return_value = ({"total_count": 1, "runs": [failed]}, None)
+        api.eval_suite_run_items.return_value = (None, {"error": "x", "code": "502"})
+        api.eval_org_run_get.return_value = (None, {"error": "Gone", "code": "404"})
+        result = invoke("run", "agent", scenario_file)
+        assert result.exit_code == 1
+        assert "Couldn't read the run's result: Gone" in result.output
+
+    def test_members_are_read_through_the_organization(self, api, sleeps, scenario_file):
+        # Not by the agent's name: the agent may be gone, or its name reused.
+        api.eval_suite_run_get.return_value = (ended("failed"), None)
+        api.eval_suite_member_runs.return_value = (
+            {"total_count": 1, "runs": [make_run(verdict="failed")]},
+            None,
+        )
+        invoke("run", "agent", scenario_file)
+        api.eval_suite_member_runs.assert_awaited()
+        api.eval_org_run_get.assert_awaited_once()
+        api.eval_runs_list.assert_not_called()
+        api.eval_run_get.assert_not_called()
+
     def test_verbose_explains_every_member(self, api, sleeps, scenario_file):
         invoke("run", "agent", scenario_file, "-v")
-        assert api.eval_run_get.await_count == 2
+        assert api.eval_org_run_get.await_count == 2
 
 
 # ---- `eval suite run` ----
@@ -698,7 +842,7 @@ class TestSuiteStatus:
         assert result.exit_code == 0
         assert "1 live" in result.output
         assert f"eval suite status {SUITE_ID} --wait" in result.output
-        api.eval_runs_list.assert_not_called()
+        api.eval_suite_member_runs.assert_not_called()
 
     def test_it_shows_the_judging_version(self, api):
         api.eval_suite_run_get.return_value = (ended(fingerprint=FINGERPRINT), None)
@@ -718,6 +862,13 @@ class TestSuiteStatus:
         ]
         result = invoke("suite", "status", SUITE_ID, "--wait")
         assert result.exit_code == 1
+
+    def test_wait_on_an_ended_suite_run_shows_its_counts_once(self, api):
+        api.eval_suite_run_get.return_value = (ended("failed"), None)
+        result = invoke("suite", "status", SUITE_ID, "--wait")
+        assert result.exit_code == 1
+        assert result.output.count("2/2 done") == 1
+        api.eval_suite_run_get.assert_awaited_once()
 
     def test_json(self, api):
         result = invoke("suite", "status", SUITE_ID, "--json")
@@ -838,6 +989,58 @@ class TestCollectDirectory:
         assert list(found.files) == ["calls.yaml"]
         assert found.skipped == [("id_rsa.yaml", "looks like it holds secrets")]
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "credentials.json",
+            "client_secret_123.apps.googleusercontent.com.json",
+            "db-secret.yaml",
+            "my-service-account.json",
+            "kubeconfig.yaml",
+            "token.json",
+            "values.sops.yaml",
+        ],
+    )
+    def test_names_credentials_are_kept_under_are_left_out(self, tmp_path, name):
+        (tmp_path / "calls.yaml").write_text("name: c\n")
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / name).write_text("x: 1\n")
+        found = collect_directory(tmp_path)
+        assert list(found.files) == ["calls.yaml"]
+        assert found.skipped == [(f"sub/{name}", "is named like a credential")]
+
+    @pytest.mark.parametrize(
+        ("text", "why"),
+        [
+            ('{"private_key": "-----BEGIN PRIVATE KEY-----\\nabc"}', "holds a private key"),
+            ("apiVersion: v1\nkind: Secret\ndata:\n  a: b\n", "is a Kubernetes Secret"),
+        ],
+    )
+    def test_content_that_looks_like_a_credential_is_left_out(self, tmp_path, text, why):
+        (tmp_path / "calls.yaml").write_text("name: c\n")
+        (tmp_path / "other.json").write_text(text)
+        found = collect_directory(tmp_path)
+        assert list(found.files) == ["calls.yaml"]
+        assert found.skipped == [("other.json", why)]
+
+    def test_nothing_left_to_send_is_refused(self, tmp_path):
+        (tmp_path / "key.json").write_text("-----BEGIN RSA PRIVATE KEY-----")
+        with pytest.raises(BundleError, match="nothing to send"):
+            collect_directory(tmp_path)
+
+    def test_a_folder_that_cant_be_read_is_listed(self, tmp_path):
+        (tmp_path / "calls.yaml").write_text("name: c\n")
+        locked = tmp_path / "locked"
+        locked.mkdir()
+        (locked / "x.yaml").write_text("x: 1\n")
+        locked.chmod(0)
+        try:
+            found = collect_directory(tmp_path)
+        finally:
+            locked.chmod(0o755)
+        assert list(found.files) == ["calls.yaml"]
+        assert ("locked/", "can't be read") in found.skipped
+
     def test_a_symlink_leaving_the_directory_is_refused(self, tmp_path):
         outside = tmp_path / "outside.yaml"
         outside.write_text("x: 1\n")
@@ -939,7 +1142,7 @@ class TestBundlePush:
         assert result.exit_code == 3
         assert "list.yaml: an orphan (orphan_fragment)" in result.output
         assert "list.yaml list.yaml" not in result.output
-        assert "calls.yaml no goal" in result.output
+        assert "calls.yaml book no goal" in result.output
         assert "And 3 more." in result.output
         assert api.eval_bundle_revision_append.await_count == 1
 
@@ -985,6 +1188,23 @@ class TestBundlePush:
             )
         assert accepted.exit_code == 0, accepted.output
         api.eval_bundle_revision_append.assert_awaited_once()
+
+    def test_ctrl_c_at_the_prompt_publishes_nothing_and_exits_130(self, api, bundle_dir):
+        with (
+            patch.object(eval_suites, "stdin_is_interactive", return_value=True),
+            patch.object(eval_suites.typer, "confirm", side_effect=KeyboardInterrupt),
+        ):
+            result = invoke("bundle", "push", "calls", bundle_dir)
+        assert result.exit_code == 130
+        assert "Nothing was published" in result.output
+        api.eval_bundle_revision_append.assert_not_called()
+
+    def test_ctrl_c_while_publishing_says_a_revision_may_exist(self, api, bundle_dir):
+        api.eval_bundle_revision_append.side_effect = KeyboardInterrupt
+        result = invoke("bundle", "push", "calls", bundle_dir, "--yes")
+        assert result.exit_code == 130
+        assert "may have been published" in result.output
+        assert "eval bundle show calls" in result.output
 
     @pytest.mark.parametrize("name", ["Calls", "calls@2", "-x", "a" * 129])
     def test_a_bad_name_is_refused_before_any_request(self, api, bundle_dir, name):
@@ -1037,6 +1257,12 @@ class TestBundleListAndShow:
         result = invoke("bundle", "show", "calls", "--files")
         assert "==> calls.yaml <==" in result.output
         assert "Book a table." in result.output
+
+    def test_show_files_prints_them_as_stored(self, api):
+        text = "name: x  # :thumbs_up: [bold]not markup[/bold]\n"
+        api.eval_bundle_revision_get.return_value = (make_revision(2, files={"x.yaml": text}), None)
+        result = invoke("bundle", "show", "calls", "--files")
+        assert ":thumbs_up: [bold]not markup[/bold]" in result.output
 
     def test_show_json_is_the_revision(self, api):
         result = invoke("bundle", "show", "calls@2", "--json")

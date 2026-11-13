@@ -69,7 +69,7 @@ from pipecatcloud._utils.async_utils import synchronizer
 from pipecatcloud._utils.auth_utils import requires_login
 from pipecatcloud._utils.console_utils import OutputMode, console, format_timestamp
 from pipecatcloud._utils.eval_bundle import BundleError, build_bundle
-from pipecatcloud.api import _parse_retry_after
+from pipecatcloud.api import EVAL_NOT_AVAILABLE_MESSAGES, _parse_retry_after
 from pipecatcloud.cli import PIPECAT_CLI_NAME
 from pipecatcloud.cli.api import API
 from pipecatcloud.cli.config import config
@@ -376,6 +376,12 @@ def _scenario_view(data: Any, name: str) -> dict:
         if isinstance(entry, dict) and entry.get("name") == name:
             return {**top, **{k: v for k, v in entry.items() if k != "name"}}
     return top
+
+
+def _runnable(data: Any, name: str) -> bool:
+    """Whether a scenario is a script or a simulation, not criteria alone."""
+    view = _scenario_view(data, name)
+    return "turns" in view or "persona" in view
 
 
 def _service(block: Any, default: str | None = None, *, second: str) -> str | None:
@@ -822,10 +828,8 @@ async def _wait_for_end(org: str, agent: str, runs: list[dict], on_update) -> li
                     failures[i] = 0
                     runs[i] = data
                     continue
-                status = API.error_status
-                permanent = status is not None and 400 <= status < 500 and status != 429
                 failures[i] += 1
-                if permanent or failures[i] >= POLL_MAX_CONSECUTIVE_ERRORS:
+                if permanent_failure(error) or failures[i] >= POLL_MAX_CONSECUTIVE_ERRORS:
                     if not console.json_output:
                         API.print_error()
                     _check(
@@ -844,6 +848,15 @@ async def _wait_for_end(org: str, agent: str, runs: list[dict], on_update) -> li
 
 def _monotonic() -> float:
     return time.monotonic()
+
+
+def permanent_failure(error: Any) -> bool:
+    """Whether a failed poll won't pass by trying again: a 4xx other than 429, or a
+    part of evals that is switched off (a 503 that a retry won't change)."""
+    status = API.error_status
+    if status is not None and 400 <= status < 500 and status != 429:
+        return True
+    return isinstance(error, dict) and str(error.get("code")) in EVAL_NOT_AVAILABLE_MESSAGES
 
 
 def _parse_time(raw: Any) -> datetime | None:
@@ -1160,8 +1173,9 @@ async def run(
     # which takes no --param settings.
     from pipecatcloud.cli.commands import eval_suites
 
-    as_suite = not params and await eval_suites.suites_available(org)
-    if not as_suite and (repeat is not None or concurrency is not None):
+    suite_only = repeat is not None or concurrency is not None
+    as_suite = not params and await eval_suites.inline_suites_available(org)
+    if not as_suite and suite_only:
         _fail(
             "--repeat and --concurrency are for suite runs, which take no --param."
             if params
@@ -1170,9 +1184,10 @@ async def run(
         )
 
     if wait and not console.json_output:
-        _print_scenario_header([(labels[n], _scenario_view(data, n)) for n in names])
-        if not as_suite:
-            _print_settings(agent, len(names))
+        # A suite run of the whole file runs its scripts and simulations, not
+        # its criteria-only entries.
+        shown = names if scenario or not as_suite else [n for n in names if _runnable(data, n)]
+        _print_scenario_header([(labels[n], _scenario_view(data, n)) for n in shown])
 
     if as_suite:
         suite_body: dict[str, Any] = {"files": bundle.files, "scenarioPath": bundle.scenario_path}
@@ -1185,7 +1200,14 @@ async def run(
         ):
             if value is not None:
                 suite_body[key] = value
-        await eval_suites.run_suite(org, agent, suite_body, wait=wait, verbose=verbose)
+        # Returns only when the agent can't take a suite run (its region hasn't
+        # suite runs, say), and then only without suite-only options.
+        await eval_suites.run_suite(
+            org, agent, suite_body, wait=wait, verbose=verbose, fall_back=not suite_only
+        )
+
+    if wait and not console.json_output:
+        _print_settings(agent, len(names))
 
     def body_for(row: _Row) -> dict[str, Any]:
         body: dict[str, Any] = {

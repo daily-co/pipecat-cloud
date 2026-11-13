@@ -41,6 +41,7 @@ _SETTINGS = {
     "spend_limit_path": _Setting("/v1/organizations/{org}/spend-limit"),
     "eval_runs_path": _Setting("/v1/organizations/{org}/services/{service}/eval-runs"),
     "eval_capabilities_path": _Setting("/v1/organizations/{org}/eval-capabilities"),
+    "eval_org_runs_path": _Setting("/v1/organizations/{org}/eval-runs"),
     "eval_suite_runs_create_path": _Setting(
         "/v1/organizations/{org}/services/{service}/eval-suite-runs"
     ),

@@ -259,7 +259,8 @@ async def _wait_for_suite(org: str, suite: dict, on_update) -> dict:
     """Poll a suite run until it has ended, and return it.
 
     A poll that fails for a reason that may pass (a dropped connection, a 5xx,
-    a 429) is tried again; a permanent one (a 4xx) ends the wait.
+    a 429) is tried again; a permanent one (a 4xx, or a part of evals that is
+    off) ends the wait.
     """
     delay = POLL_START_SECONDS
     pause = delay
@@ -278,10 +279,8 @@ async def _wait_for_suite(org: str, suite: dict, on_update) -> dict:
                 failures = 0
                 suite = data
                 continue
-            status = base.API.error_status
-            permanent = status is not None and 400 <= status < 500 and status != 429
             failures += 1
-            if permanent or failures >= POLL_MAX_CONSECUTIVE_ERRORS:
+            if base.permanent_failure(error) or failures >= POLL_MAX_CONSECUTIVE_ERRORS:
                 if not console.json_output:
                     base.API.print_error()
                 _check(None, error or {"error": "Lost contact with the API.", "code": "CLI-POLL"})
@@ -311,36 +310,52 @@ def _suite_interrupted(suite: dict) -> NoReturn:
     raise typer.Exit(EXIT_INTERRUPTED)
 
 
-async def _member_runs(org: str, agent: str, suite_run_id: str) -> list[dict]:
-    """Every admitted member's eval run, without results."""
+# The report after a suite run ends reads its members. Those reads are best
+# effort: the verdict is already known, so a failed read is said and skipped,
+# and never changes the exit code.
+
+
+def _unread(what: str, error: Any) -> None:
+    reason = error.get("error") if isinstance(error, dict) else None
+    _print(f"  [dim]Couldn't read the {what}{f': {escape(str(reason))}' if reason else ''}.[/dim]")
+
+
+async def _member_runs(org: str, suite_run_id: str) -> list[dict] | None:
+    """Every admitted member's eval run, without results; None when they couldn't be read."""
     runs: list[dict] = []
     offset = 0
     while True:
-        data, error = await base._api().eval_runs_list(
-            org, agent, limit=RUNS_PAGE, offset=offset, suite_run_id=suite_run_id
+        data, error = await base.API.bubble_error().eval_suite_member_runs(
+            org, suite_run_id, limit=RUNS_PAGE, offset=offset
         )
-        page = _check(data, error)
-        batch = page.get("runs") or []
+        if not data:
+            _unread("suite run's members", error)
+            return None
+        batch = data.get("runs") or []
         runs.extend(batch)
         offset += len(batch)
-        total = page.get("total_count")
+        total = data.get("total_count")
         if not batch or not isinstance(total, int) or offset >= total:
             return runs
 
 
 async def _member_items(org: str, suite_run_id: str) -> list[dict]:
-    """Every planned member, in order, each with its eval run's ID once admitted."""
+    """Every planned member, in order, each with its eval run's ID once admitted.
+
+    Empty when they couldn't be read: they only label the members.
+    """
     items: list[dict] = []
     offset = 0
     while True:
-        data, error = await base._api().eval_suite_run_items(
+        data, _ = await base.API.bubble_error().eval_suite_run_items(
             org, suite_run_id, limit=ITEMS_PAGE, offset=offset
         )
-        page = _check(data, error)
-        batch = page.get("items") or []
+        if not data:
+            return items
+        batch = data.get("items") or []
         items.extend(batch)
         offset += len(batch)
-        total = page.get("total")
+        total = data.get("total")
         if not batch or not isinstance(total, int) or offset >= total:
             return items
 
@@ -424,7 +439,11 @@ async def _report_suite(
     if measurement:
         _print_pass_rates(suite)
 
-    runs = await _member_runs(org, agent, suite_run_id)
+    runs = await _member_runs(org, suite_run_id)
+    if runs is None:
+        _print()
+        _print(f"  members: {_members_command(agent, suite_run_id)}")
+        return
     counts = suite.get("counts") or {}
     never = _count(counts, "planned") - len(runs)
     if verbose:
@@ -439,11 +458,13 @@ async def _report_suite(
             _print()
             _print(f"  [bold red]Failures ({len(explain)} of {len(runs)}):[/bold red]")
         for listed in explain[:MAX_EXPLAINED_MEMBERS]:
-            data, error = await base._api().eval_run_get(org, agent, str(listed.get("id")))
-            run = _check(data, error)
+            data, error = await base.API.bubble_error().eval_org_run_get(org, str(listed.get("id")))
+            run = data or listed
             label = labels.get(str(run.get("id"))) or _run_label(run)
             _print()
             _print_details(_Row(label, run=run), agent, verbose)
+            if not data:
+                _unread("run's result", error)
         if len(explain) > MAX_EXPLAINED_MEMBERS:
             _print()
             _print(f"  [dim]And {len(explain) - MAX_EXPLAINED_MEMBERS} more.[/dim]")
@@ -478,6 +499,7 @@ async def _follow_suite(org: str, suite: dict, verbose: bool, *, settings: bool)
     )
     try:
         with display:
+            on_update(suite)
             if _suite_is_live(suite):
                 suite = await _wait_for_suite(org, suite, on_update)
             view.suite = suite
@@ -492,13 +514,22 @@ async def _follow_suite(org: str, suite: dict, verbose: bool, *, settings: bool)
     raise typer.Exit(suite_exit_code(suite))
 
 
-async def _create(request: Any, body: dict, refused: Any = None) -> tuple[dict | None, dict | None]:
-    """Send a create request, again as it was on no answer or a refusal that says to retry.
+# Gateway failures: the request may have landed, and resending it with its
+# request ID is answered with what it made.
+GATEWAY_STATUSES = (502, 504)
+
+
+async def _create(
+    request: Any, body: dict, *, lost: str, refused: Any = None
+) -> tuple[dict | None, dict | None]:
+    """Send a create request, again as it was when it may not have landed or was asked to wait.
 
     `request` is the API call, `body` its request, which carries a request ID
-    so the API answers a repeat with what the first one made. Returns the
-    answer, or `(None, error)` for a refusal that `refused` accepts; any other
-    failure exits.
+    so the API answers a repeat with what the first one made. It is sent
+    again on no answer, a gateway failure, or a 429 or 503 with `Retry-After`.
+    Returns the answer, or `(None, error)` for a refusal that `refused`
+    accepts; any other failure exits. `lost` says where to look when the last
+    try got no answer, so what it asked for may exist.
     """
     for attempt in range(1, CREATE_ATTEMPTS + 1):
         data, error = await request(body)
@@ -506,11 +537,13 @@ async def _create(request: Any, body: dict, refused: Any = None) -> tuple[dict |
             return data, None
         if refused is not None and isinstance(error, dict) and refused(error):
             return None, error
+        status = base.API.error_status
         retry_after = _parse_retry_after(base.API.error_retry_after)
-        retryable = base.API.no_response() or (
-            base.API.error_status in (429, 503) and retry_after is not None
-        )
+        unanswered = base.API.no_response() or status in GATEWAY_STATUSES
+        retryable = unanswered or (status in (429, 503) and retry_after is not None)
         if not retryable or attempt == CREATE_ATTEMPTS:
+            if unanswered:
+                _fail(f"The API didn't answer. {lost}", code="CLI-SUBMISSION")
             if not console.json_output:
                 base.API.print_error()
             _check(None, error or {"error": "The API didn't answer.", "code": "CLI-SUBMISSION"})
@@ -519,28 +552,70 @@ async def _create(request: Any, body: dict, refused: Any = None) -> tuple[dict |
     raise AssertionError("unreachable")
 
 
-async def run_suite(org: str, agent: str, body: dict, *, wait: bool, verbose: bool) -> NoReturn:
-    """Start a suite run, then follow it to its end, or show it accepted."""
+# Refusals that say what's wrong with the files or the plan, shown in full.
+_PROBLEM_CODES = ("EVAL-BUNDLE-REFUSED", "EVAL-SUITE-SCENARIOS-REFUSED")
+_PLAN_CODE = "EVAL-SUITE-PLAN-INVALID"
+# Where `eval run` chose a suite run itself, these send it back to runs side by side.
+_SUITES_OFF_CODES = ("EVAL-SUITES-NOT-AVAILABLE", "EVAL-BUNDLES-NOT-AVAILABLE")
+
+
+def _print_plan_refusal(error: dict) -> None:
+    _print(f"[red]{escape(str(error.get('error') or 'The suite run was refused.'))}[/red]")
+    refusal = error.get("refusal")
+    if isinstance(refusal, dict) and refusal:
+        detail = ", ".join(f"{k}: {v}" for k, v in refusal.items())
+        _print(f"  [dim]{escape(detail)}[/dim]")
+
+
+async def run_suite(
+    org: str, agent: str, body: dict, *, wait: bool, verbose: bool, fall_back: bool = False
+) -> None:
+    """Start a suite run, then follow it to its end, or show it accepted; this exits.
+
+    With `fall_back`, a refusal saying the agent can't take a suite run
+    returns instead, for the caller to run the scenarios another way.
+    """
     body = {"requestId": str(uuid4()), **body}
 
     async def request(b: dict):
         return await base.API.bubble_error().eval_suite_run_create(org, agent, b)
 
+    def refused(error: dict) -> bool:
+        code = error.get("code")
+        return (
+            code in _PROBLEM_CODES
+            or code == _PLAN_CODE
+            or (fall_back and code in _SUITES_OFF_CODES)
+        )
+
+    lost = f"A suite run may have started: see {PIPECAT_CLI_NAME} eval suite list {agent}"
     try:
         with console.status(
             f"[dim]Starting a suite run on [bold]'{escape(agent)}'[/bold][/dim]", spinner="dots"
         ):
-            suite, _ = await _create(request, body)
+            suite, refusal = await _create(request, body, lost=lost, refused=refused)
     except (KeyboardInterrupt, asyncio.CancelledError):
-        message = (
-            "Stopped while starting the suite run. The request may have reached the API, so a "
-            f"suite run may exist. See: {PIPECAT_CLI_NAME} eval suite list {agent}"
-        )
+        message = f"Stopped while starting the suite run. {lost}"
         if console.json_output:
             console.output_json({"error": {"error": message, "code": "CLI-INTERRUPTED"}})
         else:
             _print(f"\n[yellow]{escape(message)}[/yellow]")
         raise typer.Exit(EXIT_INTERRUPTED) from None
+    if refusal is not None:
+        if refusal.get("code") in _SUITES_OFF_CODES:
+            if not console.json_output:
+                _print(
+                    f"[dim]{escape(str(refusal.get('error')))} The scenarios run side by side."
+                    "[/dim]\n"
+                )
+            return
+        if console.json_output:
+            console.output_json({"error": refusal})
+        elif refusal.get("code") == _PLAN_CODE:
+            _print_plan_refusal(refusal)
+        else:
+            _print_problems(refusal, "The suite run wasn't started: its scenarios have problems.")
+        raise typer.Exit(EXIT_ERROR)
     assert suite is not None
 
     if wait:
@@ -557,14 +632,16 @@ async def run_suite(org: str, agent: str, body: dict, *, wait: bool, verbose: bo
     raise typer.Exit(EXIT_PASSED)
 
 
-async def suites_available(org: str) -> bool:
-    """Whether the organization has suite runs, as `/eval-capabilities` says.
+async def inline_suites_available(org: str) -> bool:
+    """Whether the organization can run a scenario file's scenarios as a suite run.
 
-    An API without that route has none.
+    `/eval-capabilities` must list `suites`, and `bundles` too: a suite run of
+    files sent with it has them checked as a bundle's are. An API without that
+    route has neither.
     """
     data, error = await base.API.bubble_error().eval_capabilities(org)
     if data:
-        return data.get("suites") is True
+        return data.get("suites") is True and data.get("bundles") is True
     if base.API.error_status == 404:
         return False
     if not console.json_output:
@@ -959,15 +1036,17 @@ def _print_ignored(revision: dict) -> None:
         _print(f"  [dim]And {total - len(ignored)} more.[/dim]")
 
 
-def _print_problems(error: dict) -> None:
+def _print_problems(error: dict, heading: str) -> None:
     problems = [p for p in error.get("problems") or [] if isinstance(p, dict)]
-    _print("[red]The bundle wasn't published: its files have problems.[/red]")
+    _print(f"[red]{escape(heading)}[/red]")
     for p in problems:
         message = str(p.get("message"))
-        # The API's message starts with the file it is about; name it only when it doesn't.
-        where = (
-            "" if p.get("file") and message.startswith(f"{p['file']}") else str(p.get("file") or "")
-        )
+        # Where the problem is: its file, unless the message starts with it, and
+        # its scenario and field.
+        file = p.get("file")
+        parts = [file if file and not message.startswith(str(file)) else None]
+        parts += [p.get("scenario"), p.get("field")]
+        where = " ".join(str(x) for x in parts if x)
         lead = f"[cyan]{escape(where)}[/cyan] " if where else ""
         _print(f"  [red]✗[/red] {lead}{escape(message)} [dim]({escape(str(p.get('code')))})[/dim]")
     total = error.get("total")
@@ -1027,43 +1106,65 @@ async def bundle_push(
     if not yes:
         if console.json_output or not stdin_is_interactive():
             _fail("Publishing asks to confirm. Add --yes to publish without asking.")
-        if not typer.confirm("Publish?", default=True):
+        try:
+            confirmed = typer.confirm("Publish?", default=True)
+        except (typer.Abort, KeyboardInterrupt):
+            _print("\nNothing was published.")
+            raise typer.Exit(EXIT_INTERRUPTED) from None
+        if not confirmed:
             _print("Nothing was published.")
             raise typer.Exit(EXIT_PASSED)
+
+    lost = f"A revision may have been published: see {PIPECAT_CLI_NAME} eval bundle show {name}"
 
     async def append(bundle_id: str) -> tuple[dict | None, dict | None]:
         async def request(b: dict):
             return await base.API.bubble_error().eval_bundle_revision_append(org, bundle_id, b)
 
         return await _create(
-            request, {"requestId": str(uuid4()), "files": found.files}, _refused_files
+            request,
+            {"requestId": str(uuid4()), "files": found.files},
+            lost=lost,
+            refused=_refused_files,
         )
 
     async def create(b: dict):
         return await base.API.bubble_error().eval_bundle_create(org, b)
 
-    with console.status("[dim]Checking and publishing the files[/dim]", spinner="dots"):
-        if existing is not None:
-            revision, refusal = await append(str(existing["id"]))
-        else:
-            created, refusal = await _create(
-                create,
-                {"requestId": str(uuid4()), "name": name, "files": found.files},
-                lambda e: _refused_files(e) or e.get("code") == "EVAL-BUNDLE-NAME-TAKEN",
-            )
-            if refusal is not None and refusal.get("code") == "EVAL-BUNDLE-NAME-TAKEN":
-                # Created by someone else since it was looked up: append to it.
-                existing = await _find_bundle(org, name)
-                if existing is None:
-                    _fail(f"Bundle {name!r} was created and removed while publishing. Try again.")
+    try:
+        with console.status("[dim]Checking and publishing the files[/dim]", spinner="dots"):
+            if existing is not None:
                 revision, refusal = await append(str(existing["id"]))
             else:
-                revision = (created or {}).get("revision")
+                created, refusal = await _create(
+                    create,
+                    {"requestId": str(uuid4()), "name": name, "files": found.files},
+                    lost=lost,
+                    refused=lambda e: _refused_files(e)
+                    or e.get("code") == "EVAL-BUNDLE-NAME-TAKEN",
+                )
+                if refusal is not None and refusal.get("code") == "EVAL-BUNDLE-NAME-TAKEN":
+                    # Created by someone else since it was looked up: append to it.
+                    existing = await _find_bundle(org, name)
+                    if existing is None:
+                        _fail(
+                            f"Bundle {name!r} was created and removed while publishing. Try again."
+                        )
+                    revision, refusal = await append(str(existing["id"]))
+                else:
+                    revision = (created or {}).get("revision")
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        message = f"Stopped while publishing. {lost}"
+        if console.json_output:
+            console.output_json({"error": {"error": message, "code": "CLI-INTERRUPTED"}})
+        else:
+            _print(f"\n[yellow]{escape(message)}[/yellow]")
+        raise typer.Exit(EXIT_INTERRUPTED) from None
     if refusal is not None:
         if console.json_output:
             console.output_json({"error": refusal})
         else:
-            _print_problems(refusal)
+            _print_problems(refusal, "The bundle wasn't published: its files have problems.")
         raise typer.Exit(EXIT_ERROR)
     assert revision is not None
 
@@ -1181,4 +1282,5 @@ async def bundle_show(
             for path, text in held.items():
                 _print()
                 _print(f"[bold cyan]==> {escape(str(path))} <==[/bold cyan]")
-                console.print(str(text), markup=False, highlight=False)
+                # As stored: no markup, emoji codes, highlighting or wrapping.
+                console.print(str(text), markup=False, emoji=False, highlight=False, soft_wrap=True)

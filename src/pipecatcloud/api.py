@@ -1381,6 +1381,42 @@ class _API:
         """
         return self.create_api_method(self._eval_capabilities)
 
+    def _eval_org_runs_url(self, org: str, run_id: str | None = None) -> str:
+        url = self.construct_api_url("eval_org_runs_path").format(org=quote(org, safe=""))
+        if run_id is not None:
+            url += f"/{quote(run_id, safe='')}"
+        return url
+
+    async def _eval_suite_member_runs(
+        self, org: str, suite_run_id: str, limit: int | None = None, offset: int | None = None
+    ) -> dict:
+        params = {
+            k: v
+            for k, v in (("suiteRunId", suite_run_id), ("limit", limit), ("offset", offset))
+            if v is not None
+        }
+        return await self._eval_request("GET", self._eval_org_runs_url(org), params=params) or {}
+
+    @property
+    def eval_suite_member_runs(self):
+        """A suite run's member runs, newest first, without their results.
+
+        Read through the organization, so they stay readable after the agent
+        is deleted or its name is reused.
+
+        Returns:
+            Dict with `total_count` and `runs`.
+        """
+        return self.create_api_method(self._eval_suite_member_runs)
+
+    async def _eval_org_run_get(self, org: str, run_id: str) -> dict:
+        return await self._eval_request("GET", self._eval_org_runs_url(org, run_id)) or {}
+
+    @property
+    def eval_org_run_get(self):
+        """Get an eval run by its ID alone, with its result once it has ended."""
+        return self.create_api_method(self._eval_org_run_get)
+
     # Eval suite runs
 
     def _eval_suite_runs_url(self, org: str, suite_run_id: str | None = None) -> str:

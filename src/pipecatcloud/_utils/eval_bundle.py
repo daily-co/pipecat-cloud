@@ -24,6 +24,7 @@ Each file is read and parsed once.
 import fnmatch
 import os
 import posixpath
+import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -278,13 +279,40 @@ BUNDLE_SUFFIXES = (".yaml", ".yml", ".json")
 MAX_STORED_FILES = 2000
 MAX_PATH_LENGTH = 1024
 
+# A directory is walked whole, so more is left out than of a file a scenario
+# names: YAML and JSON names that credentials are commonly kept under, which
+# the patterns above (key files, env files) don't reach.
+_DIRECTORY_SECRET_NAME_PATTERNS = (
+    "*credential*",
+    "*secret*",
+    "*service-account*",
+    "*service_account*",
+    "*serviceaccount*",
+    "*kubeconfig*",
+    "*token*.json",
+    "*.sops.*",
+)
+# Content no eval file holds: a private key, or a Kubernetes Secret.
+_PRIVATE_KEY_MARKER = "PRIVATE KEY-----"
+_KUBERNETES_SECRET = re.compile(r"^kind:\s*Secret\s*$", re.MULTILINE)
+
+
+def _secret_content(text: str) -> str | None:
+    """Why a file's text looks like a credential, or None."""
+    if _PRIVATE_KEY_MARKER in text:
+        return "holds a private key"
+    if _KUBERNETES_SECRET.search(text):
+        return "is a Kubernetes Secret"
+    return None
+
 
 @dataclass
 class DirectoryBundle:
     """A directory's files to publish as a bundle, and the ones left out."""
 
     files: dict[str, str] = field(default_factory=dict)
-    # Paths left out, each with why: hidden, or named like a secret.
+    # Paths left out, each with why: hidden, unreadable, or named or holding
+    # what looks like a credential.
     skipped: list[tuple[str, str]] = field(default_factory=list)
     # How many files were left out for not being YAML or JSON.
     other_files: int = 0
@@ -299,8 +327,9 @@ def collect_directory(directory: Path) -> DirectoryBundle:
 
     The files are read as a run's are: UTF-8 text, within the size limit, and
     never through a symlink that leaves the directory. Hidden files and
-    folders, and files named like secrets, are left out and listed; a linked
-    folder is not followed.
+    folders, folders that can't be read, and files named like or holding
+    credentials are left out and listed; a linked folder is not followed.
+    Nothing left out is sent.
 
     Raises:
         BundleError: If a file can't be sent, or the files come to too much.
@@ -316,7 +345,13 @@ def collect_directory(directory: Path) -> DirectoryBundle:
     collector = _Collector(root_abs, too_large)
     found = DirectoryBundle()
     keys: list[str] = []
-    for current, dirs, names in os.walk(root_abs):
+
+    def unreadable(error: OSError) -> None:
+        where = Path(str(error.filename or root_abs))
+        key = where.relative_to(root_abs).as_posix() if where.is_relative_to(root_abs) else "."
+        found.skipped.append((f"{key}/", "can't be read"))
+
+    for current, dirs, names in os.walk(root_abs, onerror=unreadable):
         base = Path(current).relative_to(root_abs)
         kept_dirs = []
         for name in sorted(dirs):
@@ -335,6 +370,11 @@ def collect_directory(directory: Path) -> DirectoryBundle:
                     found.other_files += 1
                 continue
             reason = _refused_name(key)
+            if reason is None and any(
+                fnmatch.fnmatch(name.lower(), pattern)
+                for pattern in _DIRECTORY_SECRET_NAME_PATTERNS
+            ):
+                reason = "is named like a credential"
             if reason:
                 found.skipped.append((key, reason))
                 continue
@@ -349,10 +389,18 @@ def collect_directory(directory: Path) -> DirectoryBundle:
                 f"{key[:80]!r}... is a path longer than {MAX_PATH_LENGTH} characters."
             )
         text = collector.read(key)
+        reason = _secret_content(text)
+        if reason:
+            found.skipped.append((key, reason))
+            continue
         collector._bytes += len(text.encode("utf-8"))
         if collector._bytes > MAX_BUNDLE_BYTES:
             raise BundleError(too_large)
         found.files[key] = text
+    if not found.files:
+        raise BundleError(
+            f"Every file in {str(directory)!r} was left out, so there's nothing to send."
+        )
     return found
 
 
