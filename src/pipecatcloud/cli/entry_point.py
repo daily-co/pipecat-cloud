@@ -18,6 +18,7 @@ from pipecatcloud.cli.commands.auth import auth_cli
 from pipecatcloud.cli.commands.build import build_cli
 from pipecatcloud.cli.commands.deploy import create_deploy_command
 from pipecatcloud.cli.commands.docker import create_docker_command
+from pipecatcloud.cli.commands.eval_suites import bundle_cli, suite_cli
 from pipecatcloud.cli.commands.evals import eval_cli
 from pipecatcloud.cli.commands.github import github_cli
 from pipecatcloud.cli.commands.organizations import organization_cli
@@ -126,6 +127,8 @@ create_deploy_command(entrypoint_cli_typer)
 create_docker_command(entrypoint_cli_typer)
 entrypoint_cli_typer.add_typer(auth_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(build_cli, rich_help_panel="Commands")
+eval_cli.add_typer(suite_cli)
+eval_cli.add_typer(bundle_cli)
 entrypoint_cli_typer.add_typer(eval_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(github_cli, rich_help_panel="Commands")
 entrypoint_cli_typer.add_typer(organization_cli, rich_help_panel="Commands")

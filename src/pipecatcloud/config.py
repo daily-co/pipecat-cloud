@@ -40,6 +40,13 @@ _SETTINGS = {
     "properties_path": _Setting("/v1/organizations/{org}/properties"),
     "spend_limit_path": _Setting("/v1/organizations/{org}/spend-limit"),
     "eval_runs_path": _Setting("/v1/organizations/{org}/services/{service}/eval-runs"),
+    "eval_capabilities_path": _Setting("/v1/organizations/{org}/eval-capabilities"),
+    "eval_suite_runs_create_path": _Setting(
+        "/v1/organizations/{org}/services/{service}/eval-suite-runs"
+    ),
+    "eval_suite_runs_path": _Setting("/v1/organizations/{org}/eval-suite-runs"),
+    "eval_bundles_path": _Setting("/v1/organizations/{org}/eval-bundles"),
+    "eval_bundle_revisions_path": _Setting("/v1/organizations/{org}/eval-bundle-revisions"),
     "builds_path": _Setting("/v1/organizations/{org}/builds"),
     # GitHub App integration (PCC-933). The org-scoped management endpoints
     # and the per-environment repo binding. An agent has exactly one

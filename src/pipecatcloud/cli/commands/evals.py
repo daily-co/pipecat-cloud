@@ -6,10 +6,13 @@
 
 """`pipecat cloud eval`: run scenarios, judge finished calls, and read the verdicts.
 
-`run` starts a run for each scenario it's given, every one in the file unless
-`--scenario` names some, and the service runs them side by side. It follows
-them the way `pipecat eval` does: the scenarios' settings, a row a
-run, a summary, and what went wrong with each run that didn't pass.
+`run` runs the scenarios it's given, every one in the file unless `--scenario`
+names some. Where the organization has suite runs, they run as one, with one
+verdict, which `eval_suites.py` follows. Otherwise, and with `--param`, which a
+suite run doesn't take, it starts a run for each and the service runs them
+side by side. It follows those the way `pipecat eval` does: the scenarios'
+settings, a row a run, a summary, and what went wrong with each run that
+didn't pass.
 
 `judge` submits finished sessions against one criteria policy, without starting
 an agent session. Each submission and result retains its source session ID.
@@ -676,8 +679,10 @@ def _print_details(row: _Row, agent: str, verbose: bool) -> None:
             f"{escape(str(goal['criterion']))}"
         )
     for f in details.get("failures") or []:
+        turn = f"turn {escape(str(f['turn']))} " if f.get("turn") is not None else ""
+        name = f"{escape(str(f['name']))} " if f.get("name") else ""
         _print(
-            f"      [red]•[/red] turn {escape(str(f.get('turn')))} {escape(str(f.get('name') or ''))} "
+            f"      [red]•[/red] {turn}{name}"
             f"[red]{escape(str(f.get('kind') or ''))}[/red] — {escape(str(f.get('reason') or ''))}"
         )
     replies = _bot_replies(result)
@@ -1076,8 +1081,9 @@ _VERBOSE_OPTION = typer.Option(
 @eval_cli.command(
     name="run",
     cls=_EvalCommand,
-    help="Run a file's scenarios against an agent, side by side: every one, or those "
-    "named with --scenario.",
+    help="Run a file's scenarios against an agent: every one, or those named with "
+    "--scenario. Where the organization has suite runs, they run as one suite run, "
+    "with one verdict; otherwise side by side.",
 )
 @synchronizer.create_blocking
 async def run(
@@ -1094,13 +1100,28 @@ async def run(
         [],
         "--param",
         help="A synthetic run's setting, KEY=VALUE. Repeat for several. "
-        f"Settings: {', '.join(RUN_PARAMS)}.",
+        f"Settings: {', '.join(RUN_PARAMS)}. A suite run takes none, so with --param the "
+        "scenarios run side by side.",
+    ),
+    repeat: int = typer.Option(
+        None,
+        "--repeat",
+        min=1,
+        help="Suite runs only: run each scenario this many times. Above 1, the suite run "
+        "is a measurement: pass rates, no verdict.",
+    ),
+    concurrency: int = typer.Option(
+        None,
+        "--concurrency",
+        min=1,
+        help="Suite runs only: run at most this many at once. The API sets the bounds.",
     ),
     deadline: int = typer.Option(
         None,
         "--deadline",
         min=1,
-        help="Seconds each run may take, from creation. The API sets the bounds.",
+        help="Seconds the runs may take, from creation: the whole suite run, or each run "
+        "side by side. The API sets the bounds.",
     ),
     root: Path = typer.Option(
         None,
@@ -1134,9 +1155,37 @@ async def run(
     file_name = data.get("name") if isinstance(data.get("name"), str) else None
     file_label = file_name or Path(bundle.scenario_path).stem
     labels = {name: f"{file_label}/{name}" for name in names}
+
+    # Where the organization has suite runs, the file's scenarios run as one,
+    # which takes no --param settings.
+    from pipecatcloud.cli.commands import eval_suites
+
+    as_suite = not params and await eval_suites.suites_available(org)
+    if not as_suite and (repeat is not None or concurrency is not None):
+        _fail(
+            "--repeat and --concurrency are for suite runs, which take no --param."
+            if params
+            else "--repeat and --concurrency are for suite runs, which this organization "
+            "doesn't have yet."
+        )
+
     if wait and not console.json_output:
         _print_scenario_header([(labels[n], _scenario_view(data, n)) for n in names])
-        _print_settings(agent, len(names))
+        if not as_suite:
+            _print_settings(agent, len(names))
+
+    if as_suite:
+        suite_body: dict[str, Any] = {"files": bundle.files, "scenarioPath": bundle.scenario_path}
+        if scenario:
+            suite_body["scenarioNames"] = names
+        for key, value in (
+            ("repeat", repeat),
+            ("concurrency", concurrency),
+            ("deadlineSeconds", deadline),
+        ):
+            if value is not None:
+                suite_body[key] = value
+        await eval_suites.run_suite(org, agent, suite_body, wait=wait, verbose=verbose)
 
     def body_for(row: _Row) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -1290,6 +1339,9 @@ async def list_runs(
     agent: str = typer.Argument(..., help="Name of the agent", show_default=False),
     limit: int = typer.Option(10, "--limit", "-n", min=1, max=200, help="How many runs to show"),
     offset: int = typer.Option(0, "--offset", min=0, help="How many of the newest runs to skip"),
+    suite: str = typer.Option(
+        None, "--suite", help="Only the runs of this suite run's members", metavar="SUITE_RUN_ID"
+    ),
     organization: str = _ORG_OPTION,
     output_json: bool = _JSON_OPTION,
 ):
@@ -1297,9 +1349,11 @@ async def list_runs(
     await _login_check()
     org = _org(organization)
 
-    paging: dict[str, int] = {"limit": limit}
+    paging: dict[str, Any] = {"limit": limit}
     if offset:
         paging["offset"] = offset
+    if suite:
+        paging["suite_run_id"] = suite
     data, error = await _api().eval_runs_list(org, agent, **paging)
     result = _check(data, error)
 
@@ -1309,7 +1363,8 @@ async def list_runs(
 
     runs = result.get("runs") or []
     if not runs:
-        _print(f"[dim]No eval runs on [bold]'{agent}'[/bold].[/dim]")
+        where = f" in suite run [bold]{escape(suite)}[/bold]" if suite else ""
+        _print(f"[dim]No eval runs on [bold]'{agent}'[/bold]{where}.[/dim]")
         return
     _table(
         ["ID", "Status", "Verdict", "Kind", "Scenario", "Created"],

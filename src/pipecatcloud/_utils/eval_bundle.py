@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""Collect the files of an eval run from a scenario file.
+"""Collect the files of an eval run from a scenario file, or a bundle's from a directory.
 
 A scenario file can pull in other YAML files with ``!include <path>``. A run
 carries the scenario file and every file it includes, as UTF-8 text, keyed by
@@ -22,6 +22,7 @@ Each file is read and parsed once.
 """
 
 import fnmatch
+import os
 import posixpath
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -115,9 +116,11 @@ class _Entry:
 
 
 class _Collector:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, too_large: str | None = None):
         self.root = root
         self.real_root = root.resolve()
+        # What to say when the files come to too much, for a bundle rather than a run.
+        self.too_large = too_large
         self.bundle = Bundle()
         self._entries: dict[str, _Entry] = {}
         self._loading: list[str] = []
@@ -151,7 +154,7 @@ class _Collector:
         try:
             size = resolved.stat().st_size
             if size > MAX_BUNDLE_BYTES - self._bytes:
-                raise BundleError(self._too_large())
+                raise BundleError(self.too_large or self._too_large())
             data = resolved.read_bytes()
         except OSError as e:
             raise BundleError(f"{where} can't be read: {e.strerror or type(e).__name__}.") from None
@@ -267,6 +270,90 @@ def _scenario_names(data: Any, key: str) -> list[str]:
         for s in data["scenarios"]
         if isinstance(s, dict) and isinstance(s.get("name"), str)
     ]
+
+
+# What a stored bundle holds: YAML files and, for suites' bodies, JSON.
+BUNDLE_SUFFIXES = (".yaml", ".yml", ".json")
+# The most files a stored bundle may hold, and the longest path, as the service has them.
+MAX_STORED_FILES = 2000
+MAX_PATH_LENGTH = 1024
+
+
+@dataclass
+class DirectoryBundle:
+    """A directory's files to publish as a bundle, and the ones left out."""
+
+    files: dict[str, str] = field(default_factory=dict)
+    # Paths left out, each with why: hidden, or named like a secret.
+    skipped: list[tuple[str, str]] = field(default_factory=list)
+    # How many files were left out for not being YAML or JSON.
+    other_files: int = 0
+
+    @property
+    def size(self) -> int:
+        return sum(len(text.encode("utf-8")) for text in self.files.values())
+
+
+def collect_directory(directory: Path) -> DirectoryBundle:
+    """Collect every YAML and JSON file under a directory, keyed by its path in it.
+
+    The files are read as a run's are: UTF-8 text, within the size limit, and
+    never through a symlink that leaves the directory. Hidden files and
+    folders, and files named like secrets, are left out and listed; a linked
+    folder is not followed.
+
+    Raises:
+        BundleError: If a file can't be sent, or the files come to too much.
+    """
+    directory = Path(directory)
+    if not directory.is_dir():
+        raise BundleError(f"{str(directory)!r} isn't a directory.")
+    root_abs = Path(posixpath.normpath(directory.absolute().as_posix()))
+    too_large = (
+        f"The files come to more than {MAX_BUNDLE_BYTES // 1024} KiB, which is the most a "
+        "bundle can hold. Publish a smaller directory."
+    )
+    collector = _Collector(root_abs, too_large)
+    found = DirectoryBundle()
+    keys: list[str] = []
+    for current, dirs, names in os.walk(root_abs):
+        base = Path(current).relative_to(root_abs)
+        kept_dirs = []
+        for name in sorted(dirs):
+            key = (base / name).as_posix()
+            if name.startswith("."):
+                found.skipped.append((f"{key}/", "is a hidden folder"))
+            elif (Path(current) / name).is_symlink():
+                found.skipped.append((f"{key}/", "is a linked folder, which isn't followed"))
+            else:
+                kept_dirs.append(name)
+        dirs[:] = kept_dirs
+        for name in sorted(names):
+            key = (base / name).as_posix()
+            if not name.lower().endswith(BUNDLE_SUFFIXES):
+                if not name.startswith("."):
+                    found.other_files += 1
+                continue
+            reason = _refused_name(key)
+            if reason:
+                found.skipped.append((key, reason))
+                continue
+            keys.append(key)
+    if not keys:
+        raise BundleError(f"{str(directory)!r} holds no .yaml, .yml or .json files.")
+    if len(keys) > MAX_STORED_FILES:
+        raise BundleError(f"{str(directory)!r} holds more than {MAX_STORED_FILES} files to send.")
+    for key in sorted(keys):
+        if len(key) > MAX_PATH_LENGTH:
+            raise BundleError(
+                f"{key[:80]!r}... is a path longer than {MAX_PATH_LENGTH} characters."
+            )
+        text = collector.read(key)
+        collector._bytes += len(text.encode("utf-8"))
+        if collector._bytes > MAX_BUNDLE_BYTES:
+            raise BundleError(too_large)
+        found.files[key] = text
+    return found
 
 
 def build_bundle(scenario_file: Path, root: Path | None = None) -> Bundle:

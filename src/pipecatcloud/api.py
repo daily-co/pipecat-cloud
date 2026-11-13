@@ -59,6 +59,12 @@ SECRETS_BULK_WRITE_CAPABILITY = "secrets-bulk-write"
 # Every eval route answers 503 with this code while evals are switched off.
 EVALS_NOT_AVAILABLE_CODE = "EVALS-NOT-AVAILABLE"
 EVALS_NOT_AVAILABLE_MESSAGE = "Evals aren't available yet."
+# The suite and bundle routes answer 503 with these while their part is off.
+EVAL_NOT_AVAILABLE_MESSAGES = {
+    EVALS_NOT_AVAILABLE_CODE: EVALS_NOT_AVAILABLE_MESSAGE,
+    "EVAL-SUITES-NOT-AVAILABLE": "Suite runs aren't available for this organization yet.",
+    "EVAL-BUNDLES-NOT-AVAILABLE": "Eval bundles aren't available for this organization yet.",
+}
 
 
 def _parse_retry_after(value: str | None) -> int | None:
@@ -1273,14 +1279,17 @@ class _API:
         """A request to the eval-runs routes.
 
         While evals are off for an organization every route answers 503 with the
-        code `EVALS-NOT-AVAILABLE`. The server's text for it is terse, so it is
-        replaced with a sentence that says what to do about it.
+        code `EVALS-NOT-AVAILABLE`, and the suite and bundle routes answer with
+        their own codes while those are off. The server's text for each is
+        terse, so it is replaced with a sentence that says what it means.
         """
         try:
             return await self._base_request(method, url, **kwargs)
         except aiohttp.ClientResponseError:
-            if isinstance(self.error, dict) and self.error.get("code") == EVALS_NOT_AVAILABLE_CODE:
-                self.error = {**self.error, "error": EVALS_NOT_AVAILABLE_MESSAGE}
+            if isinstance(self.error, dict):
+                message = EVAL_NOT_AVAILABLE_MESSAGES.get(str(self.error.get("code")))
+                if message:
+                    self.error = {**self.error, "error": message}
             raise
 
     def _eval_runs_url(self, org: str, agent: str, run_id: str | None = None) -> str:
@@ -1319,16 +1328,27 @@ class _API:
         return self.create_api_method(self._eval_run_get)
 
     async def _eval_runs_list(
-        self, org: str, agent: str, limit: int | None = None, offset: int | None = None
+        self,
+        org: str,
+        agent: str,
+        limit: int | None = None,
+        offset: int | None = None,
+        suite_run_id: str | None = None,
     ) -> dict:
         url = self._eval_runs_url(org, agent)
-        params = {k: v for k, v in (("limit", limit), ("offset", offset)) if v is not None}
+        params = {
+            k: v
+            for k, v in (("limit", limit), ("offset", offset), ("suiteRunId", suite_run_id))
+            if v is not None
+        }
         return await self._eval_request("GET", url, params=params or None) or {}
 
     @property
     def eval_runs_list(self):
         """List an agent's eval runs, newest first, without their results.
 
+        Args:
+            suite_run_id: Only the runs of this suite run's members.
         Returns:
             Dict with `total_count` and `runs`.
         """
@@ -1346,6 +1366,194 @@ class _API:
         and ends as soon as it can, so the returned run may still be `running`.
         """
         return self.create_api_method(self._eval_run_cancel)
+
+    async def _eval_capabilities(self, org: str) -> dict:
+        url = self.construct_api_url("eval_capabilities_path").format(org=quote(org, safe=""))
+        return await self._eval_request("GET", url) or {}
+
+    @property
+    def eval_capabilities(self):
+        """What evals the organization can use.
+
+        Returns:
+            Dict with `enabled`, `creation`, and on an API that has them,
+            `bundles` and `suites`.
+        """
+        return self.create_api_method(self._eval_capabilities)
+
+    # Eval suite runs
+
+    def _eval_suite_runs_url(self, org: str, suite_run_id: str | None = None) -> str:
+        url = self.construct_api_url("eval_suite_runs_path").format(org=quote(org, safe=""))
+        if suite_run_id is not None:
+            url += f"/{quote(suite_run_id, safe='')}"
+        return url
+
+    async def _eval_suite_run_create(self, org: str, agent: str, body: dict) -> dict:
+        url = self.construct_api_url("eval_suite_runs_create_path").format(
+            org=quote(org, safe=""), service=quote(agent, safe="")
+        )
+        return await self._eval_request("POST", url, json=body) or {}
+
+    @property
+    def eval_suite_run_create(self):
+        """Start a suite run on an agent.
+
+        Args:
+            org: Organization ID
+            agent: Agent name
+            body: The request: `requestId`; the files (`bundleRevisionId`, or
+                `files`); what to run (`suitePath`, or `scenarioPath` with
+                optional `scenarioNames`); and optional `repeat`, `concurrency`
+                and `deadlineSeconds`. The same `requestId` sent again returns
+                the suite run it created, so a request that got no answer can
+                be sent again as it was.
+        Returns:
+            The suite run, accepted.
+        """
+        return self.create_api_method(self._eval_suite_run_create)
+
+    async def _eval_suite_run_get(self, org: str, suite_run_id: str) -> dict:
+        return await self._eval_request("GET", self._eval_suite_runs_url(org, suite_run_id)) or {}
+
+    @property
+    def eval_suite_run_get(self):
+        """Get a suite run: its status, counts, verdict and pass rates."""
+        return self.create_api_method(self._eval_suite_run_get)
+
+    async def _eval_suite_runs_list(
+        self,
+        org: str,
+        agent: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict:
+        params = {
+            k: v
+            for k, v in (("serviceName", agent), ("limit", limit), ("offset", offset))
+            if v is not None
+        }
+        url = self._eval_suite_runs_url(org)
+        return await self._eval_request("GET", url, params=params or None) or {}
+
+    @property
+    def eval_suite_runs_list(self):
+        """List suite runs, newest first: the organization's, or one agent's.
+
+        Returns:
+            Dict with `total`, `limit`, `offset` and `suiteRuns`.
+        """
+        return self.create_api_method(self._eval_suite_runs_list)
+
+    async def _eval_suite_run_items(
+        self, org: str, suite_run_id: str, limit: int | None = None, offset: int | None = None
+    ) -> dict:
+        url = f"{self._eval_suite_runs_url(org, suite_run_id)}/items"
+        params = {k: v for k, v in (("limit", limit), ("offset", offset)) if v is not None}
+        return await self._eval_request("GET", url, params=params or None) or {}
+
+    @property
+    def eval_suite_run_items(self):
+        """A suite run's planned members, in order, each with its eval run once admitted.
+
+        Returns:
+            Dict with `total`, `limit`, `offset` and `items`.
+        """
+        return self.create_api_method(self._eval_suite_run_items)
+
+    async def _eval_suite_run_cancel(self, org: str, suite_run_id: str) -> dict:
+        url = f"{self._eval_suite_runs_url(org, suite_run_id)}/cancel"
+        return await self._eval_request("POST", url) or {}
+
+    @property
+    def eval_suite_run_cancel(self):
+        """Ask for a suite run to be cancelled.
+
+        Members not yet admitted never run, and running ones are asked to
+        cancel. Asking again is answered the same way. A suite run that already
+        ended some other way is refused with a 409.
+        """
+        return self.create_api_method(self._eval_suite_run_cancel)
+
+    # Eval bundles
+
+    def _eval_bundles_url(self, org: str, bundle_id: str | None = None) -> str:
+        url = self.construct_api_url("eval_bundles_path").format(org=quote(org, safe=""))
+        if bundle_id is not None:
+            url += f"/{quote(bundle_id, safe='')}"
+        return url
+
+    async def _eval_bundles_list(
+        self, org: str, limit: int | None = None, offset: int | None = None
+    ) -> dict:
+        params = {k: v for k, v in (("limit", limit), ("offset", offset)) if v is not None}
+        return (
+            await self._eval_request("GET", self._eval_bundles_url(org), params=params or None)
+            or {}
+        )
+
+    @property
+    def eval_bundles_list(self):
+        """List the organization's bundles by name, each with its latest revision.
+
+        Returns:
+            Dict with `total_count` and `bundles`.
+        """
+        return self.create_api_method(self._eval_bundles_list)
+
+    async def _eval_bundle_create(self, org: str, body: dict) -> dict:
+        return await self._eval_request("POST", self._eval_bundles_url(org), json=body) or {}
+
+    @property
+    def eval_bundle_create(self):
+        """Create a bundle, its files becoming revision 1.
+
+        Args:
+            body: `requestId`, `name` and `files`.
+        Returns:
+            Dict with `bundle` and `revision`.
+        """
+        return self.create_api_method(self._eval_bundle_create)
+
+    async def _eval_bundle_revision_append(self, org: str, bundle_id: str, body: dict) -> dict:
+        url = f"{self._eval_bundles_url(org, bundle_id)}/revisions"
+        return await self._eval_request("POST", url, json=body) or {}
+
+    @property
+    def eval_bundle_revision_append(self):
+        """Publish a bundle's next revision.
+
+        Args:
+            body: `requestId` and `files`.
+        Returns:
+            The revision.
+        """
+        return self.create_api_method(self._eval_bundle_revision_append)
+
+    async def _eval_bundle_revisions_list(
+        self, org: str, bundle_id: str, limit: int | None = None, offset: int | None = None
+    ) -> dict:
+        url = f"{self._eval_bundles_url(org, bundle_id)}/revisions"
+        params = {k: v for k, v in (("limit", limit), ("offset", offset)) if v is not None}
+        return await self._eval_request("GET", url, params=params or None) or {}
+
+    @property
+    def eval_bundle_revisions_list(self):
+        """A bundle's revisions, newest first, without their files.
+
+        Returns:
+            Dict with `total_count` and `revisions`.
+        """
+        return self.create_api_method(self._eval_bundle_revisions_list)
+
+    async def _eval_bundle_revision_get(self, org: str, revision_id: str) -> dict:
+        url = self.construct_api_url("eval_bundle_revisions_path").format(org=quote(org, safe=""))
+        return await self._eval_request("GET", f"{url}/{quote(revision_id, safe='')}") or {}
+
+    @property
+    def eval_bundle_revision_get(self):
+        """A revision whole: its files, catalog and how it was checked."""
+        return self.create_api_method(self._eval_bundle_revision_get)
 
     # Builds
 

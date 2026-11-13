@@ -120,6 +120,10 @@ def api():
         mock_api.eval_run_get = AsyncMock(return_value=(make_run(), None))
         mock_api.eval_runs_list = AsyncMock(return_value=({"total_count": 0, "runs": []}, None))
         mock_api.eval_run_cancel = AsyncMock(return_value=(make_run(status="cancelled"), None))
+        # Without suite runs, `eval run` runs a file's scenarios side by side.
+        mock_api.eval_capabilities = AsyncMock(
+            return_value=({"enabled": True, "bundles": False, "suites": False}, None)
+        )
         yield mock_api
 
 
