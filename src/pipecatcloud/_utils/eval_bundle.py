@@ -294,9 +294,11 @@ _DIRECTORY_SECRET_NAME_PATTERNS = (
 )
 # Content no eval file holds: a private key, or a Kubernetes Secret.
 _PRIVATE_KEY_MARKER = "PRIVATE KEY-----"
-# `kind: Secret` in YAML, its value quoted or not, or `"kind": "Secret"` in JSON.
+# `kind: Secret` in YAML, its value quoted or not, at any depth or as a list item,
+# with or without a comment after it; or `"kind": "Secret"` in JSON.
 _KUBERNETES_SECRET = re.compile(
-    r"""(^kind:\s*["']?Secret["']?\s*$)|(["']kind["']\s*:\s*["']Secret["'])""", re.MULTILINE
+    r"""(^\s*(?:-\s+)?kind:\s*["']?Secret["']?\s*(?:#.*)?$)|(["']kind["']\s*:\s*["']Secret["'])""",
+    re.MULTILINE,
 )
 
 

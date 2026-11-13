@@ -1056,6 +1056,8 @@ class TestCollectDirectory:
             'apiVersion: v1\nkind: "Secret"\n',
             "apiVersion: v1\nkind: 'Secret'\n",
             '{"apiVersion":"v1","kind":"Secret","data":{}}',
+            "apiVersion: v1\nkind: Secret  # db\n",
+            "apiVersion: v1\nkind: List\nitems:\n  - kind: Secret\n    data: {}\n",
         ],
     )
     def test_a_quoted_kubernetes_secret_is_left_out(self, tmp_path, text):
