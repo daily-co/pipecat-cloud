@@ -182,7 +182,9 @@ def load_dockerignore(context_dir: Path) -> set[str] | None:
 
     patterns = set()
     try:
-        with open(dockerignore_path, encoding="utf-8") as f:
+        # errors="replace": a byte that isn't UTF-8 (say, a cp1252 comment) costs
+        # only the line it's on, not every pattern in the file.
+        with open(dockerignore_path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 stripped = line.strip()
                 # Skip comments and empty lines
@@ -304,6 +306,9 @@ def create_deterministic_tarball(
             # Windows has no executable bit and X_OK holds for every file, so a
             # Windows context packs everything as 0o755. `docker build` from
             # Windows does the same, and it keeps entrypoint scripts runnable.
+            # So a Windows context and a Linux one hash differently and don't
+            # share cached builds. Most Windows checkouts already differ by line
+            # endings (git's core.autocrlf), so 0o644 would rarely buy a hit.
             if os.access(file_path, os.X_OK):
                 info.mode = 0o755
             else:

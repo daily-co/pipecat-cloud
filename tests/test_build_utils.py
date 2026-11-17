@@ -175,6 +175,17 @@ class TestTarballMemberNames:
 
         assert "café.txt" not in self._member_names(ctx)
 
+    def test_non_utf8_dockerignore_keeps_its_other_patterns(self, tmp_path: Path):
+        # A cp1252 comment must not cost the file's other patterns.
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "data").mkdir()
+        (tmp_path / "data" / "big.bin").write_bytes(b"\0")
+        (tmp_path / ".dockerignore").write_bytes("# Café data\ndata/\n".encode("cp1252"))
+
+        ctx = create_deterministic_tarball(str(tmp_path), get_exclusions(tmp_path))
+
+        assert "data/big.bin" not in self._member_names(ctx)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
