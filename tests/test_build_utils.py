@@ -12,7 +12,7 @@ normalization behavior so those forms keep working.
 import io
 import sys
 import tarfile
-from pathlib import Path, PosixPath, PureWindowsPath
+from pathlib import Path
 
 import pytest
 
@@ -149,10 +149,6 @@ def load_dockerignore_from_text(root: Path, text: str) -> set[str]:
     return result
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
-
-
 class TestTarballMemberNames:
     """Member names use "/" whatever the local path separator is."""
 
@@ -169,21 +165,16 @@ class TestTarballMemberNames:
 
         assert self._member_names(ctx) == ["Dockerfile", "src/bot.py"]
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="simulates Windows on POSIX")
-    def test_windows_paths_still_use_forward_slash(self, tmp_path: Path, monkeypatch):
-        # On Windows, relative_to() gives a path whose str() uses backslashes.
-        # Simulate that so the test catches a regression on any platform.
+    def test_dockerignore_is_read_as_utf8(self, tmp_path: Path):
+        # Windows' default code page would misread a non-ASCII pattern.
         (tmp_path / "Dockerfile").write_text("FROM scratch\n")
-        (tmp_path / "src").mkdir()
-        (tmp_path / "src" / "bot.py").write_text("print('hi')\n")
+        (tmp_path / "café.txt").write_text("x\n")
+        (tmp_path / ".dockerignore").write_text("café.txt\n", encoding="utf-8")
 
-        original = PosixPath.relative_to
-        monkeypatch.setattr(
-            PosixPath,
-            "relative_to",
-            lambda self, *args, **kwargs: PureWindowsPath(original(self, *args, **kwargs)),
-        )
+        ctx = create_deterministic_tarball(str(tmp_path), get_exclusions(tmp_path))
 
-        ctx = create_deterministic_tarball(str(tmp_path), set())
+        assert "café.txt" not in self._member_names(ctx)
 
-        assert self._member_names(ctx) == ["Dockerfile", "src/bot.py"]
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

@@ -149,7 +149,8 @@ class TestPlainListings:
         assert "╭" not in output  # no panel box art
 
     def test_error_is_boxed_in_rich_mode(self):
-        test_console, buffer = make_console(force_terminal=True)
+        # legacy_windows=False: on a Windows console Rich swaps in a square box.
+        test_console, buffer = make_console(force_terminal=True, legacy_windows=False)
         test_console.set_output_mode(OutputMode.rich)
         test_console.error("something broke")
         assert "╭" in buffer.getvalue()

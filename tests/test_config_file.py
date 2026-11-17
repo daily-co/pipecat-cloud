@@ -26,15 +26,15 @@ class TestConfigFileFlag:
 
     def test_loads_alternate_config_file(self):
         """--config-file should load the specified file instead of the default."""
+        # Closed before reading: Windows won't open a file that's still open for writing.
         with tempfile.NamedTemporaryFile(suffix=".toml", mode="w", delete=False) as f:
             f.write('agent_name = "alt-agent"\n')
-            f.flush()
-            try:
-                result = dummy_command(config_file=f.name)
-                assert result is not None
-                assert result.agent_name == "alt-agent"
-            finally:
-                os.unlink(f.name)
+        try:
+            result = dummy_command(config_file=f.name)
+            assert result is not None
+            assert result.agent_name == "alt-agent"
+        finally:
+            os.unlink(f.name)
 
     def test_nonexistent_config_file_exits(self):
         """--config-file pointing to missing file should exit with error."""

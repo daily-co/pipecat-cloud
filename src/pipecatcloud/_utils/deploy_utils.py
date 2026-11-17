@@ -529,7 +529,7 @@ def load_deploy_config_file() -> DeployConfigParams | None:
     logger.debug(f"Deploy config path exists: {os.path.exists(deploy_config_path)}")
 
     try:
-        with open(deploy_config_path) as f:
+        with open(deploy_config_path, encoding="utf-8") as f:
             config_data = toml.load(f)
     except Exception:
         return None

@@ -383,7 +383,7 @@ def unsafe_log_calls(source: str, filename: str = "") -> list[str]:
 def test_no_log_call_formats_a_body_a_credential_or_an_exception():
     found = []
     for path in SRC.rglob("*.py"):
-        found += unsafe_log_calls(path.read_text(), path.name)
+        found += unsafe_log_calls(path.read_text(encoding="utf-8"), path.name)
     assert found == []
 
 

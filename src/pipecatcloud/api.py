@@ -9,6 +9,7 @@ import json
 import time
 from collections.abc import Callable
 from functools import wraps
+from pathlib import PurePath
 from urllib.parse import quote
 
 import aiohttp
@@ -1295,7 +1296,8 @@ class _API:
         url = self.construct_api_url("builds_path").format(org=org)
         payload = {
             "uploadId": upload_id,
-            "dockerfilePath": dockerfile_path,
+            # The builder runs on Linux, and the context's member names use "/".
+            "dockerfilePath": PurePath(dockerfile_path).as_posix(),
         }
         if region:
             payload["region"] = region

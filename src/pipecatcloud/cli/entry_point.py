@@ -4,13 +4,17 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import codecs
 import os
 import sys
 
+import click
 import typer
 from loguru import logger
+from typer.core import TyperGroup
 
 from pipecatcloud._utils.console_utils import OutputMode, console
+from pipecatcloud.cli import MASCOT
 from pipecatcloud.cli.commands import agent as _agent_commands  # noqa: F401  (registers them)
 from pipecatcloud.cli.commands import project as _project_commands  # noqa: F401  (registers them)
 from pipecatcloud.cli.commands.agent_profiles import agent_profiles_cli
@@ -28,25 +32,39 @@ from pipecatcloud.cli.config import config
 from pipecatcloud.exception import ConfigFileError
 
 
-def _replace_unencodable_output() -> None:
-    """Print "?" for characters the output encoding can't hold, instead of crashing.
+def _replace_unencodable_stdout() -> None:
+    """Print "?" for characters stdout's encoding can't hold, instead of crashing.
 
-    The help text and panel titles use "ᓚᘏᗢ", which a cp1252 stream (a Windows
-    console without UTF-8, or redirected output) can't encode, so ``--help`` raised
-    UnicodeEncodeError there.
+    On Windows, piped or redirected output (and Git Bash) uses the locale code page,
+    usually cp1252. Output with characters it lacks (the sparkline in `agent status`,
+    symbols in docker hints, text from the API) raised UnicodeEncodeError. stderr
+    already uses errors="backslashreplace", so it needs nothing.
     """
-    for stream in (sys.stdout, sys.stderr):
-        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
-        reconfigure = getattr(stream, "reconfigure", None)
-        if encoding == "utf8" or reconfigure is None:
-            continue
-        try:
-            reconfigure(errors="replace")
-        except (ValueError, OSError):
-            pass
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is None:
+        return
+    try:
+        if codecs.lookup(sys.stdout.encoding).name == "utf-8":
+            return
+    except (LookupError, TypeError):
+        pass
+    try:
+        reconfigure(errors="replace")
+    except (ValueError, OSError):
+        pass
 
 
-_replace_unencodable_output()
+class _CloudGroup(TyperGroup):
+    """Fixes stdout before `pipecat cloud` parses its arguments, `--help` included.
+
+    The Pipecat CLI imports this module on every `pipecat` run, so doing this at
+    import time would change stdout for commands that aren't ours.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        _replace_unencodable_stdout()
+        return super().parse_args(ctx, args)
+
 
 logger.remove()
 logger.add(sys.stderr, level=str(config.get("cli_log_level", "INFO")).upper())
@@ -63,7 +81,7 @@ def version_callback(value: bool):
         from pipecatcloud.__version__ import version
 
         typer.echo(
-            f"ᓚᘏᗢ Pipecat Cloud Client Version: {typer.style(version, fg=typer.colors.GREEN)}"
+            f"{MASCOT}Pipecat Cloud Client Version: {typer.style(version, fg=typer.colors.GREEN)}"
         )
         raise typer.Exit()
 
@@ -103,11 +121,12 @@ def show_config_callback(value: bool):
 
 
 entrypoint_cli_typer = typer.Typer(
+    cls=_CloudGroup,
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="markdown",
     short_help="Deploy and manage bots on Pipecat Cloud",
-    help="ᓚᘏᗢ Pipecat Cloud CLI. See website at https://pipecat.daily.co",
+    help=f"{MASCOT}Pipecat Cloud CLI. See website at https://pipecat.daily.co",
 )
 
 

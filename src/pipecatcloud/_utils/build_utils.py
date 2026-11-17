@@ -182,7 +182,7 @@ def load_dockerignore(context_dir: Path) -> set[str] | None:
 
     patterns = set()
     try:
-        with open(dockerignore_path) as f:
+        with open(dockerignore_path, encoding="utf-8") as f:
             for line in f:
                 stripped = line.strip()
                 # Skip comments and empty lines
@@ -300,7 +300,10 @@ def create_deterministic_tarball(
             info.gid = 0
             info.uname = ""
             info.gname = ""
-            # Normalize permissions: 0o644 for files, 0o755 for executables
+            # Normalize permissions: 0o644 for files, 0o755 for executables.
+            # Windows has no executable bit and X_OK holds for every file, so a
+            # Windows context packs everything as 0o755. `docker build` from
+            # Windows does the same, and it keeps entrypoint scripts runnable.
             if os.access(file_path, os.X_OK):
                 info.mode = 0o755
             else:

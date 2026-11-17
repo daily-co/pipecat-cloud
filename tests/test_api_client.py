@@ -7,7 +7,7 @@ region support, error handling, and request construction.
 
 # Import from source, not installed package
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -165,6 +165,23 @@ class TestAPISecretsRegions:
             mock_request.assert_called_once()
             payload = mock_request.call_args[1]["json"]
             assert "region" not in payload  # Region omitted, API uses org default
+
+
+class TestBuildCreate:
+    """The Dockerfile path sent to the Linux builder."""
+
+    @pytest.mark.asyncio
+    async def test_dockerfile_path_uses_forward_slashes(self):
+        api_client = _API(token="test-token", is_cli=True)
+        with (
+            patch.object(api_client, "_base_request", new_callable=AsyncMock) as mock_request,
+            patch("pipecatcloud.api.PurePath", PureWindowsPath),
+        ):
+            await api_client._build_create(
+                org="test-org", upload_id="u1", dockerfile_path=r"docker\Dockerfile"
+            )
+
+        assert mock_request.call_args[1]["json"]["dockerfilePath"] == "docker/Dockerfile"
 
 
 class TestAPIServicesRegions:
