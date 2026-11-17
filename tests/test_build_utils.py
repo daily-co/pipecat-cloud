@@ -9,7 +9,9 @@ exclusions and over-sized build contexts. These tests pin the
 normalization behavior so those forms keep working.
 """
 
+import io
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -145,6 +147,44 @@ def load_dockerignore_from_text(root: Path, text: str) -> set[str]:
     result = load_dockerignore(root)
     assert result is not None
     return result
+
+
+class TestTarballMemberNames:
+    """Member names use "/" whatever the local path separator is."""
+
+    def _member_names(self, ctx) -> list[str]:
+        with tarfile.open(fileobj=io.BytesIO(ctx.tarball), mode="r:gz") as tar:
+            return tar.getnames()
+
+    def test_nested_file_uses_forward_slash(self, tmp_path: Path):
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "bot.py").write_text("print('hi')\n")
+
+        ctx = create_deterministic_tarball(str(tmp_path), set())
+
+        assert self._member_names(ctx) == ["Dockerfile", "src/bot.py"]
+
+    def test_dockerignore_is_read_as_utf8(self, tmp_path: Path):
+        # Windows' default code page would misread a non-ASCII pattern.
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "café.txt").write_text("x\n")
+        (tmp_path / ".dockerignore").write_text("café.txt\n", encoding="utf-8")
+
+        ctx = create_deterministic_tarball(str(tmp_path), get_exclusions(tmp_path))
+
+        assert "café.txt" not in self._member_names(ctx)
+
+    def test_non_utf8_dockerignore_keeps_its_other_patterns(self, tmp_path: Path):
+        # A cp1252 comment must not cost the file's other patterns.
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "data").mkdir()
+        (tmp_path / "data" / "big.bin").write_bytes(b"\0")
+        (tmp_path / ".dockerignore").write_bytes("# Café data\ndata/\n".encode("cp1252"))
+
+        ctx = create_deterministic_tarball(str(tmp_path), get_exclusions(tmp_path))
+
+        assert "data/big.bin" not in self._member_names(ctx)
 
 
 if __name__ == "__main__":

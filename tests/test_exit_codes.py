@@ -98,7 +98,7 @@ def test_no_discarded_typer_exit_in_source():
     src_root = Path(__file__).parent.parent / "src"
     offenders = []
     for py_file in src_root.rglob("*.py"):
-        for lineno, line in enumerate(py_file.read_text().splitlines(), start=1):
+        for lineno, line in enumerate(py_file.read_text(encoding="utf-8").splitlines(), start=1):
             if (
                 "return typer.Exit" in line
                 or "return typer.Abort" in line

@@ -124,8 +124,9 @@ def run_docker_command(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
-                universal_newlines=True,
             )
 
             # Stream output line by line
@@ -143,7 +144,14 @@ def run_docker_command(
                 raise error
         else:
             # Capture output for push commands (less verbose)
-            result = subprocess.run(command, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=True,
+            )
             if result.stdout.strip():
                 console.print(f"[dim]{result.stdout.strip()}[/dim]")
 

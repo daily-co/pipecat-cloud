@@ -37,6 +37,31 @@ jobs:
         run: |
           uv run pytest -v
 
+  # Paths, file encodings and console output all differ on Windows, and many
+  # users deploy from there. A separate job keeps the "Unit Tests" check name.
+  test-windows:
+    name: 'Unit Tests (Windows)'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: 'latest'
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: |
+          uv sync --group dev
+
+      - name: Run tests
+        run: |
+          uv run pytest -v
+
   # The job above runs the agent session-argument types against the pipecat-ai
   # in uv.lock. These legs run them against releases before MOQRunnerArguments
   # gained relay_url, where pipecatcloud.agent must still import and refuse only

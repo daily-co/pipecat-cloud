@@ -250,7 +250,7 @@ async def create_set(
             raise typer.Exit(1)
 
         try:
-            with open(from_file) as f:
+            with open(from_file, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):
