@@ -27,6 +27,27 @@ from pipecatcloud.cli.commands.spend_limit import spend_limit_cli
 from pipecatcloud.cli.config import config
 from pipecatcloud.exception import ConfigFileError
 
+
+def _replace_unencodable_output() -> None:
+    """Print "?" for characters the output encoding can't hold, instead of crashing.
+
+    The help text and panel titles use "ᓚᘏᗢ", which a cp1252 stream (a Windows
+    console without UTF-8, or redirected output) can't encode, so ``--help`` raised
+    UnicodeEncodeError there.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        reconfigure = getattr(stream, "reconfigure", None)
+        if encoding == "utf8" or reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (ValueError, OSError):
+            pass
+
+
+_replace_unencodable_output()
+
 logger.remove()
 logger.add(sys.stderr, level=str(config.get("cli_log_level", "INFO")).upper())
 

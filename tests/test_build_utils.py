@@ -9,8 +9,10 @@ exclusions and over-sized build contexts. These tests pin the
 normalization behavior so those forms keep working.
 """
 
+import io
 import sys
-from pathlib import Path
+import tarfile
+from pathlib import Path, PosixPath, PureWindowsPath
 
 import pytest
 
@@ -149,3 +151,39 @@ def load_dockerignore_from_text(root: Path, text: str) -> set[str]:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestTarballMemberNames:
+    """Member names use "/" whatever the local path separator is."""
+
+    def _member_names(self, ctx) -> list[str]:
+        with tarfile.open(fileobj=io.BytesIO(ctx.tarball), mode="r:gz") as tar:
+            return tar.getnames()
+
+    def test_nested_file_uses_forward_slash(self, tmp_path: Path):
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "bot.py").write_text("print('hi')\n")
+
+        ctx = create_deterministic_tarball(str(tmp_path), set())
+
+        assert self._member_names(ctx) == ["Dockerfile", "src/bot.py"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="simulates Windows on POSIX")
+    def test_windows_paths_still_use_forward_slash(self, tmp_path: Path, monkeypatch):
+        # On Windows, relative_to() gives a path whose str() uses backslashes.
+        # Simulate that so the test catches a regression on any platform.
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "bot.py").write_text("print('hi')\n")
+
+        original = PosixPath.relative_to
+        monkeypatch.setattr(
+            PosixPath,
+            "relative_to",
+            lambda self, *args, **kwargs: PureWindowsPath(original(self, *args, **kwargs)),
+        )
+
+        ctx = create_deterministic_tarball(str(tmp_path), set())
+
+        assert self._member_names(ctx) == ["Dockerfile", "src/bot.py"]

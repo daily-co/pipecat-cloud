@@ -278,7 +278,10 @@ def create_deterministic_tarball(
             file_path = root_path / filename
             if not _should_exclude(file_path, exclusions, base_path):
                 rel_path = file_path.relative_to(base_path)
-                files_to_add.append((file_path, str(rel_path)))
+                # Tar member names always use "/". TarInfo is built by hand below, so
+                # tarfile never converts os.sep for us: str() would give "src\bot.py"
+                # on Windows, which the Linux builder reads as one file at the root.
+                files_to_add.append((file_path, rel_path.as_posix()))
 
     # Sort by relative path for determinism
     files_to_add.sort(key=lambda x: x[1])
