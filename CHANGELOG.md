@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- towncrier release notes start -->
 
+## [1.6.1] - 2026-11-17
+
+### Changed
+
+- `pipecat cloud deploy`, `docker build-push` and the `agent` commands that read `pcc-deploy.toml` now fail with an error when it is not valid TOML or not UTF-8. Before, they ignored the file and ran on defaults.
+  (PR [#229](https://github.com/daily-co/pipecat-cloud/pull/229))
+
+### Fixed
+
+- `pipecat cloud` no longer crashes with `UnicodeEncodeError` when stdout's encoding is cp1252, as with piped or redirected output and Git Bash on Windows. Characters the output cannot show print as `?`, and the ᓚᘏᗢ mascot is left out.
+  (PR [#229](https://github.com/daily-co/pipecat-cloud/pull/229))
+
+- On Windows, `pcc-deploy.toml`, `.dockerignore`, `pipecat cloud secrets set --file` files and the credentials file are read as UTF-8 instead of the system code page, and `pipecat cloud docker` decodes Docker's output as UTF-8.
+  (PR [#229](https://github.com/daily-co/pipecat-cloud/pull/229))
+
+- `pipecat cloud deploy` cloud builds work on Windows. Files in subfolders were packed with backslash names, and a `--dockerfile` path in a subfolder was sent with backslashes, so the build could not find them.
+  (PR [#229](https://github.com/daily-co/pipecat-cloud/pull/229))
+
 ## [1.6.0] - 2026-11-12
 
 ### Added
