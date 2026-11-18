@@ -33,7 +33,7 @@ def _read_user_config():
 
     if os.path.exists(user_config_path):
         try:
-            with open(user_config_path) as f:
+            with open(user_config_path, encoding="utf-8") as f:
                 config_data = toml.load(f)
         except toml.TomlDecodeError as exc:
             config_problem = f"Invalid TOML syntax in config file: {exc}"
@@ -90,7 +90,7 @@ def _write_user_config(new_config):
     try:
         fd, tmp_path = tempfile.mkstemp(dir=dir_path, prefix=".pipecatcloud_", suffix=".tmp")
         # mkstemp opens with 0o600 by default — restrictive from creation.
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             fd = None  # os.fdopen takes ownership of the fd
             toml.dump(new_config, f)
             f.flush()

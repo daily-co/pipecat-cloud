@@ -182,7 +182,9 @@ def load_dockerignore(context_dir: Path) -> set[str] | None:
 
     patterns = set()
     try:
-        with open(dockerignore_path) as f:
+        # errors="replace": a byte that isn't UTF-8 (say, a cp1252 comment) costs
+        # only the line it's on, not every pattern in the file.
+        with open(dockerignore_path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 stripped = line.strip()
                 # Skip comments and empty lines
@@ -278,7 +280,10 @@ def create_deterministic_tarball(
             file_path = root_path / filename
             if not _should_exclude(file_path, exclusions, base_path):
                 rel_path = file_path.relative_to(base_path)
-                files_to_add.append((file_path, str(rel_path)))
+                # Tar member names always use "/". TarInfo is built by hand below, so
+                # tarfile never converts os.sep for us: str() would give "src\bot.py"
+                # on Windows, which the Linux builder reads as one file at the root.
+                files_to_add.append((file_path, rel_path.as_posix()))
 
     # Sort by relative path for determinism
     files_to_add.sort(key=lambda x: x[1])
@@ -297,7 +302,13 @@ def create_deterministic_tarball(
             info.gid = 0
             info.uname = ""
             info.gname = ""
-            # Normalize permissions: 0o644 for files, 0o755 for executables
+            # Normalize permissions: 0o644 for files, 0o755 for executables.
+            # Windows has no executable bit and X_OK holds for every file, so a
+            # Windows context packs everything as 0o755. `docker build` from
+            # Windows does the same, and it keeps entrypoint scripts runnable.
+            # So a Windows context and a Linux one hash differently and don't
+            # share cached builds. Most Windows checkouts already differ by line
+            # endings (git's core.autocrlf), so 0o644 would rarely buy a hit.
             if os.access(file_path, os.X_OK):
                 info.mode = 0o755
             else:

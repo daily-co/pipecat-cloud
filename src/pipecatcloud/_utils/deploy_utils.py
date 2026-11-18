@@ -528,10 +528,18 @@ def load_deploy_config_file() -> DeployConfigParams | None:
     logger.debug(f"Deploy config path: {deploy_config_path}")
     logger.debug(f"Deploy config path exists: {os.path.exists(deploy_config_path)}")
 
+    # A missing file means no config. A file that can't be read as UTF-8 TOML is an
+    # error: returning None would run the command on defaults without saying so.
     try:
-        with open(deploy_config_path) as f:
+        with open(deploy_config_path, encoding="utf-8") as f:
             config_data = toml.load(f)
-    except Exception:
+    except UnicodeDecodeError:
+        raise ConfigFileError(
+            f"{deploy_config_path} is not valid UTF-8. Save it with UTF-8 encoding."
+        )
+    except toml.TomlDecodeError as e:
+        raise ConfigFileError(f"{deploy_config_path} is not valid TOML: {e}")
+    except OSError:
         return None
 
     try:
