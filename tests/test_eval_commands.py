@@ -655,6 +655,127 @@ class TestCancel:
         result = invoke("cancel", RUN_ID, "--agent", "a", "--json")
         assert json.loads(result.stdout) == make_run("cancelled")
 
+    def test_a_starting_run_is_asked_to_stop(self, api):
+        api.eval_run_cancel.return_value = (make_run("starting"), None)
+        result = invoke("cancel", RUN_ID, "--agent", "a")
+        assert result.exit_code == 0
+        assert "Cancellation requested" in result.stdout
+
+    def test_a_cancel_that_couldnt_be_confirmed_says_why(self, api):
+        reason = (
+            "The evaluation could not be confirmed stopped; it may continue until its deadline."
+        )
+        api.eval_run_cancel.return_value = (make_run("cancelled", result={"reason": reason}), None)
+        result = invoke("cancel", RUN_ID, "--agent", "a")
+        assert result.exit_code == 0
+        assert "is cancelled" in result.stdout
+        assert "may continue until its deadline" in result.stdout
+
+    def test_a_run_that_ended_before_its_cancel_says_how(self, api):
+        api.eval_run_cancel.return_value = (make_run("timed_out"), None)
+        result = invoke("cancel", RUN_ID, "--agent", "a")
+        assert result.exit_code == 0
+        assert "ended timed_out before its cancel took effect" in result.stdout
+        assert "Cancellation requested" not in result.stdout
+
+    def test_a_finished_run_says_how_it_ended_and_exits_three(self, api):
+        api.eval_run_cancel.return_value = (
+            None,
+            {"error": "The run has already finished.", "code": "409"},
+        )
+        api.error_status = 409
+        api.eval_run_get.return_value = (make_run("completed", "passed"), None)
+        result = invoke("cancel", RUN_ID, "--agent", "a")
+        assert result.exit_code == 3
+        assert "already ended: completed, verdict passed" in result.stdout
+        assert api.eval_run_get.await_args.args == ("test-org", "a", RUN_ID)
+
+    def test_a_finished_run_in_json(self, api):
+        api.eval_run_cancel.return_value = (
+            None,
+            {"error": "The run has already finished.", "code": "409"},
+        )
+        api.error_status = 409
+        api.eval_run_get.return_value = (make_run("completed", "failed"), None)
+        result = invoke("cancel", RUN_ID, "--agent", "a", "--json")
+        assert result.exit_code == 3
+        out = json.loads(result.stdout)
+        assert out["error"]["code"] == "409"
+        assert out["run"]["verdict"] == "failed"
+
+    def test_another_error_doesnt_read_the_run(self, api):
+        api.eval_run_cancel.return_value = (None, {"error": "nope", "code": "404"})
+        api.error_status = 404
+        assert invoke("cancel", RUN_ID, "--agent", "a").exit_code == 3
+        api.eval_run_get.assert_not_called()
+
+
+# ---- what judged a run, and a conversation that can't be read back ----
+
+FINGERPRINT = "jfp1:" + "b" * 64
+EXECUTOR = {"fingerprint": FINGERPRINT, "build": "sha-1234abcd"}
+
+
+class TestJudgedBy:
+    def test_an_ended_run_says_what_judged_it(self, api):
+        api.eval_run_get.return_value = (
+            make_run("completed", "failed", FAILED_RESULT, executor=EXECUTOR),
+            None,
+        )
+        out = invoke("status", RUN_ID, "--agent", "a").stdout
+        assert f"judged by: judging version {FINGERPRINT}, build sha-1234abcd" in out
+
+    def test_a_live_run_shows_its_judging_version_once_reported(self, api):
+        api.eval_run_get.return_value = (make_run("running", executor=EXECUTOR), None)
+        out = invoke("status", RUN_ID, "--agent", "a").stdout
+        assert "Judging version" in out and FINGERPRINT in out
+        assert "Executor build" in out and "sha-1234abcd" in out
+
+    @pytest.mark.parametrize(
+        "executor", [None, {"fingerprint": None, "build": None}], ids=["none", "nulls"]
+    )
+    def test_nothing_is_said_before_an_executor_reports(self, api, executor):
+        api.eval_run_get.return_value = (
+            make_run("completed", "failed", FAILED_RESULT, executor=executor),
+            None,
+        )
+        out = invoke("status", RUN_ID, "--agent", "a").stdout
+        assert "judged by" not in out
+
+    def test_only_the_build_when_the_executor_has_no_fingerprint(self, api):
+        api.eval_run_get.return_value = (
+            make_run(
+                "completed",
+                "failed",
+                FAILED_RESULT,
+                executor={"fingerprint": None, "build": "sha-1234abcd"},
+            ),
+            None,
+        )
+        out = invoke("status", RUN_ID, "--agent", "a").stdout
+        assert "judged by: build sha-1234abcd" in out
+
+
+class TestConversationUnavailable:
+    def test_verbose_says_it_couldnt_be_read_back(self, api):
+        result = dict(FAILED_RESULT, conversation=[], conversationUnavailable=True)
+        api.eval_run_get.return_value = (
+            make_run("completed", "failed", result, kind="session", sessionId=SESSION_ID),
+            None,
+        )
+        out = invoke("status", RUN_ID, "--agent", "a", "-v").stdout
+        assert "couldn't be read back" in out
+        assert "No conversation to show" not in out
+        # The verdict and what decided it still stand.
+        assert "Hours were wrong" in out
+
+    def test_an_empty_conversation_that_was_read_says_so(self, api):
+        result = dict(FAILED_RESULT, conversation=[], conversationUnavailable=False)
+        api.eval_run_get.return_value = (make_run("completed", "failed", result), None)
+        out = invoke("status", RUN_ID, "--agent", "a", "-v").stdout
+        assert "No conversation to show" in out
+        assert "couldn't be read back" not in out
+
 
 # ---- the API client ----
 

@@ -707,6 +707,8 @@ class TestReport:
         )
         result = invoke("run", "agent", scenario_file)
         assert "Mixed judging versions" in result.output
+        # Members are held to one version; mixed means none of its pods could take some.
+        assert "held to one judging version" in " ".join(result.output.split())
         assert "pass rates are split by version" in result.output
         assert "Judging version" in result.output
         assert OTHER_FINGERPRINT in result.output
@@ -845,6 +847,42 @@ class TestSuiteRun:
         )  # fmt: skip
         body = created_body(api)
         assert (body["repeat"], body["concurrency"], body["deadlineSeconds"]) == (5, 3, 900)
+        assert "filters" not in body
+
+    def test_filters_reach_the_request(self, api, sleeps):
+        invoke(
+            "suite", "run", "agent", "--revision", "r", "--suite", "s.yaml",
+            "--kind", "simulation", "--kind", "simulation",
+            "--scenario", "calls.yaml:book", "--scenario", "dir/a:b.yaml:hours",
+            "--scenario", "calls.yaml:book",
+        )  # fmt: skip
+        assert created_body(api)["filters"] == {
+            "kinds": ["simulation"],
+            # Each scenario once; the name is after the last colon.
+            "scenarios": [
+                {"path": "calls.yaml", "name": "book"},
+                {"path": "dir/a:b.yaml", "name": "hours"},
+            ],
+        }
+
+    def test_kinds_alone(self, api, sleeps):
+        invoke("suite", "run", "agent", "--revision", "r", "--suite", "s.yaml", "--kind", "script")
+        assert created_body(api)["filters"] == {"kinds": ["script"]}
+
+    @pytest.mark.parametrize(
+        "args,message",
+        [
+            (["--kind", "rubric"], "--kind is script or simulation"),
+            (["--scenario", "book"], "--scenario is PATH:NAME"),
+            (["--scenario", "calls.yaml:"], "--scenario is PATH:NAME"),
+            (["--scenario", ":book"], "--scenario is PATH:NAME"),
+        ],
+    )
+    def test_a_bad_filter_is_refused_before_any_request(self, api, args, message):
+        result = invoke("suite", "run", "agent", "--revision", "r", "--suite", "s.yaml", *args)
+        assert result.exit_code == 3
+        assert message in " ".join(result.output.split())
+        api.eval_suite_run_create.assert_not_called()
 
 
 # ---- `eval suite status`, `list` and `cancel` ----
@@ -867,6 +905,36 @@ class TestSuiteStatus:
         result = invoke("suite", "status", SUITE_ID)
         assert "Judging version" in result.output
         assert FINGERPRINT in result.output
+        assert "no member judged yet" not in result.output
+
+    def test_a_judging_version_before_any_verdict_says_none_judged_yet(self, api):
+        api.eval_suite_run_get.return_value = (
+            make_suite(status="running", fingerprint=FINGERPRINT, counts=counts(live=2)),
+            None,
+        )
+        result = invoke("suite", "status", SUITE_ID)
+        assert FINGERPRINT in result.output
+        assert "no member judged yet" in " ".join(result.output.split())
+
+    def test_a_cancel_requested_shows_while_it_is_carried_out(self, api):
+        api.eval_suite_run_get.return_value = (
+            make_suite(
+                status="running",
+                counts=counts(live=2),
+                cancelRequestedAt="2026-11-13T10:01:00.000Z",
+            ),
+            None,
+        )
+        result = invoke("suite", "status", SUITE_ID)
+        assert "Cancel requested" in result.output
+
+    def test_a_cancelled_suite_run_doesnt_repeat_its_cancel(self, api):
+        api.eval_suite_run_get.return_value = (
+            ended(None, status="cancelled", cancelRequestedAt="2026-11-13T10:01:00.000Z"),
+            None,
+        )
+        result = invoke("suite", "status", SUITE_ID)
+        assert "Cancel requested" not in result.output
 
     def test_without_wait_an_ended_failure_still_exits_zero(self, api):
         api.eval_suite_run_get.return_value = (ended("failed"), None)
@@ -939,6 +1007,19 @@ class TestSuiteCancel:
         result = invoke("suite", "cancel", SUITE_ID)
         assert result.exit_code == 0
         assert "Cancellation requested" in result.output
+
+    def test_one_that_ended_another_way_after_its_cancel_says_so(self, api):
+        # A cancel was recorded earlier; its deadline ended it first. The API answers 200.
+        api.eval_suite_run_cancel.return_value = (
+            ended(None, status="expired", cancelRequestedAt="2026-11-13T10:01:00.000Z"),
+            None,
+        )
+        result = invoke("suite", "cancel", SUITE_ID)
+        assert result.exit_code == 0
+        out = " ".join(result.output.split())
+        assert "ended expired before its cancel took effect" in out
+        assert "Cancellation requested" not in out
+        assert "is cancelled" not in out
 
     def test_one_that_already_ended_says_how_and_exits_three(self, api):
         api.eval_suite_run_cancel.return_value = (None, {"error": "ended", "code": "409"})

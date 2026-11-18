@@ -82,6 +82,13 @@ EXIT_INTERRUPTED = 130
 
 LIVE_STATUSES = ("queued", "starting", "running")
 
+# A session run's result whose judged conversation couldn't be read back
+# (`result.conversationUnavailable`): its verdict stands, and a later read may show it.
+CONVERSATION_UNAVAILABLE = (
+    "The conversation this run judged couldn't be read back. Its verdict, reason and "
+    "metrics still stand. Reading the run again may show it."
+)
+
 
 def _print(*objects: Any, **kwargs: Any) -> None:
     """Print without rich's highlighting, which colors numbers, quotes and ids on its
@@ -637,8 +644,27 @@ def _metric_turns(name: str, details: dict) -> tuple[int, list[dict]]:
     return len(checks), [c for c in checks if not c.get("passed")]
 
 
-def _print_conversation(conversation: list[dict], indent: str = "      ") -> None:
+def _judged_by(run: dict) -> str | None:
+    """What judged a run, as the executor that ran it reported: its judging version
+    and its build. None until an executor reports them."""
+    executor = run.get("executor")
+    if not isinstance(executor, dict):
+        return None
+    parts = []
+    if executor.get("fingerprint"):
+        parts.append(f"judging version {executor['fingerprint']}")
+    if executor.get("build"):
+        parts.append(f"build {executor['build']}")
+    return ", ".join(parts) or None
+
+
+def _print_conversation(
+    conversation: list[dict], indent: str = "      ", *, unavailable: bool = False
+) -> None:
     """The conversation, the way `pipecat eval -v` prints a simulation's."""
+    if unavailable:
+        _print(f"{indent}[dim]{CONVERSATION_UNAVAILABLE}[/dim]")
+        return
     if not conversation:
         _print(f"{indent}[dim]No conversation to show.[/dim]")
         return
@@ -671,7 +697,10 @@ def _print_details(row: _Row, agent: str, verbose: bool) -> None:
     _print(f"  {_mark(run)} {escape(agent)} [cyan]{escape(row.label)}[/cyan]")
     bullet = "[green]•[/green]" if row.passed else "[red]•[/red]"
     if verbose:
-        _print_conversation(result.get("conversation") or [])
+        _print_conversation(
+            result.get("conversation") or [],
+            unavailable=result.get("conversationUnavailable") is True,
+        )
         _print()
     reason = result.get("reason")
     if reason and not row.passed:
@@ -715,6 +744,9 @@ def _print_details(row: _Row, agent: str, verbose: bool) -> None:
             "      [dim]The result was too large to keep whole, so the conversation and "
             "details are left out.[/dim]"
         )
+    judged_by = _judged_by(run)
+    if judged_by:
+        _print(f"      [dim]judged by: {escape(judged_by)}[/dim]")
     run_id = str(run.get("id"))
     _print(f"      [dim]run:  {_conversation_command(agent, run_id)}[/dim]")
     if run.get("sessionId"):
@@ -764,6 +796,8 @@ def _render_run(run: dict, agent: str, verbose: bool = False) -> None:
         scenario = run.get("scenarioPath") or ""
         if run.get("scenarioName"):
             scenario = f"{scenario} ({run['scenarioName']})"
+        reported = run.get("executor")
+        executor: dict = reported if isinstance(reported, dict) else {}
         _fields(
             [
                 ("Run", run_id),
@@ -772,6 +806,8 @@ def _render_run(run: dict, agent: str, verbose: bool = False) -> None:
                 ("Session", run.get("sessionId") if run.get("kind") == "session" else None),
                 ("Status", run.get("status")),
                 ("Scenario", scenario),
+                ("Judging version", executor.get("fingerprint")),
+                ("Executor build", executor.get("build")),
                 ("Created", format_timestamp(run["createdAt"]) if run.get("createdAt") else None),
             ]
         )
@@ -1432,16 +1468,42 @@ async def cancel(
     await _login_check()
     org = _org(organization)
 
-    data, error = await _api().eval_run_cancel(org, agent, run_id)
+    data, error = await API.bubble_error().eval_run_cancel(org, agent, run_id)
+    if not data and API.error_status == 409:
+        # Already ended another way: say how, then exit as the refusal it is.
+        ended, _ = await API.bubble_error().eval_run_get(org, agent, run_id)
+        if console.json_output:
+            console.output_json({"error": error, "run": ended})
+        elif ended:
+            verdict = ended.get("verdict")
+            tail = f", verdict {verdict}" if verdict else ""
+            _print(
+                f"[yellow]Run {escape(run_id)} already ended: "
+                f"{escape(str(ended.get('status')))}{escape(tail)}.[/yellow]"
+            )
+        else:
+            API.print_error()
+        raise typer.Exit(EXIT_ERROR)
+    if not data and not console.json_output:
+        API.print_error()
     run_data = _check(data, error)
 
     if console.json_output:
         console.output_json(run_data)
         return
-    if run_data.get("status") == "cancelled":
-        _print(f"Run [bold]{run_id}[/bold] is cancelled.")
-    else:
+    status = str(run_data.get("status"))
+    if _is_live(run_data):
         _print(
             f"Cancellation requested for run [bold]{run_id}[/bold]. It ends as soon as it can. "
             f"Check on it: [bold]{_status_command(agent, run_id)}[/bold]"
         )
+        return
+    if status == "cancelled":
+        _print(f"Run [bold]{run_id}[/bold] is cancelled.")
+    else:
+        _print(f"Run [bold]{run_id}[/bold] ended {escape(status)} before its cancel took effect.")
+    # Cancelling is best effort: the reason says when stopping couldn't be confirmed,
+    # and what may have started.
+    reason = (run_data.get("result") or {}).get("reason")
+    if reason:
+        _print(f"  {escape(str(reason))}")

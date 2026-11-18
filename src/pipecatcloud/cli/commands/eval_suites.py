@@ -105,8 +105,9 @@ BUNDLE_NAME_RULE = (
 )
 
 MIXED_WARNING = (
-    "Mixed judging versions: these results were judged by more than one version "
-    "(a deploy changed how runs are judged mid-suite)"
+    "Mixed judging versions: a suite run's members are held to one judging version, "
+    "but the executor changed during this one and no pod on its version could take "
+    "some members in time, so its results were judged by more than one version"
 )
 
 suite_cli = typer.Typer(
@@ -650,6 +651,18 @@ async def inline_suites_available(org: str) -> bool:
     return False
 
 
+def _judging_version(suite: dict) -> str | None:
+    """The judging version a suite run's members are held to. It's chosen when the
+    first member is admitted, so until a member has a verdict it may have judged none."""
+    fingerprint = suite.get("fingerprint")
+    if not fingerprint:
+        return None
+    counts = suite.get("counts") or {}
+    if not any(_count(counts, k) for k in ("passed", "failed", "skipped")):
+        return f"{fingerprint} (no member judged yet)"
+    return str(fingerprint)
+
+
 def _render_suite(suite: dict) -> None:
     """A suite run as it is: its fields and counts."""
     status = str(suite.get("status"))
@@ -659,6 +672,7 @@ def _render_suite(suite: dict) -> None:
     created = suite.get("createdAt")
     finished = suite.get("finishedAt")
     deadline = suite.get("deadlineAt")
+    cancel_requested = suite.get("cancelRequestedAt")
     _fields(
         [
             ("Suite run", suite.get("id")),
@@ -671,8 +685,14 @@ def _render_suite(suite: dict) -> None:
             ("Members", str(_count(suite.get("counts") or {}, "planned"))),
             ("Repeat", _text(_effective(suite, "repeat"))),
             ("Concurrency", _text(_effective(suite, "concurrency"))),
-            ("Judging version", suite.get("fingerprint")),
+            ("Judging version", _judging_version(suite)),
             ("Created", format_timestamp(created) if created else None),
+            (
+                "Cancel requested",
+                format_timestamp(cancel_requested)
+                if cancel_requested and status != "cancelled"
+                else None,
+            ),
             (
                 "Deadline",
                 format_timestamp(deadline) if deadline and _suite_is_live(suite) else None,
@@ -707,6 +727,32 @@ _SUITE_DEADLINE_OPTION = typer.Option(
     min=1,
     help="Seconds the whole suite run may take, from creation. The API sets the bounds.",
 )
+
+
+SUITE_MEMBER_KINDS = ("script", "simulation")
+
+
+def _suite_filters(kinds: list[str], scenarios: list[str]) -> dict[str, Any]:
+    """The suite run's filters from --kind and --scenario, applied before repetition."""
+    filters: dict[str, Any] = {}
+    if kinds:
+        unknown = [k for k in kinds if k not in SUITE_MEMBER_KINDS]
+        if unknown:
+            _fail(f"--kind is script or simulation, not {unknown[0]!r}.")
+        filters["kinds"] = list(dict.fromkeys(kinds))
+    if scenarios:
+        refs: dict[tuple[str, str], dict[str, str]] = {}
+        for ref in scenarios:
+            path, sep, name = ref.rpartition(":")
+            if not sep or not path or not name:
+                _fail(
+                    f"--scenario is PATH:NAME, a scenario file's path in the bundle and a "
+                    f"scenario's name, not {ref!r}."
+                )
+            # The API takes each scenario once.
+            refs.setdefault((path, name), {"path": path, "name": name})
+        filters["scenarios"] = list(refs.values())
+    return filters
 
 
 def _bundle_ref(ref: str) -> tuple[str, int | None]:
@@ -793,6 +839,17 @@ async def suite_run(
     repeat: int = _REPEAT_OPTION,
     concurrency: int = _CONCURRENCY_OPTION,
     deadline: int = _SUITE_DEADLINE_OPTION,
+    kind: list[str] = typer.Option(
+        [],
+        "--kind",
+        help="Run only the suite's scenarios of this kind: script or simulation. Repeat for both.",
+    ),
+    scenario: list[str] = typer.Option(
+        [],
+        "--scenario",
+        help="Run only this scenario of the suite's, as PATH:NAME: its file's path in the "
+        "bundle, and its name after the last colon. Repeat for several.",
+    ),
     wait: bool = typer.Option(
         True,
         "--wait/--no-wait",
@@ -806,6 +863,7 @@ async def suite_run(
     _use_json(output_json)
     if (bundle is None) == (revision is None):
         _fail("Name the files to run with either --bundle NAME[@N] or --revision ID.")
+    filters = _suite_filters(kind, scenario)
     await _login_check()
     org = _org(organization)
 
@@ -827,6 +885,8 @@ async def suite_run(
     ):
         if value is not None:
             body[key] = value
+    if filters:
+        body["filters"] = filters
     await run_suite(org, agent, body, wait=wait, verbose=verbose)
 
 
@@ -964,13 +1024,22 @@ async def suite_cancel(
     if console.json_output:
         console.output_json(suite)
         return
-    if suite.get("status") == "cancelled":
-        _print(f"Suite run [bold]{escape(suite_run_id)}[/bold] is cancelled.")
-    else:
+    status = str(suite.get("status"))
+    if _suite_is_live(suite):
         _print(
             f"Cancellation requested for suite run [bold]{escape(suite_run_id)}[/bold]: members "
             "not yet started won't run, and running ones are asked to stop. "
             f"Check on it: [bold]{_suite_status_command(suite_run_id)}[/bold]"
+        )
+    elif status == "cancelled":
+        _print(f"Suite run [bold]{escape(suite_run_id)}[/bold] is cancelled.")
+    else:
+        # A cancel was already recorded, and something else ended it first (its deadline, say).
+        verdict = suite.get("verdict")
+        tail = f", verdict {verdict}" if verdict else ""
+        _print(
+            f"Suite run [bold]{escape(suite_run_id)}[/bold] ended {escape(status)}{escape(tail)} "
+            "before its cancel took effect."
         )
 
 
