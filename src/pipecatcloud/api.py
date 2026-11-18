@@ -1364,10 +1364,10 @@ class _API:
         """Ask for an eval run to be cancelled.
 
         A queued run ends at once as `cancelled`. A started run is asked to stop
-        and ends as soon as it can, so the returned run may still be `starting`
-        or `running`. Stopping is best effort: when it couldn't be confirmed, the
-        run's `result.reason` says so. A run that already ended another way is
-        refused with a 409.
+        and usually ends within seconds, so the returned run may still be
+        `starting` or `running`. A run ends `cancelled` once its evaluation has
+        stopped; if the stop couldn't be confirmed, `result.reason` says so. A
+        run that already ended another way is refused with a 409.
         """
         return self.create_api_method(self._eval_run_cancel)
 

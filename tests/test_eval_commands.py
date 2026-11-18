@@ -642,6 +642,7 @@ class TestCancel:
         result = invoke("cancel", RUN_ID, "--agent", "a")
         assert result.exit_code == 0
         assert "Cancellation requested" in result.stdout
+        assert "usually ends within seconds" in " ".join(result.stdout.split())
         assert "is cancelled" not in result.stdout
 
     def test_a_finished_run_cant_be_cancelled(self, api):

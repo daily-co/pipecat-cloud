@@ -85,8 +85,9 @@ LIVE_STATUSES = ("queued", "starting", "running")
 # A session run's result whose judged conversation couldn't be read back
 # (`result.conversationUnavailable`): its verdict stands, and a later read may show it.
 CONVERSATION_UNAVAILABLE = (
-    "The conversation this run judged couldn't be read back. Its verdict, reason and "
-    "metrics still stand. Reading the run again may show it."
+    "The conversation this run judged couldn't be read back. Its verdict, reason, metrics "
+    "and details still stand: they were decided on that conversation. Reading the run "
+    "again may show it."
 )
 
 
@@ -1455,7 +1456,7 @@ async def list_runs(
 @eval_cli.command(
     name="cancel",
     cls=_EvalCommand,
-    help="Ask for an eval run to be cancelled. A running run ends as soon as it can.",
+    help="Ask for an eval run to be cancelled. A started run usually ends within seconds.",
 )
 @synchronizer.create_blocking
 async def cancel(
@@ -1494,7 +1495,8 @@ async def cancel(
     status = str(run_data.get("status"))
     if _is_live(run_data):
         _print(
-            f"Cancellation requested for run [bold]{run_id}[/bold]. It ends as soon as it can. "
+            f"Cancellation requested for run [bold]{run_id}[/bold]. It usually ends within "
+            "seconds, as `cancelled` once its evaluation has stopped. "
             f"Check on it: [bold]{_status_command(agent, run_id)}[/bold]"
         )
         return
@@ -1502,8 +1504,8 @@ async def cancel(
         _print(f"Run [bold]{run_id}[/bold] is cancelled.")
     else:
         _print(f"Run [bold]{run_id}[/bold] ended {escape(status)} before its cancel took effect.")
-    # Cancelling is best effort: the reason says when stopping couldn't be confirmed,
-    # and what may have started.
+    # If the stop couldn't be confirmed, the reason says so, and that the evaluation
+    # may continue until its deadline; it also says what may have started.
     reason = (run_data.get("result") or {}).get("reason")
     if reason:
         _print(f"  {escape(str(reason))}")
