@@ -28,7 +28,8 @@ scenarios:
 
 def write(path: Path, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    # LF on every platform: a file's bytes are sent as they are, line endings included.
+    path.write_text(text, encoding="utf-8", newline="\n")
     return path
 
 
@@ -103,6 +104,35 @@ class TestRefusals:
         write(tree / "calls.yaml", f"name: c\nx: !include {tree / 'judge.yaml'}\nscenarios: []\n")
         with pytest.raises(BundleError, match="absolute"):
             build_bundle(tree / "calls.yaml")
+
+    # A bundle's paths are POSIX paths on every platform: a Windows drive, root or share
+    # is absolute, and a backslash is never a separator.
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "C:\\bundle\\judge.yaml",
+            "C:/bundle/judge.yaml",
+            "\\judge.yaml",
+            "\\\\host\\share\\j.yaml",
+        ],
+    )
+    def test_a_windows_absolute_include(self, tree, target):
+        write(tree / "calls.yaml", f"name: c\nx: !include {target}\nscenarios: []\n")
+        with pytest.raises(BundleError, match="is an absolute path"):
+            build_bundle(tree / "calls.yaml")
+
+    @pytest.mark.parametrize("target", ["sub\\judge.yaml", "..\\judge.yaml"])
+    def test_a_backslash_in_an_include(self, tree, target):
+        write(tree / "sub" / "judge.yaml", "text: judge\n")
+        write(tree / "calls.yaml", f"name: c\nx: !include {target}\nscenarios: []\n")
+        with pytest.raises(BundleError, match="has a backslash"):
+            build_bundle(tree / "calls.yaml")
+
+    def test_line_endings_are_sent_as_they_are(self, tree):
+        (tree / "calls.yaml").write_bytes(b"name: c\r\nx: !include judge.yaml\r\nscenarios: []\r\n")
+        files = build_bundle(tree / "calls.yaml").files
+        assert files["calls.yaml"] == "name: c\r\nx: !include judge.yaml\r\nscenarios: []\r\n"
+        assert files["judge.yaml"] == "text: judge\n"
 
     def test_missing_include_names_the_file_and_its_includer(self, tree):
         write(tree / "calls.yaml", "name: c\nx: !include nope.yaml\nscenarios: []\n")

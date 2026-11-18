@@ -26,7 +26,7 @@ import os
 import posixpath
 import re
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import yaml
@@ -211,8 +211,19 @@ class _Collector:
             if not isinstance(node, yaml.ScalarNode):
                 raise BundleError(f"{key!r}: !include expects a file path.")
             target = str(loader.construct_scalar(node))
-            if PurePosixPath(target).is_absolute() or posixpath.isabs(target):
+            # A bundle's paths are POSIX paths, whatever this machine's are: a Windows
+            # drive, root or share (C:\x, C:/x, \x, \\server\share) is absolute too.
+            if (
+                PurePosixPath(target).is_absolute()
+                or posixpath.isabs(target)
+                or PureWindowsPath(target).anchor
+            ):
                 raise BundleError(f"{key!r}: !include {target!r} is an absolute path.")
+            if "\\" in target:
+                raise BundleError(
+                    f"{key!r}: !include {target!r} has a backslash. Name an included file "
+                    "with forward slashes, relative to the file that includes it."
+                )
             resolved = _normalize(str(PurePosixPath(key).parent / target))
             if resolved is None or resolved == "":
                 raise BundleError(f"{key!r}: !include {target!r} leaves the root directory.")

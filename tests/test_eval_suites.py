@@ -252,7 +252,8 @@ def sleeps():
 @pytest.fixture
 def scenario_file(tmp_path):
     path = tmp_path / "calls.yaml"
-    path.write_text(SCENARIOS, encoding="utf-8")
+    # LF on every platform: the files are sent byte for byte, line endings included.
+    path.write_text(SCENARIOS, encoding="utf-8", newline="\n")
     return path
 
 
@@ -1152,6 +1153,9 @@ class TestCollectDirectory:
         with pytest.raises(BundleError, match="nothing to send"):
             collect_directory(tmp_path)
 
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="chmod can't make a folder unreadable on Windows"
+    )
     def test_a_folder_that_cant_be_read_is_listed(self, tmp_path):
         (tmp_path / "calls.yaml").write_text("name: c\n")
         locked = tmp_path / "locked"
@@ -1213,7 +1217,7 @@ class TestCollectDirectory:
 
 @pytest.fixture
 def bundle_dir(tmp_path):
-    (tmp_path / "calls.yaml").write_text(SCENARIOS, encoding="utf-8")
+    (tmp_path / "calls.yaml").write_text(SCENARIOS, encoding="utf-8", newline="\n")
     return tmp_path
 
 

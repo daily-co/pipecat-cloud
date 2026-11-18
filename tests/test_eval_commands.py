@@ -98,14 +98,15 @@ FAILED_RESULT = {
 @pytest.fixture
 def scenario_file(tmp_path):
     path = tmp_path / "calls.yaml"
-    path.write_text(SCENARIO, encoding="utf-8")
+    # LF on every platform: the files are sent byte for byte, line endings included.
+    path.write_text(SCENARIO, encoding="utf-8", newline="\n")
     return path
 
 
 @pytest.fixture
 def criteria_file(tmp_path):
     path = tmp_path / "criteria.yaml"
-    path.write_text(CRITERIA, encoding="utf-8")
+    path.write_text(CRITERIA, encoding="utf-8", newline="\n")
     return path
 
 
@@ -951,6 +952,11 @@ class _RunningHandler(BaseHTTPRequestHandler):
         pass
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows can't send a process SIGINT; the interruption as the synchronizer "
+    "delivers it is tested on every platform",
+)
 class TestRealSigint:
     @pytest.mark.parametrize("extra", [[], ["--json"]])
     @pytest.mark.parametrize("command", ["status", "judge"])
