@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -2114,18 +2115,41 @@ class TestLabelsAndFields:
             assert "Print the output as JSON" in out
 
 
+def plain(text: str) -> str:
+    """Output as a reader sees it: without terminal styling, and on one line."""
+    return " ".join(re.sub(r"\x1b\[[0-9;]*m", "", text).replace("│", " ").split())
+
+
 class TestIds:
+    """The CLI checks IDs itself, so every supported Typer says the same thing."""
+
     @pytest.mark.parametrize("command", ["status", "cancel"])
     def test_a_run_id_that_isnt_a_uuid_is_refused_before_any_request(self, api, command):
         result = invoke(command, "nope", "--agent", "a")
         assert result.exit_code == 3
-        assert "not a valid UUID" in result.output
+        assert "Invalid value for 'RUN_ID': 'nope' is not a valid UUID." in plain(result.output)
         api.eval_run_get.assert_not_awaited()
         api.eval_run_cancel.assert_not_awaited()
 
     def test_list_suite_takes_a_uuid(self, api):
         result = invoke("list", "a", "--suite", "nope")
-        assert result.exit_code == 3 and "not a valid UUID" in result.output
+        assert result.exit_code == 3
+        assert "'nope' is not a valid UUID." in plain(result.output)
+        api.eval_runs_list.assert_not_awaited()
+
+    def test_judge_names_the_session_id_that_isnt_a_uuid(self, api, criteria_file):
+        result = invoke("judge", "a", SESSION_ID, "nope", "--criteria", criteria_file)
+        assert result.exit_code == 3
+        assert "'nope' is not a valid UUID." in plain(result.output)
+        api.eval_run_create.assert_not_awaited()
+
+    def test_ids_are_sent_in_their_canonical_form(self, api, criteria_file):
+        invoke("status", RUN_ID.upper(), "--agent", "a")
+        assert api.eval_run_get.await_args.args[2] == RUN_ID
+        invoke("list", "a", "--suite", "{" + RUN_ID.upper() + "}")
+        assert api.eval_runs_list.await_args.kwargs["suite_run_id"] == RUN_ID
+        invoke("judge", "a", SESSION_ID.upper(), "--criteria", criteria_file)
+        assert api.eval_run_create.await_args.args[2]["sessionId"] == SESSION_ID
 
 
 class TestListPastTheEnd:

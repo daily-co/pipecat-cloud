@@ -32,7 +32,7 @@ import re
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, NoReturn
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import typer
 from rich.console import Group
@@ -79,6 +79,7 @@ from pipecatcloud.cli.commands.evals import (
     _run_label,
     _table,
     _use_json,
+    _uuid_param,
     _wait_limit,
     _when,
     exit_code_for,
@@ -949,8 +950,12 @@ async def suite_run(
 )
 @synchronizer.create_blocking
 async def suite_status(
-    suite_run_uuid: UUID = typer.Argument(
-        ..., metavar="SUITE_RUN_ID", help="The suite run's ID", show_default=False
+    suite_run_id: str = typer.Argument(
+        ...,
+        metavar="SUITE_RUN_ID",
+        help="The suite run's ID",
+        show_default=False,
+        callback=_uuid_param,
     ),
     wait: bool = typer.Option(
         False, "--wait", help="Wait for the suite run to end and exit with its verdict"
@@ -962,7 +967,6 @@ async def suite_status(
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
-    suite_run_id = str(suite_run_uuid)
 
     data, error = await base._api().eval_suite_run_get(org, suite_run_id)
     suite = _check(data, error)
@@ -1049,8 +1053,12 @@ async def suite_list(
 )
 @synchronizer.create_blocking
 async def suite_cancel(
-    suite_run_uuid: UUID = typer.Argument(
-        ..., metavar="SUITE_RUN_ID", help="The suite run's ID", show_default=False
+    suite_run_id: str = typer.Argument(
+        ...,
+        metavar="SUITE_RUN_ID",
+        help="The suite run's ID",
+        show_default=False,
+        callback=_uuid_param,
     ),
     organization: str = _ORG_OPTION,
     output_json: bool = _JSON_OPTION,
@@ -1058,7 +1066,6 @@ async def suite_cancel(
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
-    suite_run_id = str(suite_run_uuid)
 
     data, error = await base.API.bubble_error().eval_suite_run_cancel(org, suite_run_id)
     if not data and base.API.error_status == 409:

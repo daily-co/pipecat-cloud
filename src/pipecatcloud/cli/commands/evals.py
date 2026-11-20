@@ -203,6 +203,23 @@ def _org(organization: str | None) -> str:
     return str(organization or config.get("org"))
 
 
+def _uuid_param(value: Any) -> Any:
+    """A parameter's ID, or each of its IDs, as a UUID's canonical text, or a usage error
+    (exit 3) naming the one that isn't. An ID is taken as text and checked here: Typer
+    checks a UUID-typed parameter itself, in words that change from one version to the
+    next, and this says the same under every version the CLI supports."""
+    if value is None:
+        return None
+    several = isinstance(value, list | tuple)
+    ids = []
+    for item in value if several else [value]:
+        try:
+            ids.append(str(UUID(str(item))))
+        except ValueError:
+            raise typer.BadParameter(f"{str(item)!r} is not a valid UUID.") from None
+    return ids if several else ids[0]
+
+
 def _api():
     # The client doesn't print a failure itself: `_check` does, with the
     # request's problems the API names, or as the error object in json mode.
@@ -1382,8 +1399,12 @@ async def run(
 @synchronizer.create_blocking
 async def judge(
     agent: str = typer.Argument(..., help="Name of the sessions' agent", show_default=False),
-    session_ids: list[UUID] = typer.Argument(
-        ..., help="Finished session IDs to judge", show_default=False
+    session_ids: list[str] = typer.Argument(
+        ...,
+        metavar="SESSION_IDS...",
+        help="Finished session IDs to judge",
+        show_default=False,
+        callback=_uuid_param,
     ),
     criteria: Path = typer.Option(
         ...,
@@ -1416,7 +1437,7 @@ async def judge(
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
-    sessions = [str(session_id) for session_id in session_ids]
+    sessions = list(session_ids)
     seen: set[str] = set()
     for session_id in sessions:
         if session_id in seen:
@@ -1474,7 +1495,9 @@ async def judge(
 )
 @synchronizer.create_blocking
 async def status(
-    run_uuid: UUID = typer.Argument(..., metavar="RUN_ID", help="The run's ID", show_default=False),
+    run_id: str = typer.Argument(
+        ..., metavar="RUN_ID", help="The run's ID", show_default=False, callback=_uuid_param
+    ),
     agent: str = typer.Option(..., "--agent", "-a", help="Name of the agent the run is on"),
     wait: bool = typer.Option(
         False, "--wait", help="Wait for the run to end and exit with its verdict"
@@ -1486,7 +1509,6 @@ async def status(
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
-    run_id = str(run_uuid)
 
     data, error = await _api().eval_run_get(org, agent, run_id)
     run_data = _check(data, error)
@@ -1506,8 +1528,12 @@ async def list_runs(
     agent: str = typer.Argument(..., help="Name of the agent", show_default=False),
     limit: int = typer.Option(10, "--limit", "-n", min=1, max=200, help="How many runs to show"),
     offset: int = typer.Option(0, "--offset", min=0, help="How many of the newest runs to skip"),
-    suite_uuid: UUID = typer.Option(
-        None, "--suite", help="Only the runs of this suite run's members", metavar="SUITE_RUN_ID"
+    suite: str = typer.Option(
+        None,
+        "--suite",
+        help="Only the runs of this suite run's members",
+        metavar="SUITE_RUN_ID",
+        callback=_uuid_param,
     ),
     organization: str = _ORG_OPTION,
     output_json: bool = _JSON_OPTION,
@@ -1515,7 +1541,6 @@ async def list_runs(
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
-    suite = str(suite_uuid) if suite_uuid else None
 
     paging: dict[str, Any] = {"limit": limit}
     if offset:
@@ -1569,7 +1594,9 @@ async def list_runs(
 )
 @synchronizer.create_blocking
 async def cancel(
-    run_uuid: UUID = typer.Argument(..., metavar="RUN_ID", help="The run's ID", show_default=False),
+    run_id: str = typer.Argument(
+        ..., metavar="RUN_ID", help="The run's ID", show_default=False, callback=_uuid_param
+    ),
     agent: str = typer.Option(..., "--agent", "-a", help="Name of the agent the run is on"),
     organization: str = _ORG_OPTION,
     output_json: bool = _JSON_OPTION,
@@ -1577,7 +1604,6 @@ async def cancel(
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
-    run_id = str(run_uuid)
 
     data, error = await API.bubble_error().eval_run_cancel(org, agent, run_id)
     if not data and API.error_status == 409:

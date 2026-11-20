@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -1632,7 +1633,9 @@ class TestSuiteFieldsAndIds:
     @pytest.mark.parametrize("command", ["status", "cancel"])
     def test_a_suite_run_id_that_isnt_a_uuid_is_refused_before_any_request(self, api, command):
         result = invoke("suite", command, "nope")
-        assert result.exit_code == 3 and "not a valid UUID" in result.output
+        assert result.exit_code == 3
+        out = " ".join(re.sub(r"\x1b\[[0-9;]*m", "", result.output).replace("│", " ").split())
+        assert "Invalid value for 'SUITE_RUN_ID': 'nope' is not a valid UUID." in out
         api.eval_suite_run_get.assert_not_awaited()
         api.eval_suite_run_cancel.assert_not_awaited()
 
