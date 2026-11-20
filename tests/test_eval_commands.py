@@ -1284,7 +1284,7 @@ class TestSeveralRuns:
         assert "rambles on" in out and "turn 2:" in out and "Booked a table for two." in out
         assert "1/2 turns" in out
         assert f"eval status {OTHER_ID} --agent a -v" in out
-        assert f"agent logs a --session-id {SESSION_ID}" in out
+        assert f"project logs a --session-id {SESSION_ID}" in out
         # The passing run gets its line and nothing more.
         assert f"eval status {RUN_ID} --agent a -v" not in out
 
@@ -1473,7 +1473,7 @@ class TestScenarioHeader:
         assert "gemma4" not in out
         assert out.index("Simulated scenarios:") < out.index("✓ a calls/book")
 
-    def test_audio_names_its_speech_and_transcription(self, api, sleeps, tmp_path):
+    def test_audio_shows_the_hosted_speech_and_transcription(self, api, sleeps, tmp_path):
         path = tmp_path / "calls.yaml"
         path.write_text(
             SCENARIO.replace(
@@ -1489,8 +1489,10 @@ class TestScenarioHeader:
             None,
         )
         out = invoke("run", "a", path, "--wait").stdout
-        assert "user  -> modality: audio | speech: kokoro/af_heart | persona: hosted" in out
-        assert "judge -> modality: audio | transcription: moonshine | eval: hosted" in out
+        # Pipecat Cloud speaks and transcribes with its own services, not the scenario's.
+        assert "user  -> modality: audio | speech: hosted | persona: hosted" in out
+        assert "judge -> modality: audio | transcription: hosted | eval: hosted" in out
+        assert "kokoro" not in out and "moonshine" not in out
 
     def test_it_is_left_out_of_json_and_of_a_run_without_wait(self, api, scenario_file):
         assert "scenarios:" not in invoke("run", "a", scenario_file).stdout
@@ -1568,11 +1570,11 @@ class TestPipecatEvalStyle:
         user, judge = (evals._config_markup(k, b) for k, b in evals._config_lines(view)[:2])
         assert user.startswith("[bold]user [/bold][dim] -> [/dim]")
         assert "[yellow]modality:[/yellow] audio" in user
-        assert "[green]speech:[/green] kokoro/af_heart" in user
+        assert "[green]speech:[/green] hosted" in user
         assert "[magenta]persona:[/magenta] hosted" in user
         assert "[cyan]max_turns:[/cyan] 8" in user
         assert "[dim] | [/dim]" in user
-        assert "[green]transcription:[/green] moonshine" in judge
+        assert "[green]transcription:[/green] hosted" in judge
         assert "[magenta]eval:[/magenta] hosted" in judge
 
     def test_durations_read_like_pipecat_eval_and_never_say_60s(self):
@@ -1735,7 +1737,8 @@ class TestJudge:
         accepted = judgment(status="completed", verdict="passed", result=PASSED_RESULT)
         api.eval_run_create.return_value = accepted, None
         out = invoke("judge", "a", SESSION_ID, "--criteria", path, "--wait").stdout
-        assert "Criteria:" in out and "session_review/call" in out
+        # Labelled by the file's path, as `status` labels the run.
+        assert "Criteria:" in out and "criteria/call" in out
         assert "Sessions:" in out and SESSION_ID in out
         assert "judge -> modality: text | eval: hosted" in out
         assert "success -> The bot answered" in out
@@ -1874,3 +1877,263 @@ class TestJudge:
         assert result.exit_code == 1, result.output
         assert json.loads(result.stdout) == [ended[RUN_ID], ended[OTHER_ID]]
         assert api.eval_run_get.await_count == 2
+
+
+# ---- What the output says (from a run against staging) ----
+
+ISSUES_ERROR = {
+    "error": "Invalid parameters",
+    "code": "400",
+    "err": {
+        "name": "ZodError",
+        "issues": [
+            {
+                "code": "too_big",
+                "path": ["params", "connectTimeoutSeconds"],
+                "message": "Number must be less than or equal to 120",
+            }
+        ],
+    },
+}
+
+
+class TestApiErrorText:
+    def test_the_problems_the_api_names_follow_its_message(self):
+        assert evals._error_text(ISSUES_ERROR) == (
+            "Invalid parameters: params.connectTimeoutSeconds: "
+            "Number must be less than or equal to 120"
+        )
+
+    def test_without_issues_the_message_alone(self):
+        assert evals._error_text({"error": "Agent not found", "code": "404"}) == "Agent not found"
+        assert evals._error_text(None) == "The API didn't answer."
+
+    def test_only_so_many_issues_are_named(self):
+        issues = [{"path": [f"k{i}"], "message": "bad"} for i in range(7)]
+        text = evals._error_text({"error": "Invalid parameters", "err": {"issues": issues}})
+        assert "k4: bad" in text and "k5" not in text and text.endswith("and 2 more")
+
+    def test_one_run_refused_prints_them(self, api, scenario_file):
+        api.eval_run_create.return_value = None, ISSUES_ERROR
+        result = invoke("run", "a", scenario_file, "--param", "connectTimeoutSeconds=999")
+        assert result.exit_code == 3
+        assert "params.connectTimeoutSeconds: Number must be less than or equal to 120" in (
+            " ".join(result.output.split())
+        )
+
+    def test_runs_side_by_side_refused_print_them_and_no_follow_hint(self, api, tmp_path):
+        path = tmp_path / "calls.yaml"
+        path.write_text(TWO_SCENARIOS, encoding="utf-8")
+        api.eval_run_create.return_value = None, ISSUES_ERROR
+        result = invoke("run", "a", path, "--param", "connectTimeoutSeconds=999")
+        assert result.exit_code == 3
+        assert result.stdout.count("less than or equal to 120") == 2
+        # Nothing was created, so there's nothing to follow.
+        assert "eval list" not in result.stdout
+
+    def test_json_keeps_the_api_error_whole(self, api, scenario_file):
+        api.eval_run_create.return_value = None, ISSUES_ERROR
+        result = invoke("run", "a", scenario_file, "--json")
+        assert json.loads(result.stdout) == {"error": ISSUES_ERROR}
+
+
+class TestRefusedSubmissions:
+    @pytest.mark.parametrize("single", [True, False])
+    def test_judgments_refused_at_once_show_only_the_refusals(self, api, criteria_file, single):
+        refusal = {"error": "The scenario can't run: x", "code": "400"}
+        api.eval_run_create.return_value = None, refusal
+        sessions = [SESSION_ID] if single else [SESSION_ID, SECOND_SESSION_ID]
+        result = invoke("judge", "a", *sessions, "--criteria", criteria_file, "--wait")
+        assert result.exit_code == 3
+        assert "The scenario can't run: x" in result.stdout
+        # No run was created: no counts, timings, failure heading or hint to list them.
+        for absent in ("done", "Failures", "eval list", "0.0s"):
+            assert absent not in result.stdout, absent
+        api.eval_run_get.assert_not_awaited()
+
+
+class TestLogsHint:
+    def test_it_names_project_logs(self):
+        run = make_run(sessionId=SESSION_ID, serviceName="a")
+        assert evals._logs_command("a", run) == (
+            f"pipecat cloud project logs a --session-id {SESSION_ID}"
+        )
+
+    def test_an_environment_is_named_with_env(self):
+        run = make_run(
+            sessionId=SESSION_ID,
+            serviceName="shop--staging",
+            parentServiceName="shop",
+            environmentName="staging",
+        )
+        assert evals._logs_command("shop--staging", run) == (
+            f"pipecat cloud project logs shop --env staging --session-id {SESSION_ID}"
+        )
+
+
+class TestDurations:
+    def test_the_summary_is_the_runs_time_not_the_wait(self, api, sleeps, clock):
+        # Ended before the command began: the wait took no time, the run 4.3 s.
+        api.eval_run_get.return_value = (
+            make_run(
+                "completed",
+                "passed",
+                PASSED_RESULT,
+                startedAt="2026-11-07T10:00:00.000Z",
+                finishedAt="2026-11-07T10:00:04.330Z",
+            ),
+            None,
+        )
+        out = invoke("status", RUN_ID, "--agent", "a", "--wait").stdout
+        assert "(4330ms)" in out and "4.3s" in out and "0.0s" not in out
+
+    def test_a_span_needs_every_run_ended(self):
+        live = evals._Row("x", run=make_run("running", startedAt="2026-11-07T10:00:00.000Z"))
+        assert evals._span_seconds([live]) is None
+        a = evals._Row(
+            "a",
+            run=make_run(
+                startedAt="2026-11-07T10:00:00.000Z", finishedAt="2026-11-07T10:00:05.000Z"
+            ),
+        )
+        b = evals._Row(
+            "b",
+            run=make_run(
+                startedAt="2026-11-07T10:00:02.000Z", finishedAt="2026-11-07T10:00:09.500Z"
+            ),
+        )
+        assert evals._span_seconds([a, b]) == 9.5
+
+
+SESSION_FAILED_RESULT = {
+    "reason": "The agent didn't meet the scenario's goal: only a function call was made.",
+    "metrics": [
+        {"name": "courteous", "score": None, "passed": True, "reason": "no bot turn to judge"}
+    ],
+    "conversation": [{"role": "user", "content": "When do you close?"}],
+    "details": {
+        "kind": "simulation",
+        "turns": [],
+        "failures": [
+            {
+                "kind": "goal_not_met",
+                "reason": "only a function call was made.",
+                "turn": None,
+                "name": None,
+            }
+        ],
+        "goal": {"criterion": "the caller got an answer", "verdict": "no", "passed": False},
+    },
+}
+
+
+class TestResultDetails:
+    def test_a_goal_not_met_is_said_once_with_the_judges_line(self, api):
+        api.eval_run_get.return_value = (
+            judgment(status="completed", verdict="failed", result=SESSION_FAILED_RESULT),
+            None,
+        )
+        out = invoke("status", RUN_ID, "--agent", "a").stdout
+        assert out.count("only a function call was made.") == 1
+        assert "judge: no — the caller got an answer" in out
+        assert "goal_not_met" not in out
+
+    def test_an_unscored_metric_gives_its_reason_after_a_dash(self, api):
+        api.eval_run_get.return_value = (
+            judgment(status="completed", verdict="failed", result=SESSION_FAILED_RESULT),
+            None,
+        )
+        out = invoke("status", RUN_ID, "--agent", "a").stdout
+        assert "courteous: unscored — no bot turn to judge" in out
+
+    def test_verbose_shows_a_scripted_runs_checks(self, api):
+        result = {
+            "reason": "The agent passed the scenario.",
+            "metrics": [],
+            "conversation": [],
+            "details": {
+                "kind": "script",
+                "turns": [
+                    {
+                        "turn": 1,
+                        "status": "passed",
+                        "checks": [
+                            {"name": "llm_response", "passed": True, "matched": "We close at 8 PM."}
+                        ],
+                    },
+                    {
+                        "turn": 2,
+                        "status": "failed",
+                        "checks": [{"name": "llm_response", "passed": False, "reason": "No reply"}],
+                    },
+                ],
+                "failures": [],
+                "goal": None,
+            },
+        }
+        api.eval_run_get.return_value = make_run("completed", "passed", result), None
+        out = invoke("status", RUN_ID, "--agent", "a", "-v").stdout
+        assert "turn 1 ✓ llm_response: We close at 8 PM." in out
+        assert "turn 2 ✗ llm_response: No reply" in out
+        assert "No conversation to show." not in out
+
+
+class TestLabelsAndFields:
+    def test_run_and_status_label_a_scenario_the_same(self, api, scenario_file):
+        # The file's `name:` is "calls", its path calls.yaml: both commands say calls/book.
+        scenario_file.write_text(
+            SCENARIO.replace("name: calls", "name: elsewhere"), encoding="utf-8"
+        )
+        api.eval_run_get.return_value = (
+            make_run("completed", "passed", PASSED_RESULT, **ENDED),
+            None,
+        )
+        out = invoke("run", "a", scenario_file, "--wait").stdout
+        assert "calls/book" in out and "elsewhere" not in out
+        assert "calls/book" in invoke("status", RUN_ID, "--agent", "a").stdout
+
+    def test_a_live_run_shows_its_session_and_deadline_in_utc(self, api):
+        api.eval_run_get.return_value = make_run("running", sessionId=SESSION_ID), None
+        out = invoke("status", RUN_ID, "--agent", "a").stdout
+        assert SESSION_ID in out
+        assert "2026-11-07 10:00:00 UTC" in out and "2026-11-07 10:30:00 UTC" in out
+
+    def test_the_list_says_its_times_are_utc(self, api):
+        api.eval_runs_list.return_value = {"total_count": 1, "runs": [make_run()]}, None
+        assert "2026-11-07 10:00:00 UTC" in invoke("list", "a").stdout
+
+    def test_criteria_alone_left_out_of_a_run_are_named(self, api, tmp_path):
+        path = tmp_path / "calls.yaml"
+        path.write_text(SCENARIO + "  - name: rubric\n    success: Anything.\n", encoding="utf-8")
+        out = invoke("run", "a", path).stdout
+        assert "Left out rubric: criteria alone" in " ".join(out.split())
+
+    def test_json_help_doesnt_say_run(self):
+        for args in (["list", "--help"], ["cancel", "--help"]):
+            out = " ".join(runner.invoke(entrypoint_cli_typer, ["eval", *args]).stdout.split())
+            assert "Print the output as JSON" in out
+
+
+class TestIds:
+    @pytest.mark.parametrize("command", ["status", "cancel"])
+    def test_a_run_id_that_isnt_a_uuid_is_refused_before_any_request(self, api, command):
+        result = invoke(command, "nope", "--agent", "a")
+        assert result.exit_code == 3
+        assert "not a valid UUID" in result.output
+        api.eval_run_get.assert_not_awaited()
+        api.eval_run_cancel.assert_not_awaited()
+
+    def test_list_suite_takes_a_uuid(self, api):
+        result = invoke("list", "a", "--suite", "nope")
+        assert result.exit_code == 3 and "not a valid UUID" in result.output
+
+
+class TestListPastTheEnd:
+    def test_an_offset_past_every_run_says_how_many_there_are(self, api):
+        api.eval_runs_list.return_value = {"total_count": 659, "runs": []}, None
+        out = " ".join(invoke("list", "a", "--offset", "100000").stdout.split())
+        assert "No eval runs past the first 100000 on 'a': there are 659." in out
+
+    def test_an_agent_without_runs(self, api):
+        api.eval_runs_list.return_value = {"total_count": 0, "runs": []}, None
+        assert "No eval runs on 'a'." in invoke("list", "a").stdout

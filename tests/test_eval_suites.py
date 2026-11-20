@@ -487,8 +487,9 @@ class TestCreate:
         api.error_status = 400
         result = invoke("run", "agent", scenario_file)
         assert result.exit_code == 3
-        assert "can't be planned" in result.output
-        assert "repeat_too_large" in result.output
+        out = " ".join(result.output.split())
+        assert "The suite run wasn't started. A repeat of 99 is above the most allowed, 50." in out
+        assert "repeat_too_large" not in result.output
 
     def test_refusals_in_json_are_the_error_object(self, api, scenario_file):
         refusal = {
@@ -1525,3 +1526,137 @@ class TestApiClient:
             with pytest.raises(aiohttp.ClientResponseError):
                 await client._eval_request("GET", "http://x")
         assert says in client.error["error"]
+
+
+# ---- What the output says (from a run against staging) ----
+
+
+class TestPlanRefusals:
+    @pytest.mark.parametrize(
+        "refusal, text",
+        [
+            (
+                {"kind": "suite_not_found", "path": "nope.yaml"},
+                "The bundle revision has no suite file nope.yaml.",
+            ),
+            (
+                {"kind": "scenario_file_not_found", "path": "x.yaml"},
+                "The files have no scenario file x.yaml.",
+            ),
+            (
+                {"kind": "scenario_not_found", "path": "a.yaml", "name": "n"},
+                "a.yaml has no scenario named n.",
+            ),
+            (
+                {"kind": "scenario_not_runnable", "path": "a.yaml", "name": "rubric"},
+                "a.yaml:rubric holds criteria alone, so it can't run.",
+            ),
+            (
+                {"kind": "scenario_named_twice", "path": "a.yaml", "name": "n"},
+                "a.yaml:n is named twice",
+            ),
+            (
+                {"kind": "filter_not_in_plan", "path": "a.yaml", "name": "nope"},
+                "--scenario a.yaml:nope isn't one of the scenarios this suite runs.",
+            ),
+            (
+                {"kind": "repeat_too_large", "repeat": 99, "max": 50},
+                "A repeat of 99 is above the most allowed, 50.",
+            ),
+            (
+                {"kind": "concurrency_too_large", "concurrency": 25, "max": 20},
+                "A concurrency of 25 is above the most allowed, 20.",
+            ),
+            (
+                {"kind": "too_many_members", "members": 600, "max": 500},
+                "The suite run would have 600 members, more than the most allowed, 500.",
+            ),
+            ({"kind": "empty_plan"}, "The filters leave no scenario to run."),
+            (
+                {"kind": "plan_too_large", "part": "entries", "bytes": 70000, "maxBytes": 65536},
+                "its entries take 70000 bytes, more than the most allowed, 65536.",
+            ),
+        ],
+    )
+    def test_each_kind_is_a_sentence(self, api, scenario_file, refusal, text):
+        api.eval_suite_run_create.return_value = (
+            None,
+            {
+                "error": "The suite run can't be planned.",
+                "code": "EVAL-SUITE-PLAN-INVALID",
+                "refusal": refusal,
+            },
+        )
+        api.error_status = 400
+        result = invoke("run", "agent", scenario_file)
+        assert result.exit_code == 3
+        out = " ".join(result.output.split())
+        assert "The suite run wasn't started." in out and text in out
+        assert str(refusal["kind"]) not in out
+
+    def test_a_kind_this_doesnt_know_shows_the_api_words(self, api, scenario_file):
+        api.eval_suite_run_create.return_value = (
+            None,
+            {
+                "error": "The suite run can't be planned.",
+                "code": "EVAL-SUITE-PLAN-INVALID",
+                "refusal": {"kind": "something_new", "limit": 3},
+            },
+        )
+        api.error_status = 400
+        out = " ".join(invoke("run", "agent", scenario_file).output.split())
+        assert "can't be planned" in out and "kind: something_new, limit: 3" in out
+
+
+class TestSuiteFieldsAndIds:
+    def test_status_shows_the_filters(self, api):
+        api.eval_suite_run_get.return_value = (
+            ended(
+                filters={
+                    "kinds": ["script"],
+                    "scenarios": [{"path": "calls.yaml", "name": "book"}],
+                }
+            ),
+            None,
+        )
+        out = invoke("suite", "status", SUITE_ID).stdout
+        assert "Filters" in out and "script, calls.yaml:book" in out
+
+    def test_status_without_filters_has_no_filters_line(self, api):
+        assert "Filters" not in invoke("suite", "status", SUITE_ID).stdout
+
+    def test_times_say_they_are_utc(self, api):
+        out = invoke("suite", "status", SUITE_ID).stdout
+        assert "2026-11-13 10:00:00 UTC" in out and "2026-11-13 10:05:00 UTC" in out
+
+    @pytest.mark.parametrize("command", ["status", "cancel"])
+    def test_a_suite_run_id_that_isnt_a_uuid_is_refused_before_any_request(self, api, command):
+        result = invoke("suite", command, "nope")
+        assert result.exit_code == 3 and "not a valid UUID" in result.output
+        api.eval_suite_run_get.assert_not_awaited()
+        api.eval_suite_run_cancel.assert_not_awaited()
+
+
+class TestPushSameFiles:
+    def test_files_the_same_as_the_latest_revisions_are_said_so(self, api, bundle_dir):
+        # The fixture's latest revision (2) and the appended one share a digest.
+        out = " ".join(invoke("bundle", "push", "calls", bundle_dir, "--yes").stdout.split())
+        assert "Published calls@3" in out
+        assert "Its files are the same as revision 2's." in out
+
+    def test_new_files_say_nothing_of_it(self, api, bundle_dir):
+        changed = make_revision(3)
+        changed["digest"] = "sha256+jcs-v1:" + "1" * 64
+        api.eval_bundle_revision_append.return_value = changed, None
+        out = invoke("bundle", "push", "calls", bundle_dir, "--yes").stdout
+        assert "the same as revision" not in out
+
+    def test_json_help_doesnt_say_run(self):
+        out = runner.invoke(entrypoint_cli_typer, ["eval", "bundle", "push", "--help"]).stdout
+        assert "Print the output as JSON" in " ".join(out.split())
+
+
+def test_one_planned_member_is_one_member(api, scenario_file):
+    api.eval_suite_run_create.return_value = make_suite(counts=counts(planned=1, pending=1)), None
+    out = " ".join(invoke("run", "agent", scenario_file, "--no-wait").stdout.split())
+    assert "accepted: 1 member on 'agent'." in out

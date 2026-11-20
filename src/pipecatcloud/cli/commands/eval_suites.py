@@ -32,7 +32,7 @@ import re
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, NoReturn
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import typer
 from rich.console import Group
@@ -43,7 +43,7 @@ from rich.table import Table
 from rich.text import Text
 
 from pipecatcloud._utils.async_utils import synchronizer
-from pipecatcloud._utils.console_utils import console, format_timestamp, stdin_is_interactive
+from pipecatcloud._utils.console_utils import console, stdin_is_interactive
 from pipecatcloud._utils.eval_bundle import BundleError, collect_directory
 from pipecatcloud.api import _parse_retry_after
 from pipecatcloud.cli import PIPECAT_CLI_NAME
@@ -73,12 +73,14 @@ from pipecatcloud.cli.commands.evals import (
     _login_check,
     _org,
     _print,
+    _print_api_error,
     _print_details,
     _Row,
     _run_label,
     _table,
     _use_json,
     _wait_limit,
+    _when,
     exit_code_for,
 )
 
@@ -282,8 +284,6 @@ async def _wait_for_suite(org: str, suite: dict, on_update) -> dict:
                 continue
             failures += 1
             if base.permanent_failure(error) or failures >= POLL_MAX_CONSECUTIVE_ERRORS:
-                if not console.json_output:
-                    base.API.print_error()
                 _check(None, error or {"error": "Lost contact with the API.", "code": "CLI-POLL"})
             retry_after = _parse_retry_after(base.API.error_retry_after)
             if retry_after is not None:
@@ -545,8 +545,6 @@ async def _create(
         if not retryable or attempt == CREATE_ATTEMPTS:
             if unanswered:
                 _fail(f"The API didn't answer. {lost}", code="CLI-SUBMISSION")
-            if not console.json_output:
-                base.API.print_error()
             _check(None, error or {"error": "The API didn't answer.", "code": "CLI-SUBMISSION"})
         wait = retry_after if retry_after is not None else POLL_START_SECONDS
         await asyncio.sleep(min(wait, POLL_RETRY_AFTER_CAP_SECONDS))
@@ -560,9 +558,51 @@ _PLAN_CODE = "EVAL-SUITE-PLAN-INVALID"
 _SUITES_OFF_CODES = ("EVAL-SUITES-NOT-AVAILABLE", "EVAL-BUNDLES-NOT-AVAILABLE")
 
 
+def _plan_refusal_text(refusal: dict) -> str | None:
+    """Why the API couldn't plan a suite run (its `refusal`), in a sentence, or None for a
+    kind this doesn't know."""
+    kind = refusal.get("kind")
+    path, name = refusal.get("path"), refusal.get("name")
+    ref = f"{path}:{name}"
+    texts = {
+        "suite_not_found": f"The bundle revision has no suite file {path}.",
+        "scenario_file_not_found": f"The files have no scenario file {path}.",
+        "scenario_not_found": f"{path} has no scenario named {name}.",
+        "scenario_not_runnable": (
+            f"{ref} holds criteria alone, so it can't run. Judge finished sessions against "
+            f"it with `{PIPECAT_CLI_NAME} eval judge`."
+        ),
+        "scenario_named_twice": f"{ref} is named twice among the scenarios to run.",
+        "filter_not_in_plan": f"--scenario {ref} isn't one of the scenarios this suite runs.",
+        "repeat_too_large": (
+            f"A repeat of {refusal.get('repeat')} is above the most allowed, {refusal.get('max')}."
+        ),
+        "concurrency_too_large": (
+            f"A concurrency of {refusal.get('concurrency')} is above the most allowed, "
+            f"{refusal.get('max')}."
+        ),
+        "too_many_members": (
+            f"The suite run would have {refusal.get('members')} members, more than the most "
+            f"allowed, {refusal.get('max')}."
+        ),
+        "empty_plan": "The filters leave no scenario to run.",
+        "plan_too_large": (
+            f"The suite run is too large to store: its "
+            f"{'entries take' if refusal.get('part') == 'entries' else 'request takes'} "
+            f"{refusal.get('bytes')} bytes, more than the most allowed, {refusal.get('maxBytes')}."
+        ),
+    }
+    return texts.get(str(kind))
+
+
 def _print_plan_refusal(error: dict) -> None:
-    _print(f"[red]{escape(str(error.get('error') or 'The suite run was refused.'))}[/red]")
     refusal = error.get("refusal")
+    text = _plan_refusal_text(refusal) if isinstance(refusal, dict) else None
+    if text is not None:
+        _print("[red]The suite run wasn't started.[/red]")
+        _print(f"  {escape(text)}")
+        return
+    _print(f"[red]{escape(str(error.get('error') or 'The suite run was refused.'))}[/red]")
     if isinstance(refusal, dict) and refusal:
         detail = ", ".join(f"{k}: {v}" for k, v in refusal.items())
         _print(f"  [dim]{escape(detail)}[/dim]")
@@ -624,10 +664,11 @@ async def run_suite(
     if console.json_output:
         console.output_json(suite)
     else:
-        counts = suite.get("counts") or {}
+        planned = _count(suite.get("counts") or {}, "planned")
         _print(
             f"Suite run [bold]{escape(str(suite.get('id')))}[/bold] accepted: "
-            f"{_count(counts, 'planned')} members on [bold]'{escape(agent)}'[/bold]."
+            f"{planned} {'member' if planned == 1 else 'members'} on "
+            f"[bold]'{escape(agent)}'[/bold]."
         )
         _print(f"Follow it: [bold]{_suite_status_command(str(suite.get('id')))}[/bold]")
     raise typer.Exit(EXIT_PASSED)
@@ -645,8 +686,6 @@ async def inline_suites_available(org: str) -> bool:
         return data.get("suites") is True and data.get("bundles") is True
     if base.API.error_status == 404:
         return False
-    if not console.json_output:
-        base.API.print_error()
     _check(None, error)
     return False
 
@@ -661,6 +700,20 @@ def _judging_version(suite: dict) -> str | None:
     if not any(_count(counts, k) for k in ("passed", "failed", "skipped")):
         return f"{fingerprint} (no member judged yet)"
     return str(fingerprint)
+
+
+def _filters_text(suite: dict) -> str | None:
+    """What a suite run's filters kept of its plan: kinds, then scenarios as PATH:NAME."""
+    filters = suite.get("filters")
+    if not isinstance(filters, dict):
+        return None
+    parts = [str(k) for k in filters.get("kinds") or []]
+    parts += [
+        f"{s.get('path')}:{s.get('name')}"
+        for s in filters.get("scenarios") or []
+        if isinstance(s, dict)
+    ]
+    return ", ".join(parts) or None
 
 
 def _render_suite(suite: dict) -> None:
@@ -681,23 +734,22 @@ def _render_suite(suite: dict) -> None:
             ("Status", status),
             ("Verdict", verdict),
             ("Target", _target(suite)),
+            ("Filters", _filters_text(suite)),
             ("Revision", suite.get("bundleRevisionId")),
             ("Members", str(_count(suite.get("counts") or {}, "planned"))),
             ("Repeat", _text(_effective(suite, "repeat"))),
             ("Concurrency", _text(_effective(suite, "concurrency"))),
             ("Judging version", _judging_version(suite)),
-            ("Created", format_timestamp(created) if created else None),
+            ("Created", _when(created)),
             (
                 "Cancel requested",
-                format_timestamp(cancel_requested)
-                if cancel_requested and status != "cancelled"
-                else None,
+                _when(cancel_requested) if status != "cancelled" else None,
             ),
             (
                 "Deadline",
-                format_timestamp(deadline) if deadline and _suite_is_live(suite) else None,
+                _when(deadline) if _suite_is_live(suite) else None,
             ),
-            ("Finished", format_timestamp(finished) if finished else None),
+            ("Finished", _when(finished)),
         ]
     )
     entries = [e for e in suite.get("entries") or [] if isinstance(e, dict)]
@@ -897,7 +949,9 @@ async def suite_run(
 )
 @synchronizer.create_blocking
 async def suite_status(
-    suite_run_id: str = typer.Argument(..., help="The suite run's ID", show_default=False),
+    suite_run_uuid: UUID = typer.Argument(
+        ..., metavar="SUITE_RUN_ID", help="The suite run's ID", show_default=False
+    ),
     wait: bool = typer.Option(
         False, "--wait", help="Wait for the suite run to end and exit with its verdict"
     ),
@@ -908,6 +962,7 @@ async def suite_status(
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
+    suite_run_id = str(suite_run_uuid)
 
     data, error = await base._api().eval_suite_run_get(org, suite_run_id)
     suite = _check(data, error)
@@ -974,7 +1029,7 @@ async def suite_list(
                 f"{_count(counts, 'terminal')}/{_count(counts, 'planned')}",
                 _count(counts, "passed"),
                 _count(counts, "failed"),
-                format_timestamp(s["createdAt"]) if s.get("createdAt") else None,
+                _when(s.get("createdAt")),
             )
         )
     _table(["ID", "Agent", "Status", "Verdict", "Done", "Passed", "Failed", "Created"], rows)
@@ -994,13 +1049,16 @@ async def suite_list(
 )
 @synchronizer.create_blocking
 async def suite_cancel(
-    suite_run_id: str = typer.Argument(..., help="The suite run's ID", show_default=False),
+    suite_run_uuid: UUID = typer.Argument(
+        ..., metavar="SUITE_RUN_ID", help="The suite run's ID", show_default=False
+    ),
     organization: str = _ORG_OPTION,
     output_json: bool = _JSON_OPTION,
 ):
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
+    suite_run_id = str(suite_run_uuid)
 
     data, error = await base.API.bubble_error().eval_suite_run_cancel(org, suite_run_id)
     if not data and base.API.error_status == 409:
@@ -1016,10 +1074,8 @@ async def suite_cancel(
                 f"{escape(str(ended.get('status')))}{escape(tail)}.[/yellow]"
             )
         else:
-            base.API.print_error()
+            _print_api_error(error)
         raise typer.Exit(EXIT_ERROR)
-    if not data and not console.json_output:
-        base.API.print_error()
     suite = _check(data, error)
     if console.json_output:
         console.output_json(suite)
@@ -1244,6 +1300,12 @@ async def bundle_push(
         f"[green]✓[/green] Published [bold]{escape(name)}@{revision.get('number')}[/bold] "
         f"[dim]({escape(str(revision.get('id')))}, checked: {escape(str(revision.get('coverage')))})[/dim]"
     )
+    previous = (existing or {}).get("latestRevision") or {}
+    if previous.get("digest") and previous.get("digest") == revision.get("digest"):
+        _print(
+            f"[yellow]Its files are the same as revision {escape(str(previous.get('number')))}'s."
+            "[/yellow]"
+        )
     _print_catalog(revision.get("catalog"))
     _print_ignored(revision)
     suites = [s for s in (revision.get("catalog") or {}).get("suites") or [] if isinstance(s, dict)]
@@ -1286,7 +1348,7 @@ async def bundle_list(
                 b.get("name"),
                 (b.get("latestRevision") or {}).get("number"),
                 (b.get("latestRevision") or {}).get("coverage"),
-                format_timestamp(b["updatedAt"]) if b.get("updatedAt") else None,
+                _when(b.get("updatedAt")),
                 b.get("id"),
             )
             for b in bundles
@@ -1334,7 +1396,7 @@ async def bundle_show(
             ("Checked", revision.get("coverage")),
             ("Checked in", checker.get("region")),
             ("Pipecat", checker.get("harnessVersion")),
-            ("Created", format_timestamp(created) if created else None),
+            ("Created", _when(created)),
         ]
     )
     _print()

@@ -204,17 +204,52 @@ def _org(organization: str | None) -> str:
 
 
 def _api():
-    # In json mode the error object is the only thing on stdout, so the client
-    # must not print its own rendering of it.
-    return API.bubble_error() if console.json_output else API
+    # The client doesn't print a failure itself: `_check` does, with the
+    # request's problems the API names, or as the error object in json mode.
+    return API.bubble_error()
+
+
+# The most of a refused request's problems (`err.issues`) shown in its message.
+MAX_ISSUES_SHOWN = 5
+
+
+def _error_text(error: Any) -> str:
+    """An API error's message, followed by the problems with the request that the API
+    named in it (`err.issues`, each a field's path and what's wrong with it)."""
+    if not isinstance(error, dict):
+        return "The API didn't answer."
+    message = str(error.get("error") or error.get("message") or "The API didn't answer.")
+    err = error.get("err")
+    issues = err.get("issues") if isinstance(err, dict) else None
+    named = []
+    for issue in issues if isinstance(issues, list) else []:
+        if isinstance(issue, dict) and issue.get("message"):
+            path = ".".join(str(part) for part in issue.get("path") or [])
+            named.append(f"{path}: {issue['message']}" if path else str(issue["message"]))
+    if not named:
+        return message
+    more = len(named) - MAX_ISSUES_SHOWN
+    shown = "; ".join(named[:MAX_ISSUES_SHOWN]) + (f"; and {more} more" if more > 0 else "")
+    return f"{message.rstrip('.')}: {shown}"
+
+
+def _print_api_error(error: Any) -> None:
+    """An API failure as the client prints one, with the problems the API named."""
+    if isinstance(error, dict) and error.get("code", "400") == "401":
+        console.unauthorized()
+    elif isinstance(error, dict):
+        console.api_error({**error, "error": _error_text(error)})
+    else:
+        console.api_error(error)
 
 
 def _check(data: Any, error: Any) -> dict:
-    """The data of an API call, or the exit for its failure."""
+    """The data of an API call, or the exit for its failure, printed here."""
     if error:
         if console.json_output:
             console.output_json({"error": error})
-        # Otherwise the client has printed it.
+        else:
+            _print_api_error(error)
         raise typer.Exit(EXIT_ERROR)
     if data is None:
         _fail("The request failed before the API answered. Check your connection.")
@@ -261,8 +296,20 @@ def _conversation_command(agent: str, run_id: str) -> str:
     return f"{PIPECAT_CLI_NAME} eval status {run_id} --agent {agent} -v"
 
 
-def _logs_command(agent: str, session_id: str) -> str:
-    return f"{PIPECAT_CLI_NAME} agent logs {agent} --session-id {session_id}"
+def _logs_command(agent: str, run: dict) -> str:
+    """Where a run's agent session logged: an environment's under its project's name."""
+    session = f"--session-id {run['sessionId']}"
+    environment, project = run.get("environmentName"), run.get("parentServiceName")
+    if environment and project:
+        return f"{PIPECAT_CLI_NAME} project logs {project} --env {environment} {session}"
+    return f"{PIPECAT_CLI_NAME} project logs {run.get('serviceName') or agent} {session}"
+
+
+def _when(timestamp: Any) -> str | None:
+    """A time the API gave, as the tables show it: in UTC, and saying so."""
+    return (
+        f"{format_timestamp(timestamp)} UTC" if isinstance(timestamp, str) and timestamp else None
+    )
 
 
 def _parse_params(items: list[str]) -> dict[str, int | float]:
@@ -392,17 +439,6 @@ def _runnable(data: Any, name: str) -> bool:
     return "turns" in view or "persona" in view
 
 
-def _service(block: Any, default: str | None = None, *, second: str) -> str | None:
-    """A service block as `pipecat eval` names it: service/voice, or factory:path."""
-    if not isinstance(block, dict):
-        return default
-    if block.get("factory"):
-        return f"factory:{block['factory']}"
-    service = block.get("service") or default
-    other = block.get(second)
-    return f"{service}/{other}" if service and other else service
-
-
 # `pipecat eval`'s palette for a scenario's config lines: the labels bold, the
 # separators dim, and each keyword one hue per category; values uncolored.
 _CFG_MODALITY = "yellow"
@@ -418,7 +454,8 @@ def _config_lines(view: dict) -> list[tuple[str, list[_Segment] | str]]:
     """The user, judge and goal lines `pipecat eval` prints for a scenario.
 
     The caller and the judge are hosted on Pipecat Cloud, so they're shown as
-    such: a scenario's own simulator: and judge.eval: aren't what runs there.
+    such: a scenario's own simulator:, judge.eval:, user.speech: and
+    judge.transcription: services aren't what runs there.
     """
     simulated = "persona" in view and "turns" not in view
     user_block, judge_block = view.get("user"), view.get("judge")
@@ -428,9 +465,7 @@ def _config_lines(view: dict) -> list[tuple[str, list[_Segment] | str]]:
     user_mode = str(user.get("modality") or "text")
     user_segs: list[_Segment] = [("modality", user_mode, _CFG_MODALITY)]
     if user_mode == "audio":
-        speech = _service(user.get("speech"), second="voice")
-        if speech:
-            user_segs.append(("speech", speech, _CFG_SERVICE))
+        user_segs.append(("speech", "hosted", _CFG_SERVICE))
     if simulated:
         user_segs.append(("persona", "hosted", _CFG_EVAL))
         for key in ("max_turns", "max_duration_s", "max_silence_s"):
@@ -440,8 +475,7 @@ def _config_lines(view: dict) -> list[tuple[str, list[_Segment] | str]]:
     judge_mode = str(judge.get("modality") or "text")
     judge_segs: list[_Segment] = [("modality", judge_mode, _CFG_MODALITY)]
     if judge_mode == "audio":
-        transcription = _service(judge.get("transcription"), "moonshine", second="model")
-        judge_segs.append(("transcription", str(transcription), _CFG_SERVICE))
+        judge_segs.append(("transcription", "hosted", _CFG_SERVICE))
     judge_segs.append(("eval", "hosted", _CFG_EVAL))
 
     lines: list[tuple[str, list[_Segment] | str]] = [("user", user_segs), ("judge", judge_segs)]
@@ -531,7 +565,7 @@ class _Row:
 
     @property
     def error_message(self) -> str:
-        return str((self.error or {}).get("error") or "The API didn't answer.")
+        return _error_text(self.error)
 
     def as_json(self) -> dict[str, Any]:
         """Keep server run objects intact; unacknowledged submissions have no run ID."""
@@ -582,6 +616,19 @@ def _summary_text(rows: list[_Row], elapsed: float) -> str:
     return f"  {passed}/{total} passed  ·  {done}/{total} done  ·  {_fmt_seconds(elapsed)}"
 
 
+def _span_seconds(rows: list[_Row]) -> float | None:
+    """How long the runs took together by the server's clock, as each row's time is: from
+    the first leaving the queue to the last ending. None while one hasn't ended, or
+    when a run doesn't say."""
+    runs = [r.run for r in rows if r.run is not None]
+    begun = [_parse_time(r.get("startedAt")) or _parse_time(r.get("createdAt")) for r in runs]
+    ended = [_parse_time(r.get("finishedAt")) for r in runs]
+    if not runs or None in begun or None in ended:
+        return None
+    span = (max(e for e in ended if e) - min(b for b in begun if b)).total_seconds()
+    return span if span >= 0 else None
+
+
 class _RunsView:
     """The runs as `pipecat eval suite` shows them, redrawn on every refresh.
 
@@ -603,6 +650,10 @@ class _RunsView:
         for row in self.rows:
             grid.add_row(*_row_cells(row, self.agent))
         elapsed = (self.final if self.final is not None else _monotonic()) - self.started
+        if self.final is not None:
+            # Once they've all ended, the time they took, not how long this waited.
+            span = _span_seconds(self.rows)
+            elapsed = span if span is not None else elapsed
         return Group(grid, Text(""), Text(_summary_text(self.rows, elapsed), style="bold"))
 
 
@@ -683,6 +734,25 @@ def _print_conversation(
             _print(f"{indent}[{color}]{escape(speaker)}:[/{color}] {content}")
 
 
+def _print_turn_checks(turns: list[dict], indent: str = "      ") -> None:
+    """A scripted run's turns and the checks on each: what matched, or why not."""
+    for turn in turns:
+        if not isinstance(turn, dict):
+            continue
+        for check in turn.get("checks") or []:
+            if not isinstance(check, dict):
+                continue
+            mark = "[green]✓[/green]" if check.get("passed") else "[red]✗[/red]"
+            if check.get("matched") is not None:
+                said = f"{escape(_shorten(str(check['matched']), 100))}"
+            else:
+                said = f"[dim]{escape(str(check.get('reason') or ''))}[/dim]"
+            _print(
+                f"{indent}[dim]turn {escape(str(turn.get('turn')))}[/dim] {mark} "
+                f"[cyan]{escape(str(check.get('name')))}:[/cyan] {said}".rstrip()
+            )
+
+
 def _print_details(row: _Row, agent: str, verbose: bool) -> None:
     """A run and what decided it, as `pipecat eval` lists a failure: its line, then a
     bullet for each thing that went wrong, or that the judge weighed."""
@@ -698,10 +768,16 @@ def _print_details(row: _Row, agent: str, verbose: bool) -> None:
     _print(f"  {_mark(run)} {escape(agent)} [cyan]{escape(row.label)}[/cyan]")
     bullet = "[green]•[/green]" if row.passed else "[red]•[/red]"
     if verbose:
-        _print_conversation(
-            result.get("conversation") or [],
-            unavailable=result.get("conversationUnavailable") is True,
-        )
+        conversation = result.get("conversation") or []
+        turns = details.get("turns") if details.get("kind") == "script" else None
+        # A scripted run keeps no conversation unless it was captured; its turns'
+        # checks, below, say what the agent replied.
+        if conversation or not turns or result.get("conversationUnavailable") is True:
+            _print_conversation(
+                conversation, unavailable=result.get("conversationUnavailable") is True
+            )
+        if turns:
+            _print_turn_checks(turns)
         _print()
     reason = result.get("reason")
     if reason and not row.passed:
@@ -715,6 +791,9 @@ def _print_details(row: _Row, agent: str, verbose: bool) -> None:
             f"{escape(str(goal['criterion']))}"
         )
     for f in details.get("failures") or []:
+        if f.get("kind") == "goal_not_met" and goal.get("criterion"):
+            # The reason and the judge's line above already say it.
+            continue
         turn = f"turn {escape(str(f['turn']))} " if f.get("turn") is not None else ""
         name = f"{escape(str(f['name']))} " if f.get("name") else ""
         _print(
@@ -727,8 +806,12 @@ def _print_details(row: _Row, agent: str, verbose: bool) -> None:
         scored, failed = _metric_turns(str(m.get("name")), details)
         # Turn counts when the metric was judged turn by turn; otherwise its reason,
         # such as a measure's `longest reply 39 words, at most 60`.
-        detail = f"{scored - len(failed)}/{scored} turns" if scored else m.get("reason")
-        tail = f" [dim]{escape(str(detail))}[/dim]" if detail else ""
+        if scored:
+            tail = f" [dim]{scored - len(failed)}/{scored} turns[/dim]"
+        elif m.get("reason"):
+            tail = f" [dim]— {escape(str(m['reason']))}[/dim]"
+        else:
+            tail = ""
         _print(
             f"      [{color}]•[/{color}] [cyan]{escape(str(m.get('name')))}:[/cyan] "
             f"[{color}]{_score(m)}[/{color}]{tail}"
@@ -751,7 +834,7 @@ def _print_details(row: _Row, agent: str, verbose: bool) -> None:
     run_id = str(run.get("id"))
     _print(f"      [dim]run:  {_conversation_command(agent, run_id)}[/dim]")
     if run.get("sessionId"):
-        _print(f"      [dim]logs: {_logs_command(agent, str(run['sessionId']))}[/dim]")
+        _print(f"      [dim]logs: {escape(_logs_command(agent, run))}[/dim]")
 
 
 def _report(rows: list[_Row], agent: str, verbose: bool, *, every: bool = False) -> None:
@@ -774,7 +857,7 @@ def _report(rows: list[_Row], agent: str, verbose: bool, *, every: bool = False)
     if len(rows) == 1 and rows[0].run is not None:
         if not (every or verbose):
             _print(f"  run: {_conversation_command(agent, str(rows[0].run.get('id')))}")
-    else:
+    elif any(r.run is not None for r in rows):
         _print(f"  runs: {PIPECAT_CLI_NAME} eval list {agent}")
 
 
@@ -804,12 +887,13 @@ def _render_run(run: dict, agent: str, verbose: bool = False) -> None:
                 ("Run", run_id),
                 ("Agent", agent),
                 ("Kind", run.get("kind")),
-                ("Session", run.get("sessionId") if run.get("kind") == "session" else None),
+                ("Session", run.get("sessionId")),
                 ("Status", run.get("status")),
                 ("Scenario", scenario),
                 ("Judging version", executor.get("fingerprint")),
                 ("Executor build", executor.get("build")),
-                ("Created", format_timestamp(run["createdAt"]) if run.get("createdAt") else None),
+                ("Created", _when(run.get("createdAt"))),
+                ("Deadline", _when(run.get("deadlineAt"))),
             ]
         )
         _print(
@@ -867,8 +951,6 @@ async def _wait_for_end(org: str, agent: str, runs: list[dict], on_update) -> li
                     continue
                 failures[i] += 1
                 if permanent_failure(error) or failures[i] >= POLL_MAX_CONSECUTIVE_ERRORS:
-                    if not console.json_output:
-                        API.print_error()
                     _check(
                         None, error or {"error": "Lost contact with the API.", "code": "CLI-POLL"}
                     )
@@ -1036,8 +1118,13 @@ async def _follow(org: str, agent: str, rows: list[_Row], verbose: bool, as_list
         console.output_json([r.as_json() for r in rows] if as_list else rows[0].as_json())
     else:
         if not console.rich_output:
+            span = _span_seconds(rows)
             _print()
-            _print(_summary_text(rows, (view.final or _monotonic()) - started))
+            _print(
+                _summary_text(
+                    rows, span if span is not None else (view.final or _monotonic()) - started
+                )
+            )
         _report(rows, agent, verbose)
     raise typer.Exit(_exit_code(rows))
 
@@ -1084,7 +1171,9 @@ async def _submit_runs(
     except (KeyboardInterrupt, asyncio.CancelledError):
         _interrupted_starting(agent, rows, as_list)
 
-    if wait:
+    # Nothing to wait for when every request was refused: no run was created, so
+    # the refusals are all there is to show.
+    if wait and any(r.run is not None for r in rows):
         await _follow(org, agent, rows, verbose, as_list)
 
     if console.json_output:
@@ -1107,7 +1196,10 @@ async def _submit_runs(
                 else f"[red]{escape(row.error_message)}[/red]"
             )
             _print(f"  {mark} {agent_cell} {label} {detail}")
-        _print(f"[dim]Follow them with [bold]{PIPECAT_CLI_NAME} eval list {agent}[/bold].[/dim]")
+        if any(r.run is not None for r in rows):
+            _print(
+                f"[dim]Follow them with [bold]{PIPECAT_CLI_NAME} eval list {agent}[/bold].[/dim]"
+            )
     if any(r.error is not None for r in rows):
         raise typer.Exit(EXIT_ERROR)
 
@@ -1118,7 +1210,7 @@ _ORG_OPTION = typer.Option(
     None, "--organization", "-o", help="Organization to use (defaults to active org)"
 )
 _JSON_OPTION = typer.Option(
-    False, "--json", help="Print the run as JSON on stdout (alias for the global --output json)"
+    False, "--json", help="Print the output as JSON on stdout (alias for the global --output json)"
 )
 _VERBOSE_OPTION = typer.Option(
     False,
@@ -1202,18 +1294,23 @@ async def run(
     names = _selected_scenarios(scenario, bundle.scenario_names, bundle.scenario_path)
 
     data = bundle.data if isinstance(bundle.data, dict) else {}
+    left_out: list[str] = []
     if not scenario:
         # The whole file is its scripts and simulations, as a suite of it runs
         # them: an entry with criteria alone judges finished sessions instead.
+        left_out = [n for n in names if not _runnable(data, n)]
         names = [n for n in names if _runnable(data, n)]
         if not names:
             _fail(
                 f"{bundle.scenario_path!r} holds no scripts or simulations to run. Judge "
                 f"finished sessions against its criteria with `{PIPECAT_CLI_NAME} eval judge`."
             )
-    file_name = data.get("name") if isinstance(data.get("name"), str) else None
-    file_label = file_name or Path(bundle.scenario_path).stem
-    labels = {name: f"{file_label}/{name}" for name in names}
+    # Labelled by the file's path, as the API knows a run's scenario, so a run
+    # reads the same here as in `status`, `list` and a suite run's members.
+    labels = {
+        name: _run_label({"scenarioPath": bundle.scenario_path, "scenarioName": name})
+        for name in names
+    }
 
     # Where the organization has suite runs, the file's scenarios run as one,
     # which takes no --param settings.
@@ -1231,6 +1328,11 @@ async def run(
 
     if wait and not console.json_output:
         _print_scenario_header([(labels[n], _scenario_view(data, n)) for n in names])
+    if left_out and not console.json_output:
+        _print(
+            f"[dim]Left out {', '.join(left_out)}: criteria alone, for judging finished "
+            f"sessions with `{PIPECAT_CLI_NAME} eval judge`.[/dim]\n"
+        )
 
     if as_suite:
         suite_body: dict[str, Any] = {"files": bundle.files, "scenarioPath": bundle.scenario_path}
@@ -1336,8 +1438,7 @@ async def judge(
     ):
         _fail("--criteria requires exactly one named entry under scenarios:.")
     name = names[0]
-    file_name = data.get("name") if isinstance(data.get("name"), str) else None
-    label = f"{file_name or Path(bundle.scenario_path).stem}/{name}"
+    label = _run_label({"scenarioPath": bundle.scenario_path, "scenarioName": name})
     if wait and not console.json_output:
         _print_judge_header(label, _scenario_view(data, name), sessions)
         _print_settings(agent, len(sessions))
@@ -1373,7 +1474,7 @@ async def judge(
 )
 @synchronizer.create_blocking
 async def status(
-    run_id: str = typer.Argument(..., help="The run's id", show_default=False),
+    run_uuid: UUID = typer.Argument(..., metavar="RUN_ID", help="The run's ID", show_default=False),
     agent: str = typer.Option(..., "--agent", "-a", help="Name of the agent the run is on"),
     wait: bool = typer.Option(
         False, "--wait", help="Wait for the run to end and exit with its verdict"
@@ -1385,6 +1486,7 @@ async def status(
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
+    run_id = str(run_uuid)
 
     data, error = await _api().eval_run_get(org, agent, run_id)
     run_data = _check(data, error)
@@ -1404,7 +1506,7 @@ async def list_runs(
     agent: str = typer.Argument(..., help="Name of the agent", show_default=False),
     limit: int = typer.Option(10, "--limit", "-n", min=1, max=200, help="How many runs to show"),
     offset: int = typer.Option(0, "--offset", min=0, help="How many of the newest runs to skip"),
-    suite: str = typer.Option(
+    suite_uuid: UUID = typer.Option(
         None, "--suite", help="Only the runs of this suite run's members", metavar="SUITE_RUN_ID"
     ),
     organization: str = _ORG_OPTION,
@@ -1413,6 +1515,7 @@ async def list_runs(
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
+    suite = str(suite_uuid) if suite_uuid else None
 
     paging: dict[str, Any] = {"limit": limit}
     if offset:
@@ -1427,9 +1530,16 @@ async def list_runs(
         return
 
     runs = result.get("runs") or []
+    total = result.get("total_count")
     if not runs:
         where = f" in suite run [bold]{escape(suite)}[/bold]" if suite else ""
-        _print(f"[dim]No eval runs on [bold]'{agent}'[/bold]{where}.[/dim]")
+        if offset and isinstance(total, int) and total > 0:
+            _print(
+                f"[dim]No eval runs past the first {offset} on [bold]'{agent}'[/bold]{where}: "
+                f"there are {total}.[/dim]"
+            )
+        else:
+            _print(f"[dim]No eval runs on [bold]'{agent}'[/bold]{where}.[/dim]")
         return
     _table(
         ["ID", "Status", "Verdict", "Kind", "Scenario", "Created"],
@@ -1440,12 +1550,11 @@ async def list_runs(
                 r.get("verdict"),
                 r.get("kind"),
                 r.get("scenarioName") or r.get("scenarioPath"),
-                format_timestamp(r["createdAt"]) if r.get("createdAt") else None,
+                _when(r.get("createdAt")),
             )
             for r in runs
         ],
     )
-    total = result.get("total_count")
     if isinstance(total, int) and total > offset + len(runs):
         _print(
             f"[dim]Showing {offset + 1} to {offset + len(runs)} of {total}. "
@@ -1460,7 +1569,7 @@ async def list_runs(
 )
 @synchronizer.create_blocking
 async def cancel(
-    run_id: str = typer.Argument(..., help="The run's id", show_default=False),
+    run_uuid: UUID = typer.Argument(..., metavar="RUN_ID", help="The run's ID", show_default=False),
     agent: str = typer.Option(..., "--agent", "-a", help="Name of the agent the run is on"),
     organization: str = _ORG_OPTION,
     output_json: bool = _JSON_OPTION,
@@ -1468,6 +1577,7 @@ async def cancel(
     _use_json(output_json)
     await _login_check()
     org = _org(organization)
+    run_id = str(run_uuid)
 
     data, error = await API.bubble_error().eval_run_cancel(org, agent, run_id)
     if not data and API.error_status == 409:
@@ -1483,10 +1593,8 @@ async def cancel(
                 f"{escape(str(ended.get('status')))}{escape(tail)}.[/yellow]"
             )
         else:
-            API.print_error()
+            _print_api_error(error)
         raise typer.Exit(EXIT_ERROR)
-    if not data and not console.json_output:
-        API.print_error()
     run_data = _check(data, error)
 
     if console.json_output:
