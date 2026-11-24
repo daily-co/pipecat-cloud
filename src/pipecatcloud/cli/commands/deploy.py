@@ -34,6 +34,7 @@ from pipecatcloud._utils.deploy_utils import (
     KrispVivaConfig,
     ResourcesConfig,
     ScalingParams,
+    auth_settings_turned_off,
     follow_git_deploy,
     interpret_deployment_status,
     parse_resources_option,
@@ -351,6 +352,17 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
                     f"{PIPECAT_CLI_NAME} project deploy {params.agent_name} --github[/bold].[/dim]"
                 )
                 raise typer.Exit(1)
+
+            # Said before the confirmation, so the deploy can still be called off.
+            turned_off = auth_settings_turned_off(params, data)
+            if turned_off:
+                live.stop()
+                for key in turned_off:
+                    console.print(
+                        f"[yellow]Warning: agent '{params.agent_name}' has {key} = \"token\", "
+                        f"and pcc-deploy.toml does not set {key}, so this deploy resets it to "
+                        f'"none". To keep it, add {key} = "token" to pcc-deploy.toml.[/yellow]'
+                    )
 
             if not force:
                 live.stop()

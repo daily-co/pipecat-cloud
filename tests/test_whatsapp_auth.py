@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pipecatcloud._utils.deploy_utils import (
     DeployConfigParams,
+    auth_settings_turned_off,
     load_deploy_config_file,
     whatsapp_auth_unconfirmed,
 )
@@ -217,13 +218,105 @@ class TestDeployWarning:
         assert mock_api.agent.await_count == 2
 
 
-class TestRefusedByTheRegion:
-    """A 4xx with a message from the API (the region's operator does not support
-    the setting yet) is shown as the API worded it, and the deploy fails."""
+class TestTurnedOffCheck:
+    def _params(self, **auth):
+        return DeployConfigParams(agent_name="a", image="t:latest", **auth)
+
+    @pytest.mark.parametrize(
+        ("agent", "expected"),
+        [
+            ({"whatsappAuth": "token"}, ["whatsapp_auth"]),
+            ({"websocketAuth": "token"}, ["websocket_auth"]),
+            (
+                {"websocketAuth": "token", "whatsappAuth": "token"},
+                ["websocket_auth", "whatsapp_auth"],
+            ),
+        ],
+    )
+    def test_token_left_out_is_turned_off(self, agent, expected):
+        assert auth_settings_turned_off(self._params(), agent) == expected
+
+    @pytest.mark.parametrize("value", ["token", "none"])
+    def test_setting_in_the_toml_is_kept_as_written(self, value):
+        params = self._params(whatsapp_auth=value, websocket_auth=value)
+        agent = {"whatsappAuth": "token", "websocketAuth": "token"}
+        assert auth_settings_turned_off(params, agent) == []
+
+    @pytest.mark.parametrize(
+        "agent",
+        [
+            None,  # no existing agent
+            {},
+            {"name": "a"},  # an API that doesn't report the settings
+            {"whatsappAuth": "none", "websocketAuth": "none"},
+            {"whatsappAuth": None},
+        ],
+    )
+    def test_nothing_on_is_nothing_turned_off(self, agent):
+        assert auth_settings_turned_off(self._params(), agent) == []
+
+
+class TestRedeployWarning:
+    """A redeploy from a pcc-deploy.toml without the key warns before the
+    confirmation, while the deploy can still be called off."""
+
+    async def _run(self, deploy_flow, agent, force=True, **auth):
+        mock_api, mock_console = deploy_flow
+        mock_api.agent = AsyncMock(side_effect=[(agent, None), _StopPoll()])
+        mock_api.deploy = AsyncMock(
+            return_value=({"status": "OK", "service": {"whatsappAuth": "none"}}, None)
+        )
+        params = DeployConfigParams(agent_name="my-agent", image="test:latest", **auth)
+        try:
+            await _deploy(params, "test-org", force=force)
+        except (_StopPoll, typer.Exit):
+            pass
+        return mock_api, mock_console
+
+    @staticmethod
+    def _resets(mock_console) -> list[str]:
+        return [w for w in _warnings(mock_console) if "resets it" in w]
+
+    @pytest.mark.asyncio
+    async def test_warns_when_the_toml_drops_token(self, deploy_flow):
+        _, console = await self._run(deploy_flow, {"name": "my-agent", "whatsappAuth": "token"})
+        (warning,) = self._resets(console)
+        assert 'add whatsapp_auth = "token"' in warning
+
+    @pytest.mark.asyncio
+    async def test_warns_before_asking_to_confirm(self, deploy_flow):
+        order = []
+        _, console = deploy_flow
+        console.print.side_effect = lambda *a, **k: order.append("warn")
+        with patch(
+            "pipecatcloud.cli.commands.deploy.typer.confirm",
+            side_effect=lambda *a, **k: order.append("confirm") or False,
+        ):
+            mock_api, _ = await self._run(
+                deploy_flow, {"name": "my-agent", "whatsappAuth": "token"}, force=False
+            )
+        assert order == ["warn", "confirm"]
+        mock_api.deploy.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_warning_when_the_toml_keeps_token(self, deploy_flow):
+        _, console = await self._run(
+            deploy_flow, {"name": "my-agent", "whatsappAuth": "token"}, whatsapp_auth="token"
+        )
+        assert self._resets(console) == []
+
+    @pytest.mark.asyncio
+    async def test_no_warning_for_an_agent_without_token(self, deploy_flow):
+        _, console = await self._run(deploy_flow, {"name": "my-agent", "whatsappAuth": "none"})
+        assert self._resets(console) == []
+
+
+class TestRefusedByTheApi:
+    """A deploy the API refuses with a message fails, showing the API's wording."""
 
     @pytest.mark.asyncio
     async def test_api_message_is_shown(self, capsys):
-        message = "WhatsApp token auth is not supported in this region yet"
+        message = 'whatsappAuth: Invalid option: expected one of "none"|"token"'
         client = _API(token="test-token", is_cli=True)
 
         async def refused(self, method, url, **kwargs):

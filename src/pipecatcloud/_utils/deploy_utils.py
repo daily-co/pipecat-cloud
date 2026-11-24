@@ -455,8 +455,9 @@ class DeployConfigParams:
     force_redeploy: bool = False
     websocket_auth: str | None = None
     # How the agent's WhatsApp webhook authenticates callers: "none" or "token"
-    # (the org's public API key). None leaves the setting to the API's default
-    # and keeps the field out of the request.
+    # (the org's public API key). None keeps the field out of the request, and
+    # the API then applies its default, "none". On a deploy of an existing agent
+    # that replaces a stored "token"; see auth_settings_turned_off.
     whatsapp_auth: str | None = None
     max_session_duration: int | None = None
     # CPU architecture the agent image requires (PCC-1105). Exactly the
@@ -526,6 +527,32 @@ def whatsapp_auth_unconfirmed(requested: str | None, deploy_response: dict | Non
     service = (deploy_response or {}).get("service")
     confirmed = service.get("whatsappAuth") if isinstance(service, dict) else None
     return confirmed != "token"
+
+
+# The auth settings a deploy replaces: each pcc-deploy.toml key and the field
+# the API reports it as on an agent.
+_AUTH_SETTINGS = (
+    ("websocket_auth", "websocketAuth"),
+    ("whatsapp_auth", "whatsappAuth"),
+)
+
+
+def auth_settings_turned_off(params: DeployConfigParams, agent: dict | None) -> list[str]:
+    """The pcc-deploy.toml keys whose "token" auth this deploy turns off.
+
+    A deploy of an existing agent replaces its settings, and the API gives a
+    setting the deploy leaves out its default, "none". So an agent that
+    requires a token stops requiring it once it is deployed from a
+    pcc-deploy.toml without the key. An agent read that doesn't report a
+    setting (an API without it) has nothing to turn off.
+    """
+    if not agent:
+        return []
+    return [
+        key
+        for key, field in _AUTH_SETTINGS
+        if getattr(params, key) is None and agent.get(field) == "token"
+    ]
 
 
 def validate_git_source_combination(config: DeployConfigParams) -> str | None:
