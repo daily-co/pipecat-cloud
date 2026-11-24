@@ -39,6 +39,7 @@ from pipecatcloud._utils.deploy_utils import (
     parse_resources_option,
     report_git_deploy_result,
     validate_git_source_combination,
+    whatsapp_auth_unconfirmed,
     with_deploy_config,
 )
 from pipecatcloud._utils.github_utils import short_sha
@@ -434,6 +435,16 @@ async def _deploy(params: DeployConfigParams, org, force: bool = False):
         # Surface API warning (e.g. when identical config was deployed without --force)
         if result and result.get("warning"):
             console.print(f"[yellow]Warning: {result['warning']}[/yellow]")
+
+        # An API that predates WhatsApp auth drops the field without an error,
+        # so the deploy succeeds with the webhook left open. Say so; the deploy
+        # itself went through, so this is a warning and not a failure.
+        if whatsapp_auth_unconfirmed(params.whatsapp_auth, result):
+            console.print(
+                '[yellow]Warning: the API did not confirm whatsapp_auth = "token" for this '
+                "agent. An API without this setting ignores it, and the agent's WhatsApp "
+                "webhook then accepts requests without your public API key.[/yellow]"
+            )
 
     # A git-sourced create has no deployment to wait on yet: the API enqueues
     # the first deploy and the worker builds the repo before anything is
@@ -1035,6 +1046,11 @@ def create_deploy_command(app: typer.Typer):
         if partial_config.websocket_auth:
             content_items.append(
                 f"[bold white]WebSocket auth:[/bold white] [green]{partial_config.websocket_auth}[/green]"
+            )
+
+        if partial_config.whatsapp_auth:
+            content_items.append(
+                f"[bold white]WhatsApp auth:[/bold white] [green]{partial_config.whatsapp_auth}[/green]"
             )
 
         content_items.extend(

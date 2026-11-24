@@ -22,6 +22,9 @@ from pipecatcloud.cli import PIPECAT_DEPLOY_CONFIG_PATH
 from pipecatcloud.constants import KRISP_VIVA_MODELS, KrispVivaAudioFilter
 from pipecatcloud.exception import ConfigFileError
 
+# The values the API accepts for an agent's WhatsApp webhook authentication.
+WHATSAPP_AUTH_MODES = ("none", "token")
+
 DEPLOY_STATUS_MAP = {
     "Unknown": "[dim]Waiting[/dim]",
     "True": "[green]Ready[/green]",
@@ -451,6 +454,10 @@ class DeployConfigParams:
     git: GitSourceConfig = field(factory=GitSourceConfig)
     force_redeploy: bool = False
     websocket_auth: str | None = None
+    # How the agent's WhatsApp webhook authenticates callers: "none" or "token"
+    # (the org's public API key). None leaves the setting to the API's default
+    # and keeps the field out of the request.
+    whatsapp_auth: str | None = None
     max_session_duration: int | None = None
     # CPU architecture the agent image requires (PCC-1105). Exactly the
     # kubernetes.io/arch vocabulary; omitted = the region's default.
@@ -475,6 +482,11 @@ class DeployConfigParams:
             raise ValueError("Cannot specify both 'agent_profile' and 'resources'")
         if self.architecture is not None and self.architecture not in ("amd64", "arm64"):
             raise ValueError("architecture must be 'amd64' or 'arm64'")
+        if self.whatsapp_auth is not None and self.whatsapp_auth not in WHATSAPP_AUTH_MODES:
+            raise ValueError(
+                f"whatsapp_auth must be one of: {', '.join(WHATSAPP_AUTH_MODES)} "
+                f"(got {self.whatsapp_auth!r})"
+            )
 
     def to_dict(self):
         return {
@@ -492,9 +504,28 @@ class DeployConfigParams:
             "krisp_viva": self.krisp_viva.to_dict() if self.krisp_viva else None,
             "git": self.git.to_dict() if self.git.is_set() else None,
             "websocket_auth": self.websocket_auth,
+            "whatsapp_auth": self.whatsapp_auth,
             "max_session_duration": self.max_session_duration,
             "architecture": self.architecture,
         }
+
+
+def whatsapp_auth_unconfirmed(requested: str | None, deploy_response: dict | None) -> bool:
+    """Whether a deploy asked for WhatsApp token auth that the API did not confirm.
+
+    The API answers a deploy with the saved agent under `service`, and an API
+    that has the feature reports `whatsappAuth` there. An API without it
+    accepts the field and drops it without complaint, so its response has no
+    `whatsappAuth` at all. Only "token" is checked: "none" is what an API
+    without the feature behaves like anyway, so a missing echo costs nothing.
+    A null value (the API could not read the setting back) is not a
+    confirmation either.
+    """
+    if requested != "token":
+        return False
+    service = (deploy_response or {}).get("service")
+    confirmed = service.get("whatsappAuth") if isinstance(service, dict) else None
+    return confirmed != "token"
 
 
 def validate_git_source_combination(config: DeployConfigParams) -> str | None:
@@ -587,6 +618,7 @@ def load_deploy_config_file() -> DeployConfigParams | None:
             "krisp_viva",
             "git",
             "websocket_auth",
+            "whatsapp_auth",
             "max_session_duration",
             "resources",
             "architecture",

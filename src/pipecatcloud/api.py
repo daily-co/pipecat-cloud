@@ -854,6 +854,8 @@ class _API:
             },
             "forceRedeploy": deploy_config.force_redeploy or None,
             "websocketAuth": deploy_config.websocket_auth,
+            # Left out unless the user set it, so the API's default applies.
+            "whatsappAuth": deploy_config.whatsapp_auth,
             "maxSessionDuration": deploy_config.max_session_duration,
             # The field name is `architecture` — the API silently drops
             # unknown keys, so a wrong name here schedules on the region
