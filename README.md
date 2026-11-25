@@ -51,6 +51,16 @@ To use Pipecat Cloud programmatically (without the CLI), install the package dir
 
 `pipecat cloud secrets keys --region <region>` shows your organization's secret keys in a region: each key's fingerprint, state, created and retired times, and how many secrets it holds. The fingerprint is the one a security notice names and, in a self-hosted region, the one your cluster shows for the key, so you can compare them. Add `--output json` before `secrets` for a single JSON document. Key material is never shown.
 
+### Running evals
+
+`pipecat cloud eval run <agent> <scenario.yaml>` runs the file's scenarios against a deployed agent, waits for them as `pipecat eval run` does, and exits with the verdict: 0 for `passed` or `skipped`, 1 for `failed`, 2 when a run ended without a verdict, 3 for an API or usage error. `--scenario <name>`, repeated for several, runs only those. Where your organization has suite runs, the scenarios run as one **suite run**, with one verdict: the service runs them under its limits, the CLI shows their counts as they move, and afterwards explains each run that didn't pass. `--repeat <n>` runs each scenario n times; above 1 it's a measurement, with pass rates and no verdict, and exits 0 once it completes. A suite run that's cancelled, expires or ends in error exits 2. Without suite runs, or with `--param`, which a suite run doesn't take, the scenarios run side by side, one run each. `--no-wait` starts them and returns. The scenario file and the files it `!include`s are sent from `--root` (default: the scenario file's directory) as UTF-8 text, up to 256 KiB; hidden files, files that look like they hold secrets and symlinks that leave the root are refused. Eval runs call the agent's real tools, so point them at test credentials or a staging deployment.
+
+`eval judge <agent> <session-id>... --criteria <file>` judges finished sessions instead, without a simulated caller.
+
+`eval bundle push <name> [dir]` publishes a directory's YAML and JSON files as the next revision of a stored **bundle**, creating it if it's new, after showing the files and asking to confirm (`--yes` skips that). The service checks the files first and lists any problems. `eval bundle list` and `eval bundle show <name>[@n]` read them. `eval suite run <agent> --bundle <name>[@n] --suite <path>` runs a suite file from a bundle, with the same waiting and exit codes as `eval run`.
+
+Use `eval status <run-id> --agent <agent> [--wait]`, `eval list <agent> [--suite <suite-run-id>]` and `eval cancel <run-id> --agent <agent>` to follow and stop runs, and `eval suite status <suite-run-id> [--wait]`, `eval suite list [agent]` and `eval suite cancel <suite-run-id>` for suite runs. Ctrl-C while waiting stops the wait and leaves the runs going. Add `-v` to explain every run, with its conversation and tool calls. Every command takes `--json`.
+
 ### Usage in Python scripts
 
 If want to programmatically start an agent within a Python script, you can use the `pipecatcloud.session` module.
